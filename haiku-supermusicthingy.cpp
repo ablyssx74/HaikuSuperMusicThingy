@@ -754,7 +754,7 @@ SuperMusicWindow::SuperMusicWindow()
     titleApp->SetFont(&titleFont);
     titleApp->SetAlignment(B_ALIGN_CENTER);
 
-    BStringView* txtVer = new BStringView("abt_ver", "Version 1.0 (Haiku)");
+    BStringView* txtVer = new BStringView("abt_ver", "Version 1.0.0 (Haiku)");
     txtVer->SetAlignment(B_ALIGN_CENTER);
 
     BStringView* txtCopy = new BStringView("abt_copy", "Copyright " B_UTF8_COPYRIGHT " 2026 Kris Beazley");
