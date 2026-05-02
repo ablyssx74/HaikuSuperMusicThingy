@@ -1126,9 +1126,11 @@ SuperMusicWindow::SuperMusicWindow()
 
     BStringView* c1 = new BStringView("c1", "SomaFM (Radio Service)");
     BStringView* c2 = new BStringView("c2", "MPV (Playback Core)");
-    BStringView* c3 = new BStringView("c3", "nlohmann/json");
-    BStringView* c4 = new BStringView("c4", "Haiku Interface Kit");
-    BStringView* c5 = new BStringView("c5", "Some AI Assistance");
+    BStringView* c3 = new BStringView("c3", "nlohmann/json (The Data)");
+    BStringView* c4 = new BStringView("c4", "Haiku Interface Kit (The GUI)");
+    BStringView* c5 = new BStringView("c5", "libsdl / projectM / OpenGL (The Visuals)");
+    BStringView* c6 = new BStringView("c6", "libcurl (Network/Streaming)");
+    BStringView* c7 = new BStringView("c7", "Some AI Assistance");   
     
     // Center the credits
     c1->SetAlignment(B_ALIGN_CENTER);
@@ -1136,6 +1138,9 @@ SuperMusicWindow::SuperMusicWindow()
     c3->SetAlignment(B_ALIGN_CENTER);
     c4->SetAlignment(B_ALIGN_CENTER);
     c5->SetAlignment(B_ALIGN_CENTER);
+    c6->SetAlignment(B_ALIGN_CENTER);
+    c7->SetAlignment(B_ALIGN_CENTER);
+
 
     // 4. Layout
     BLayoutBuilder::Group<>(aboutGroup, B_VERTICAL, 5)
