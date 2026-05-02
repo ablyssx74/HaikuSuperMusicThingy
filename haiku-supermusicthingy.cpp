@@ -15,6 +15,7 @@
 #include <MenuItem.h>
 #include <MenuField.h>
 #include <CheckBox.h>
+#include <TextView.h> 
 
 // --- Haiku Storage Kit ---
 #include <Path.h>
@@ -578,17 +579,58 @@ class AlbumArtView : public BView {
 public:
     AlbumArtView() : BView("art_view", B_WILL_DRAW | B_FULL_UPDATE_ON_RESIZE) {}
 
-virtual void Draw(BRect updateRect) {
-    // Look at the class member inside the window instance
-    if (gGuiWindow && gGuiWindow->fAlbumArt) {
-        DrawBitmap(gGuiWindow->fAlbumArt, Bounds());
-    } else {
-        SetHighColor(30, 30, 30);
-        FillRect(Bounds());
-    }
-}
+	virtual void Draw(BRect updateRect) {
+    	// Look at the class member inside the window instance
+    	if (gGuiWindow && gGuiWindow->fAlbumArt) {
+        	DrawBitmap(gGuiWindow->fAlbumArt, Bounds());
+    	} else {
+        	SetHighColor(30, 30, 30);
+        	FillRect(Bounds());
+    	}
+	}
 
 };
+
+
+class SongLabel : public BTextView {
+public:
+    SongLabel(const char* name) : BTextView(name) {
+        MakeEditable(false);
+        MakeSelectable(false);
+        SetWordWrap(true);
+        SetAlignment(B_ALIGN_CENTER);
+   
+        SetInsets(2, 2, 2, 2); 
+        SetExplicitMinSize(BSize(B_SIZE_UNSET, 50));
+    }
+
+
+    void AttachedToWindow() override {
+        BTextView::AttachedToWindow();
+        SetViewColor(Parent()->ViewColor());
+        BRect r = Bounds();
+        r.InsetBy(2, 2); 
+        SetTextRect(r);
+    }
+
+
+    void FrameResized(float width, float height) override {
+        BTextView::FrameResized(width, height);
+
+        BRect r = Bounds();
+        r.InsetBy(2, 2);
+        SetTextRect(r);
+    }
+    
+    void SetCustomFont(const BFont* font) {
+        // Set default font for new text
+        SetFontAndColor(font); 
+        // Force redraw
+        Invalidate();
+    }
+};
+
+
 
 SuperMusicWindow::SuperMusicWindow()
     : BWindow(BRect(100, 100, 500, 300), "SuperMusicThingy", B_TITLED_WINDOW, 
@@ -615,11 +657,16 @@ SuperMusicWindow::SuperMusicWindow()
     // Text Labels
     fStationView = new BStringView("station", "Press Shuffle to Start");
     fStationView->SetFont(&largeFont);
-    fStationView->SetAlignment(B_ALIGN_LEFT);
+    fStationView->SetAlignment(B_ALIGN_CENTER);
 
-    fSongView = new BStringView("song", "");
-    fSongView->SetFont(&smallFont);
-    fSongView->SetAlignment(B_ALIGN_LEFT);
+    fSongView = new SongLabel("song_view");
+    //fSongView->SetFont(&smallFont);
+    fSongView->SetFontAndColor(&smallFont);
+    fSongView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+    //fSongView->SetAlignment(B_ALIGN_CENTER);    
+    // Style it to look like a label (remove default input padding)
+   // fSongView->SetInsets(0, 0, 0, 0);
+
     
     fquality = new BStringView("quality", "Quality: --");
     fquality->SetFont(&smallFont);
@@ -1092,14 +1139,26 @@ void SuperMusicWindow::UpdateFavButtons() {
 
 void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
     if (!view) return;
+
     view->SetViewColor(bg);
-    view->SetLowColor(bg);   
+    view->SetLowColor(bg);
     view->SetHighColor(txt);
+
+    // Handle SongLabel / BTextView
+    BTextView* textView = dynamic_cast<BTextView*>(view);
+    if (textView) {
+        // CRITICAL: First argument MUST be NULL.
+        // NULL = "Keep the font I already set (smallFont), just change the color."
+        textView->SetFontAndColor(NULL, B_FONT_ALL, &txt);
+    }
+
     view->Invalidate();
+
     for (int32 i = 0; i < view->CountChildren(); i++) {
         RecursiveColorApply(view->ChildAt(i), bg, txt);
     }
 }
+
 
 
 void SuperMusicWindow::ApplyTheme() {

@@ -19,7 +19,7 @@
 #include <TabView.h>    
 #include <ListView.h>   
 #include <ScrollView.h> 
-
+#include <TextView.h> 
 
 class SuperMusicWindow : public BWindow {
 public:
@@ -46,7 +46,7 @@ private:
     BStringView* fStationView;
     BStringView* fListenersView;
     BStringView* fquality; 
-    BStringView* fSongView;
+    BTextView* fSongView;
     BSlider*     fVolumeSlider;
     BButton*     fShuffleBtn;
 };
