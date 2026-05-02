@@ -15,11 +15,15 @@ provides {
 	$(NAME) = $(VERSION)-1
 }
 requires {
-	haiku
+	haiku >= r1~beta5_hrev59183-1
+	libglvnd >= 1.7.0-1
+	nebula
 	nlohmann_json
 	mpv
 	openal
 	curl
+	libsdl2
+	
 	
 }	
 urls {

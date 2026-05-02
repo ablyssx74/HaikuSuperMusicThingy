@@ -21,6 +21,8 @@
 #include <Path.h>
 #include <FindDirectory.h>
 #include <Directory.h> 
+#include <storage/Entry.h>
+#include <storage/Path.h>
 
 // --- Third Party Libraries ---
 #include <curl/curl.h>
@@ -39,21 +41,68 @@
 #include <cstdlib>    // for rand, getenv
 #include <algorithm>  // for std::find
 #include <cstring>
+#include <random>
 
-// --- Local Header ---
+
+#ifdef USE_SDL2
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_opengl.h>
+#endif
+
+#ifdef USE_GL
+#include <GL/gl.h>
+#endif
+
+#ifdef USE_PROJECTM
+#include <projectM-4/projectM.h>
+#endif
+
 #include "haiku-supermusicthingy.h"
 
 
-
 namespace fs = std::filesystem;
+
 const std::string BASE_URL = "https://somafm.com/";
-extern void play_random();
-extern void set_volume(char direction);
-extern mpv_handle* mpv;
-extern void init_mpv();
+
+#ifdef USE_PROJECTM
+#include <image.h>
+#include <OS.h>
+#include <AL/al.h>
+#include <AL/alc.h>
+
+// Milkdrop auto-shuffle timer
+const uint32_t PRESET_DURATION = 30000;  // 30 Sec
+uint32_t lastPresetChange = 0;
+std::string currentPresetName = "None";
+void update_visuals_logic();
+void HandleSDLEvents(SDL_Event& e); 
+
+ALCdevice *alcCaptureDevice = nullptr;
+projectm_handle pm = nullptr;
+bool visualsRunning = false;
+
+void cleanup_capture_device() {
+    if (alcCaptureDevice) {
+        alcCaptureCloseDevice(alcCaptureDevice);
+        alcCaptureDevice = nullptr;
+    }
+}
+
+#endif
+
+#ifdef USE_SDL2
+SDL_Window* visualWin = nullptr;
+SDL_GLContext glContext = nullptr;
+#endif
+
+
 
 std::string statusMsg = "";
 std::time_t statusExpiry = 0;
+bool mpvthread_running = true;
+SuperMusicWindow* gGuiWindow = nullptr; 
+int32 mpv_loop_thread(void* data);
+using json = nlohmann::json;
 
 class SuperMusicWindow; 
 
@@ -73,30 +122,11 @@ enum {
     MSG_CFG_AUTO_SHUFFLE = 'c_as',
     MSG_CFG_NOTIFY       = 'c_nt',
     MSG_CFG_QUALITY      = 'c_qu',
-    MSG_CFG_THEME        = 'c_th' 
+    MSG_CFG_THEME        = 'c_th',
+    MSG_TOGGLE_VISUALS   = 'tvis'
+ 
 };
 
-bool mpvthread_running = true;
-SuperMusicWindow* gGuiWindow = nullptr; 
-int32 mpv_loop_thread(void* data);
-
-
-using json = nlohmann::json;
-std::vector<std::string> favUrls;
-std::vector<std::string> helpMenu;
-int selectedhelp = 0;
-int scrollhelpOffset = 0;
-int selectedFav = 0;
-int scrollOffset = 0;
-bool showFavorites = false;
-bool showHelp = false;
-bool showNotifications = false;
-bool showConfig = false;
-
-
-
-
-std::string configPath = getenv("HOME") + std::string("/config/settings/SuperMusicThingy/config.txt");
 
 void ensure_config_dir() {
     BPath path;
@@ -108,8 +138,6 @@ void ensure_config_dir() {
         }
     }
 }
-
-
 
 struct Config {
     bool showNotifications = true;
@@ -123,9 +151,6 @@ struct Config {
 } cfg;
 
 int selectedConfig = 0;
-
-enum MenuState { NONE, FAVORITES, HELP, CONFIG };
-MenuState currentMenu = NONE;
 
 void download_art(const std::string& url) {
     if (url.empty()) return;
@@ -158,10 +183,8 @@ struct Channel {
 
 mpv_handle *mpv = nullptr;
 std::vector<Channel> channels;
-
 std::string pendingSong = "";
 std::time_t notifyTimer = 0;
-
 std::string currentSong = "None";
 std::string currentDesc = "None";
 std::string currentStation = "";
@@ -169,13 +192,11 @@ std::string currentListeners = "";
 std::string currentAlbumArtUrl = "";
 
 
-
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
     ((std::string*)userp)->append((char*)contents, size * nmemb);
     return size * nmemb;
 }
 
-// --- Logic Functions ---
 
 void fetch_channels() {
     channels.clear();
@@ -205,8 +226,6 @@ void fetch_channels() {
 }
 
 
-
-
 void save_config() {
     json j;
     j["quality"] = cfg.quality;
@@ -226,7 +245,6 @@ void save_config() {
         }
     }
 }
-
 
 
 void load_config() {
@@ -251,7 +269,6 @@ void load_config() {
         }
     }
 }
-
 
 
 void init_mpv() {
@@ -285,7 +302,7 @@ void fade_volume(mpv_handle *mpv, double target_vol, double duration_ms) {
             mpv_set_property(mpv, "volume", MPV_FORMAT_DOUBLE, &current_vol);
             usleep(step_duration);
         	}
-        // Ensure we hit the exact target
+
         mpv_set_property(mpv, "volume", MPV_FORMAT_DOUBLE, &target_vol);
    		}
     
@@ -293,15 +310,12 @@ void fade_volume(mpv_handle *mpv, double target_vol, double duration_ms) {
         if (cfg.quality == "Highest") {
             return BASE_URL + id + ".pls";
         }
-
         if (cfg.quality == "High") {
             return BASE_URL + id + "64.pls";
         }
-
         if (cfg.quality == "Low") {
             return BASE_URL + id + "32.pls";
         }
-
         // Default: 128k AAC (id + "130.pls")
         return BASE_URL + id + ".pls";
     }
@@ -313,7 +327,7 @@ void fade_volume(mpv_handle *mpv, double target_vol, double duration_ms) {
         return "";
 }
 
-    // Save Station to favorites list while listening
+// Save Station to favorites list while listening
 void save_favorite() {
         std::string home = getenv("HOME") ? getenv("HOME") : ".";
         #ifdef __HAIKU__
@@ -326,7 +340,6 @@ void save_favorite() {
 
         mkdir(dir.c_str(), 0755);
 
-        // 1. Determine the URL for the current station
         std::string currentUrl = "";
         for(const auto& ch : channels) {
             if(ch.title == currentStation) {
@@ -341,7 +354,6 @@ void save_favorite() {
             return;
         }
 
-        // 2. Check if URL already exists in the file
         std::ifstream infile(path);
         std::string line;
         bool isDuplicate = false;
@@ -353,7 +365,6 @@ void save_favorite() {
         }
         infile.close();
 
-        // 3. Save only if it's NOT a duplicate
         if (isDuplicate) {
             statusMsg = "Already in favorites!";
         } else {
@@ -390,8 +401,6 @@ void play_favorite() {
 
         std::string url = favs[rand() % favs.size()];
 
-        // Extract ID from URL to update global state correctly
-        // URL format: https://somafm.com
         size_t lastSlash = url.find_last_of('/');
         size_t lastDot = url.find_last_of('.');
         if (lastSlash != std::string::npos && lastDot != std::string::npos) {
@@ -427,9 +436,6 @@ void play_favorite() {
 
 void play_specific_url(std::string url) {
     if (url.empty()) return;
-
-    // 1. Extract ID from URL to find Station Info
-    // (Logic copied from your play_favorite)
     size_t lastSlash = url.find_last_of('/');
     size_t lastDot = url.find_last_of('.');
     
@@ -438,13 +444,11 @@ void play_specific_url(std::string url) {
         
         for (const auto& ch : channels) {
             if (ch.id == id) {
-                // Update Global State
                 currentStation = ch.title;
                 currentDesc = ch.desc;
                 currentListeners = ch.listeners;
                 currentAlbumArtUrl = ch.largeimage; 
 
-                // Trigger Art Download
                 if (!currentAlbumArtUrl.empty()) {
                     std::thread([url = currentAlbumArtUrl]() {
                         download_art(url);
@@ -511,13 +515,12 @@ void delete_favorite() {
     
 void play_random() {
         if (channels.empty()) return;
-
-        // 1.
         double original_vol;
+        
         mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &original_vol);
         fade_volume(mpv, 0, 300);
 
-        // 2.
+
         int idx = rand() % channels.size();
         currentStation = channels[idx].title;
         currentDesc = channels[idx].desc;
@@ -530,14 +533,10 @@ void play_random() {
                 download_art(url);
             }).detach();
         }
-
-        // USE THE HELPER
+        
         std::string url = get_quality_url(channels[idx].id);
-
         const char *cmd[] = {"loadfile", url.c_str(), NULL};
         mpv_command(mpv, cmd);
-
-        // 3.
         fade_volume(mpv, original_vol, 500);
 }
 
@@ -547,13 +546,9 @@ bool is_favorite() {
     BPath path;
     // 1. Get the standard settings path
     if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) != B_OK) return false;
-    path.Append("SuperMusicThingy/favorites.txt");
-    
+    path.Append("SuperMusicThingy/favorites.txt");    
     std::ifstream infile(path.Path());
-    
-    // 2. Reconstruct current station URL
     std::string currentUrl = "";
-    // Ensure 'channels' and 'currentStation' are accessible here
     for(const auto& ch : channels) {
         if(ch.title == currentStation) {
             currentUrl = BASE_URL + ch.id + ".pls";
@@ -562,8 +557,6 @@ bool is_favorite() {
     }
 
     if (currentUrl.empty()) return false;
-
-    // 3. Check file for match
     if (infile.is_open()) {
         std::string line;
         while (std::getline(infile, line)) {
@@ -572,6 +565,325 @@ bool is_favorite() {
     }
     
  return false;
+}
+
+void set_volume(char direction) {
+    double vol;
+    mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &vol);
+    
+    if (direction == '+') vol += 5;
+    else if (direction == '-') vol -= 5;
+
+    if (vol > 100) vol = 100;
+    if (vol < 0) vol = 0;
+
+    mpv_set_property(mpv, "volume", MPV_FORMAT_DOUBLE, &vol);
+}
+
+
+void toggle_mute() {
+        int mute;
+        mpv_get_property(mpv, "mute", MPV_FORMAT_FLAG, &mute);
+        mute = !mute;
+        mpv_set_property(mpv, "mute", MPV_FORMAT_FLAG, &mute);
+ }
+
+
+#ifdef USE_PROJECTM
+void load_random_preset(projectm_handle pm) {
+    const char* home = getenv("HOME");
+    if (!home) return;
+    #ifdef __HAIKU__
+    std::string configPath = std::string(home) + "/config/settings/SuperMusicThingy/milk_presets/";
+    #else
+    std::string configPath = std::string(home) + "/.config/SuperMusicThingy/milk_presets/";
+    #endif
+
+    std::vector<std::string> presets;
+
+    try {
+
+        if (!std::filesystem::exists(configPath)) {
+            std::filesystem::create_directories(configPath);
+            return;
+        }
+
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(configPath)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".milk") {
+                presets.push_back(entry.path().string());
+            }
+        }
+
+
+        if (presets.empty()) {
+            std::cerr << "No presets found in: " << configPath << std::endl;
+            return;
+        }
+
+        static std::mt19937 rng(static_cast<unsigned int>(std::time(nullptr)));
+        std::uniform_int_distribution<int> dist(0, presets.size() - 1);
+        std::string selected = presets[dist(rng)];
+
+        projectm_load_preset_file(pm, selected.c_str(), true);
+        std::string name = std::filesystem::path(selected).stem().string();
+        if (name.length() > 46) {
+            currentPresetName = name.substr(0, 43) + "...";
+        } else {
+            currentPresetName = name;
+        }
+
+    } catch (const std::filesystem::filesystem_error& e) {
+        std::cerr << "FS Error: " << e.what() << std::endl;
+    }
+}
+#endif
+
+
+#ifdef USE_PROJECTM
+void init_visuals() {
+    if (visualWin) return;
+    if (SDL_Init(SDL_INIT_VIDEO) < 0) {           
+            return;
+        }
+ 
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);   
+
+        visualWin = SDL_CreateWindow("SuperMusicThingy Visualizer",
+                                     SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                                     800, 600, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+        if (!visualWin) return;
+
+        glContext = SDL_GL_CreateContext(visualWin);
+        SDL_GL_MakeCurrent(visualWin, NULL); 
+
+        if (cfg.autoVsync) {
+         if (SDL_GL_SetSwapInterval(-1) < 0) {
+            SDL_GL_SetSwapInterval(1);
+         }
+        }
+
+        // Disable VSync for better responsiveness on Haiku
+        SDL_GL_SetSwapInterval(0);        
+        
+
+        alcCaptureDevice = alcCaptureOpenDevice(NULL, 48000, AL_FORMAT_STEREO16, 8192);
+        if (!alcCaptureDevice) {
+            alcCaptureDevice = alcCaptureOpenDevice("null", 48000, AL_FORMAT_STEREO16, 8192);
+        }
+
+        if (alcCaptureDevice) {
+            alcCaptureStart(alcCaptureDevice);        
+            }
+
+        // Initialize projectM
+        visualsRunning = true;
+
+    }
+    #endif
+
+
+
+int32 VisualsThread(void* data) {
+	#ifdef USE_PROJECTM
+
+    if (visualWin && glContext) {
+        if (SDL_GL_MakeCurrent(visualWin, glContext) < 0) {
+            std::cerr << "GL Context Error: " << SDL_GetError() << std::endl;
+            return -1;
+        }
+    }
+
+    if (!pm) {
+        pm = projectm_create();
+        if (pm) {
+            projectm_set_window_size(pm, 800, 600); 
+            load_random_preset(pm);
+            lastPresetChange = SDL_GetTicks();
+        }
+    }
+
+    // 3. RENDER LOOP
+    while (visualsRunning && pm) { // added '&& pm' safety check
+        
+        // --- Audio Capture ---
+        if (alcCaptureDevice) {
+            ALCint samples = 0;
+            alcGetIntegerv(alcCaptureDevice, ALC_CAPTURE_SAMPLES, 1, &samples);
+            if (samples > 1024) {
+                // Use a static or vector to avoid stack overflow on Haiku threads
+                static short buffer[2048]; 
+                alcCaptureSamples(alcCaptureDevice, (ALCvoid*)buffer, 1024);
+                
+                static float floatBuffer[2048];
+                for (int i = 0; i < 2048; ++i) floatBuffer[i] = buffer[i] / 32768.0f;
+                projectm_pcm_add_float(pm, floatBuffer, 1024, PROJECTM_STEREO);
+            }
+        }
+
+
+        uint32_t currentTime = SDL_GetTicks();
+        if (cfg.autoShuffleVisuals && (currentTime - lastPresetChange >= PRESET_DURATION)) {
+            load_random_preset(pm);
+            lastPresetChange = currentTime;
+        }
+
+        projectm_opengl_render_frame(pm);
+        SDL_GL_SwapWindow(visualWin);
+
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            // Window Close / Quit
+            if (e.type == SDL_QUIT || (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_CLOSE)) {
+                visualsRunning = false; // The loop will exit and clean up naturally
+            }
+            
+            // Resizing
+            else if (e.type == SDL_WINDOWEVENT) {
+                if (e.window.event == SDL_WINDOWEVENT_RESIZED || 
+                    e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+                    
+                    int newW = e.window.data1;
+                    int newH = e.window.data2;
+                    glViewport(0, 0, newW, newH);
+                    projectm_set_window_size(pm, newW, newH);
+                }
+            }
+
+            // Keyboard Events
+            else if (e.type == SDL_KEYDOWN) {
+                switch (e.key.keysym.sym) {
+                    case SDLK_v:
+                        load_random_preset(pm);
+                        lastPresetChange = SDL_GetTicks();
+                        break;
+                    case SDLK_q:
+                        visualsRunning = false;
+                        break;
+                    case SDLK_s:
+                        play_random();
+                        currentSong = "Buffering...";
+                        break;
+                    case SDLK_f:
+                        play_favorite();
+                        break;
+                    case SDLK_m: {
+                        const char* cmd_mute[] = {"cycle", "mute", NULL};
+                        mpv_command(mpv, cmd_mute);
+                        break;
+                    }
+                    case SDLK_x: {
+                        const char* cmd_stop[] = {"stop", NULL};
+                        mpv_command(mpv, cmd_stop);
+                        break;
+                    }
+                    case SDLK_p: {
+                        const char* cmd_pause[] = {"cycle", "pause", NULL};
+                        mpv_command(mpv, cmd_pause);
+                        break;
+                    }
+                    case SDLK_EQUALS:
+                    case SDLK_KP_PLUS:
+                        set_volume('+');
+                        break;
+                    case SDLK_MINUS:
+                    case SDLK_KP_MINUS:
+                        set_volume('-');
+                        break;
+                    case SDLK_k:
+                    case SDLK_ESCAPE: {
+                        uint32_t flags = SDL_GetWindowFlags(visualWin);
+                        bool isFullscreen = (flags & SDL_WINDOW_FULLSCREEN_DESKTOP);
+                        
+                        // If ESC, only toggle if currently fullscreen
+                        if (e.key.keysym.sym == SDLK_ESCAPE && !isFullscreen) break;
+
+                        SDL_SetWindowFullscreen(visualWin, isFullscreen ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
+                        SDL_ShowCursor(isFullscreen ? SDL_ENABLE : SDL_DISABLE);
+                        
+                        int w, h;
+                        SDL_GetWindowSize(visualWin, &w, &h);
+                        glViewport(0, 0, w, h);
+                        projectm_set_window_size(pm, w, h);
+                        break;
+                    }
+                }
+            }
+
+            else if (e.type == SDL_MOUSEWHEEL) {
+                set_volume(e.wheel.y > 0 ? '+' : '-');
+            }
+
+
+            else if (e.type == SDL_MOUSEBUTTONDOWN) {
+                if (e.button.button == SDL_BUTTON_MIDDLE) {
+                    const char* cmd_mute[] = {"cycle", "mute", NULL};
+                    mpv_command(mpv, cmd_mute);
+                }
+                else if (e.button.button == SDL_BUTTON_RIGHT) {
+                    load_random_preset(pm);
+                    lastPresetChange = SDL_GetTicks();
+                }
+                else if (e.button.button == SDL_BUTTON_LEFT && e.button.clicks == 2) {
+                    uint32_t flags = SDL_GetWindowFlags(visualWin);
+                    bool isFullscreen = (flags & SDL_WINDOW_FULLSCREEN_DESKTOP);
+                    SDL_SetWindowFullscreen(visualWin, isFullscreen ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
+                    SDL_ShowCursor(isFullscreen ? SDL_ENABLE : SDL_DISABLE);
+                    
+                    int w, h;
+                    SDL_GetWindowSize(visualWin, &w, &h);
+                    glViewport(0, 0, w, h);
+                    projectm_set_window_size(pm, w, h);
+                }
+            }
+        }
+
+        
+        snooze(16000); 
+    }
+    
+    // Cleanup
+    cleanup_capture_device();
+    
+    if (glContext) { 
+        SDL_GL_MakeCurrent(visualWin, NULL); 
+        SDL_GL_DeleteContext(glContext); 
+        glContext = nullptr; 
+    }
+    if (visualWin) { 
+        SDL_DestroyWindow(visualWin); 
+        visualWin = nullptr; 
+    }
+    if (pm) {
+        projectm_destroy(pm);
+        pm = nullptr;
+    }
+
+    if (glContext) { SDL_GL_DeleteContext(glContext); glContext = nullptr; }
+    if (visualWin) { SDL_DestroyWindow(visualWin); visualWin = nullptr; } 
+    if (pm) { projectm_destroy(pm); pm = nullptr; } 
+	#endif
+    return B_OK;
+   
+}
+
+
+void SuperMusicWindow::StartVisuals() {
+	#ifdef USE_PROJECTM
+    init_visuals(); 
+    if (visualsRunning) {
+        thread_id vThread = spawn_thread(VisualsThread, "VisualsLoop", B_NORMAL_PRIORITY, NULL);
+        resume_thread(vThread);
+    }
+    #endif
+}
+
+void SuperMusicWindow::StopVisuals() {
+	#ifdef USE_PROJECTM
+    visualsRunning = false;
+    #endif
 }
 
 
@@ -638,13 +950,12 @@ SuperMusicWindow::SuperMusicWindow()
 {
     fAlbumArt = nullptr;
 
-    // 1. Fonts
+
     BFont largeFont(be_bold_font);
     largeFont.SetSize(24.0); 
     BFont smallFont(be_bold_font);
     smallFont.SetSize(12.0); 
 
-    // 2. Create the Tab Container (Root View)
     fTabView = new BTabView("tab_container");
     fTabView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
 
@@ -660,12 +971,9 @@ SuperMusicWindow::SuperMusicWindow()
     fStationView->SetAlignment(B_ALIGN_CENTER);
 
     fSongView = new SongLabel("song_view");
-    //fSongView->SetFont(&smallFont);
     fSongView->SetFontAndColor(&smallFont);
     fSongView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
-    //fSongView->SetAlignment(B_ALIGN_CENTER);    
-    // Style it to look like a label (remove default input padding)
-   // fSongView->SetInsets(0, 0, 0, 0);
+
 
     
     fquality = new BStringView("quality", "Quality: --");
@@ -696,14 +1004,14 @@ SuperMusicWindow::SuperMusicWindow()
         .Add(fArtView)      
         .Add(fStationView) 
         .Add(fSongView)
-        // This nested Group creates the "Split Row" from your mock
+
         .AddGroup(B_HORIZONTAL, 0) 
-            .AddGroup(B_VERTICAL, 0) // LEFT: Info
+            .AddGroup(B_VERTICAL, 0) 
                 .Add(fListenersView)
                 .Add(fquality)
             .End()
-            .AddGlue() // Pushes the buttons to the far right
-            .AddGroup(B_VERTICAL, 5) // RIGHT: Buttons
+            .AddGlue() 
+            .AddGroup(B_VERTICAL, 5) 
                 .Add(fBtnAddFav)
                 .Add(fBtnDelFav)
             .End()
@@ -746,18 +1054,18 @@ SuperMusicWindow::SuperMusicWindow()
 	qualityMenu->AddItem(new BMenuItem("High", msgHigh));  
 	qualityMenu->AddItem(new BMenuItem("Low", msgLow));
 
-	// Set current selection based on cfg
 	BMenuItem* selectedItem = qualityMenu->FindItem(cfg.quality.c_str());
 	if (selectedItem) selectedItem->SetMarked(true);
 
-    // FIX STARTS HERE:
-    // 1. Create a standalone label (This will respect our Dark Theme)
-    BStringView* qualityLabel = new BStringView("lbl_qual", "Audio Quality:");
-    
-    // 2. Create the menu field WITHOUT a built-in label (NULL)
+    BStringView* qualityLabel = new BStringView("lbl_qual", "Audio Quality:"); 
+
     BMenuField* qualityField = new BMenuField("quality_field", NULL, qualityMenu);
 
     // --- Checkboxes ---
+    BCheckBox* fVisualsCheckbox = new BCheckBox(BRect(10, 10, 200, 30), "visuals_toggle", 
+    "Enable Visualizer", new BMessage(MSG_TOGGLE_VISUALS));
+    fVisualsCheckbox->SetValue(cfg.showVisuals ? B_CONTROL_ON : B_CONTROL_OFF);
+    
     BCheckBox* chkShuffle = new BCheckBox("chk_shuffle", "Auto Shuffle", new BMessage(MSG_CFG_AUTO_SHUFFLE));
     chkShuffle->SetValue(cfg.autoShuffle ? B_CONTROL_ON : B_CONTROL_OFF);
 
@@ -770,14 +1078,15 @@ SuperMusicWindow::SuperMusicWindow()
     // --- Layout ---
     BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 10)
         .SetInsets(20)
-        .AddGroup(B_HORIZONTAL, 5) // Add 5px spacing between Label and Menu
-            .Add(qualityLabel)     // Add the label first
-            .Add(qualityField)     // Then the dropdown
+        .AddGroup(B_HORIZONTAL, 5) 
+            .Add(qualityLabel)    
+            .Add(qualityField)    
             .AddGlue()
         .End()
         .Add(chkShuffle)
         .Add(chkNotify)
         .Add(chkTheme)
+        .Add(fVisualsCheckbox)
         .AddGlue() 
     .End();
 
@@ -848,24 +1157,25 @@ SuperMusicWindow::SuperMusicWindow()
         .AddGlue()
     .End();
 
-
-
     // 3. Attach Tabs
     fTabView->AddTab(playerGroup);
     fTabView->AddTab(favGroup);
     fTabView->AddTab(configGroup);
     fTabView->AddTab(aboutGroup); 
 
-    // 4. Final Window Layout (No Insets, so tabs touch the edges)
+    // 4. Final Window Layout 
     BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
         .SetInsets(0)
         .Add(fTabView)
     .End();
 
-    // Load the list immediately
+
     RefreshFavorites();
     UpdateFavButtons();
     ApplyTheme(); 
+    if (cfg.showVisuals) {
+        StartVisuals();
+     }  
 }
 
 void SuperMusicWindow::SendNotification(const char* songTitle) {
@@ -989,8 +1299,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
    			 }
             
             break;
-        }
-        
+        }        
         
         case MSG_CFG_AUTO_SHUFFLE: {
         BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_shuffle"));
@@ -1009,6 +1318,20 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         	}
         	break;
     	}
+    	
+    	case MSG_TOGGLE_VISUALS:
+        {
+            int32 value = 0;
+            if (message->FindInt32("be:value", &value) == B_OK) {
+                cfg.showVisuals = (value == B_CONTROL_ON);
+                if (cfg.showVisuals) {
+                    StartVisuals(); 
+                } else {
+                    StopVisuals();
+                }
+            }
+            break;
+        }
 
     	case MSG_CFG_QUALITY: {
         const char* val;
@@ -1144,11 +1467,8 @@ void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
     view->SetLowColor(bg);
     view->SetHighColor(txt);
 
-    // Handle SongLabel / BTextView
     BTextView* textView = dynamic_cast<BTextView*>(view);
     if (textView) {
-        // CRITICAL: First argument MUST be NULL.
-        // NULL = "Keep the font I already set (smallFont), just change the color."
         textView->SetFontAndColor(NULL, B_FONT_ALL, &txt);
     }
 
@@ -1158,7 +1478,6 @@ void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
         RecursiveColorApply(view->ChildAt(i), bg, txt);
     }
 }
-
 
 
 void SuperMusicWindow::ApplyTheme() {
@@ -1205,13 +1524,18 @@ SuperMusicWindow::~SuperMusicWindow()
 
 class SuperMusicApp : public BApplication {
 public:
-    SuperMusicApp() : BApplication("application/x-vnd.SuperMusicThingy") {}
+    SuperMusicApp() : BApplication("application/x-vnd.HaikuSuperMusicThingy") {}
 
     virtual void ReadyToRun() {
         load_config();
         fetch_channels();
         init_mpv();
-
+        #ifdef USE_PROJECTM
+  		if (visualsRunning) {
+        thread_id visualThread = spawn_thread(VisualsThread, "VisualsLoop", B_NORMAL_PRIORITY, NULL);
+        resume_thread(visualThread);
+   		}
+		#endif
 
         gGuiWindow = new SuperMusicWindow();      
         gGuiWindow->Show();
@@ -1228,7 +1552,8 @@ public:
     
  
     
-    virtual bool QuitRequested() {
+virtual bool QuitRequested() {
+           	   	
     	mpvthread_running = false;
         if (mpv) {
             mpv_terminate_destroy(mpv);
@@ -1237,6 +1562,7 @@ public:
         return true;
     }
 };
+
 
 int32 mpv_loop_thread(void* data) {
     SuperMusicWindow* win = (SuperMusicWindow*)data;
@@ -1278,6 +1604,15 @@ int32 mpv_loop_thread(void* data) {
     }
     return 0;
 }
+
+
+bool SuperMusicWindow::QuitRequested() {
+    StopVisuals();
+    snooze(50000); 
+    be_app->PostMessage(B_QUIT_REQUESTED);
+    return true; 
+}
+
 
 
 int main() {

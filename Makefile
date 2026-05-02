@@ -1,49 +1,95 @@
 # Optimized Haiku Build Script
 SHELL := /bin/bash
-PACKAGE_DIR := build/package
 NAME = HaikuSuperMusicThingy
 VERSION = 1.0.0
+PACKAGE_DIR := build/package
+DUMMY_PC_PATH := $(shell pwd)/build/pkgconfig
 
-UNAME_M := $(shell uname -p)
-ifeq ($(UNAME_M), x86)
-CXX = g++-x86 -DENABLE_PROJECTM=OFF -DENABLE_SDL2=OFF -DENABLE_GL=OFF -DUSE_KONSOLE_ON_HAIKU=OFF
-CC = gcc-x86
-MAKE := setarch x86 $(MAKE)
-ARCH = x86_gcc2
-SIMD_FLAGS := -O2
-INCLUDE = -L/boot/system/lib/x86 
-else ifeq ($(UNAME_M), x86_64)
-CXX = g++ -DENABLE_PROJECTM=OFF -DENABLE_SDL2=OFF -DENABLE_GL=OFF -DUSE_KONSOLE_ON_HAIKU=OFF
-CC = gcc
-ARCH = x86_64
-SIMD_FLAGS := -O3
-INCLUDE = -L/boot/system/lib
+
+ENABLE_PROJECTM := OFF
+
+# Forced dependencies
+ifeq ($(ENABLE_PROJECTM), ON)
+    ENABLE_SDL2 := ON
+    ENABLE_GL := ON
 endif
 
+# --- 2. Architecture & Paths ---
+UNAME_M := $(shell uname -p)
+ifeq ($(UNAME_M), x86)
+    CXX = g++-x86
+    ARCH = x86_gcc2
+    LIB_ARCH_DIR = /x86
+else
+    CXX = g++
+    ARCH = x86_64
+    LIB_ARCH_DIR = 
+endif
 
-BUILD_FLAGS = $(SIMD_FLAGS) 
-LD_OPTIMIZE = -Wl,--gc-sections
+# Set up Pkg-Config Environment
+export PKG_CONFIG_PATH := $(DUMMY_PC_PATH):/boot/home/config/non-packaged/lib$(LIB_ARCH_DIR)/pkgconfig:/boot/system/develop/lib$(LIB_ARCH_DIR)/pkgconfig
+
+# --- 3. Compiler & Linker Flags ---
+CXXFLAGS = -std=c++17 -O3 -Wall
+DEFINES = 
+INCLUDES = -I/boot/home/config/non-packaged/include -I/boot/system/develop/headers
+LIB_PATH = -L/boot/system/lib$(LIB_ARCH_DIR) -L/boot/system/develop/lib$(LIB_ARCH_DIR) -L/boot/home/config/non-packaged/lib$(LIB_ARCH_DIR)
 
 
-EXTRA_LIBS = -lmpv -lcurl -lopenal
-HAIKU_LIBS = -lnetwork -lroot -lpthread  -lbe -lmedia -ltranslation 
+# Core Libraries (find_library openal)
+EXTRA_LIBS = -lopenal $(shell pkg-config --libs mpv libcurl)
+HAIKU_LIBS = -lnetwork -lroot -lpthread -lbe -lmedia -ltranslation
 
+# Feature-specific Logic
+ifeq ($(ENABLE_SDL2), ON)
+    DEFINES += -DUSE_SDL2
+    EXTRA_LIBS += $(shell pkg-config --libs sdl2)
+endif
 
-.PHONY: build package clean
+ifeq ($(ENABLE_GL), ON)
+    DEFINES += -DUSE_GL
+    # Link against libGL (satisfied by the dummy .pc or system)
+    EXTRA_LIBS += -lGL
+endif
+
+ifeq ($(ENABLE_PROJECTM), ON)
+    DEFINES += -DUSE_PROJECTM
+    # Use pkg-config for projectM-4
+    EXTRA_LIBS += $(shell pkg-config --libs projectM-4)
+    CXXFLAGS += $(shell pkg-config --cflags projectM-4)
+endif
+
+ifeq ($(ENABLE_PROJECTM), ON)
+    TPL_FILE := $(NAME)_projectm.tpl
+else
+    TPL_FILE := $(NAME).tpl
+endif
+
+# --- 4. Build Targets ---
+.PHONY: build package release clean help setup_dummy
 
 all: build
 
-release: build package
+release: package
 
-build: 
+setup_dummy:
+	@mkdir -p $(DUMMY_PC_PATH)
+	@echo "Name: opengl" > $(DUMMY_PC_PATH)/opengl.pc
+	@echo "Description: Dummy OpenGL for Haiku" >> $(DUMMY_PC_PATH)/opengl.pc
+	@echo "Version: 1.0" >> $(DUMMY_PC_PATH)/opengl.pc
+	@echo "Libs: -L/boot/system/lib$(LIB_ARCH_DIR) -lGL" >> $(DUMMY_PC_PATH)/opengl.pc
+	@echo "Cflags: -I/boot/system/develop/headers" >> $(DUMMY_PC_PATH)/opengl.pc
+
+build: setup_dummy
 	@echo "--------- Building $(NAME) $(ARCH) ---------"
-	$(CXX) $(BUILD_FLAGS) $(INCLUDE) haiku-supermusicthingy.cpp  -o $(NAME) $(LD_OPTIMIZE) $(EXTRA_LIBS) $(HAIKU_LIBS) 
+	$(CXX) $(CXXFLAGS) $(DEFINES) $(INCLUDES) haiku-supermusicthingy.cpp -o $(NAME) \
+		$(LIB_PATH) $(EXTRA_LIBS) $(HAIKU_LIBS)
 
 package: all
 	@[ -n "$(PACKAGE_DIR)" ] || { echo "PACKAGE_DIR is undefined"; exit 1; }
 	rm -rf "./$(PACKAGE_DIR)"
 	mkdir -p $(PACKAGE_DIR)
-	sed -e 's/$$(NAME)/$(NAME)/g' -e 's/$$(VERSION)/$(VERSION)/g' -e 's/$$(ARCH)/$(ARCH)/' -e 's/$$(YEAR)/$(shell date +%Y)/' $(NAME).tpl > $(PACKAGE_DIR)/.PackageInfo
+	sed -e 's/$$(NAME)/$(NAME)/g' -e 's/$$(VERSION)/$(VERSION)/g' -e 's/$$(ARCH)/$(ARCH)/' -e 's/$$(YEAR)/$(shell date +%Y)/' $(TPL_FILE) > $(PACKAGE_DIR)/.PackageInfo
 	mkdir -p $(PACKAGE_DIR)/apps
 	mkdir -p $(PACKAGE_DIR)/bin
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
@@ -55,12 +101,21 @@ package: all
 	ln -s ../../../../apps/$(NAME) $(PACKAGE_DIR)/data/deskbar/menu/Applications/$(NAME)
 	package create -C $(PACKAGE_DIR) $(NAME)-$(VERSION)-1-$(ARCH).hpkg
 
-
 clean:
-	rm -f $(NAME)
-	rm -f $(NAME).rsrc
-	rm -fr build*
-	rm -r *.hpkg
-
-
-
+	rm -f $(NAME) *.rsrc *.hpkg
+	rm -rf build
+	
+#----------------------------------------------------------	
+# Help
+#----------------------------------------------------------
+help:
+	@echo "============================================================================"
+	@echo " Building $(NAME) for Haiku"
+	@echo ""
+	@echo " Non projectm builds..."
+	@echo " 1. make release"
+	@echo ""
+	@echo " projectm builds..."	
+	@echo " 2. make release ENABLE_PROJECTM=ON"
+	@echo ""
+	@echo "============================================================================"	

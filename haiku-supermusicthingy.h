@@ -20,6 +20,7 @@
 #include <ListView.h>   
 #include <ScrollView.h> 
 #include <TextView.h> 
+#include <CheckBox.h>
 
 class SuperMusicWindow : public BWindow {
 public:
@@ -31,6 +32,9 @@ public:
     void UpdateFavButtons(); 
     void SendNotification(const char* songTitle); 
     void ApplyTheme(); 
+    void StartVisuals();
+    void StopVisuals();
+    virtual bool QuitRequested();
     
     BBitmap*     fAlbumArt;
     BView*       fArtView;
@@ -46,9 +50,10 @@ private:
     BStringView* fStationView;
     BStringView* fListenersView;
     BStringView* fquality; 
-    BTextView* fSongView;
+    BTextView*   fSongView;
     BSlider*     fVolumeSlider;
     BButton*     fShuffleBtn;
+    BCheckBox*   fVisualsCheckbox; 
 };
 
 
