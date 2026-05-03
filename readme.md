@@ -1,7 +1,7 @@
 
 
 ## <p align="center"> <img width="48" height="48" align="top" alt="icon" src="https://github.com/user-attachments/assets/40b6432d-33e5-4946-8eed-9f0508000b23" />HaikuSuperMusicThingy </p>
-### <p align="center"> HaikuSuperMusicThingy is a free streaming media client for [SomaFM](https://somafm.com/)<br> Fast, light, and fun! </p>
+### <p align="center"> HaikuSuperMusicThingy is a free streaming media client for [SomaFM](https://somafm.com/)<br> Fast, light, and fun! </
 <hr>
 <p align="center">
  <img width="122" align=right  height="250" alt="Image" src="https://github.com/user-attachments/assets/9e54003e-b25c-4361-971d-00115341d9d6" />
