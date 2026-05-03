@@ -4,9 +4,9 @@
 ### <p align="center"> HaikuSuperMusicThingy is a free streaming media client for [SomaFM](https://somafm.com/)<br> Fast, light, and fun! </p>
 #### <p align="center">Screenshots
 <p align="center">
-  <img width="303" height="592" alt="Image" src="https://github.com/user-attachments/assets/329e7ab8-21c7-47ef-9f63-a5a94a090b6e" />
-<img width="304" height="601" alt="Image" src="https://github.com/user-attachments/assets/a4883213-ed79-45ef-9eea-fcdc1bb265fd" />
-<img width="296" height="601" alt="Image" src="https://github.com/user-attachments/assets/7fe28553-f0bd-4c62-8897-233b92ce40ba" /></p>
+<img width="369" height="228" alt="Image" src="https://github.com/user-attachments/assets/2290681c-05ce-4037-aceb-391171c1e5c7" />
+<img width="122" height="250" alt="Image" src="https://github.com/user-attachments/assets/73c6b4b8-a2a9-401b-8d99-634aa9a11b2c" />
+<img width="122" height="250" alt="Image" src="https://github.com/user-attachments/assets/9e54003e-b25c-4361-971d-00115341d9d6" />
 
 ### Includes
 -    shuffle stations.
