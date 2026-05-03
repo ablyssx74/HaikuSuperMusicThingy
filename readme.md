@@ -5,8 +5,7 @@
 #### <p align="center">Screenshots
 <p align="center">
 <img width="369" height="228" alt="Image" src="https://github.com/user-attachments/assets/2290681c-05ce-4037-aceb-391171c1e5c7" />
-<img width="122" height="250" alt="Image" src="https://github.com/user-attachments/assets/73c6b4b8-a2a9-401b-8d99-634aa9a11b2c" />
-<img width="122" height="250" alt="Image" src="https://github.com/user-attachments/assets/9e54003e-b25c-4361-971d-00115341d9d6" />
+<img width="122" height="250" alt="Image" src="https://github.com/user-attachments/assets/73c6b4b8-a2a9-401b-8d99-634aa9a11b2c" /><img width="122" height="250" alt="Image" src="https://github.com/user-attachments/assets/9e54003e-b25c-4361-971d-00115341d9d6" />
 
 ### Includes
 -    shuffle stations.
