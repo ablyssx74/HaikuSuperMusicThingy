@@ -27,7 +27,9 @@ cd HaikuSuperMusicThingy
 make release
 ```
 
-### Build Latest Haiku SuperMusicThingy with projectm visualizer
+### Build Latest Haiku SuperMusicThingy with projectm Visualizer Window
+### Presets for Visualizer Window
+-   Download from a huge selection of [presets](https://github.com/projectM-visualizer/projectm?tab=readme-ov-file#presets) and install in SuperMusicThingy config presets folder.<br> I recommend [projectm_presets](http://spiegelmc.com/pub/projectm_presets.zip). Then move to ~/config/settings/SuperMusicThingy/milk_presets/presets folder.
 -	 Visuals require [Haiku Nightly](https://download.haiku-os.org/nightly-images/x86_64/), a Turing+ GPU supported Nvidia card, [libglvnd-1.7.0-4-x86_64.hpkg](https://github.com/X547/nvidia-haiku/releases/download/v0.0.1/libglvnd-1.7.0-4-x86_64.hpkg) and [nebula-0.0.2-1.x86_64.hpkg](https://github.com/X547/nvidia-haiku/releases/download/v0.0.2/nebula-0.0.2-1.x86_64.hpkg). 
 ```shell
 #Download the source
