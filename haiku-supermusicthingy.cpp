@@ -120,6 +120,7 @@ enum {
     MSG_DEL_FAV     = 'dlfv',
     MSG_PLAY_FAV    = 'plfv',
     MSG_CFG_AUTO_SHUFFLE = 'c_as',
+    MSG_CFG_AUTO_PresetTimer = 'c_pt',
     MSG_CFG_NOTIFY       = 'c_nt',
     MSG_CFG_QUALITY      = 'c_qu',
     MSG_CFG_THEME        = 'c_th',
@@ -145,7 +146,7 @@ struct Config {
     bool autoShuffle = false;
     bool autoShuffleVisuals = false;
     bool autoVsync = false;
-    int defaultVolume = 75;
+    //int defaultVolume = 75;
     std::string updateTheme = "Dark";
     std::string quality = "Highest";
 } cfg;
@@ -942,6 +943,31 @@ public:
     }
 };
 
+class VolumeSlider : public BSlider {
+public:
+    VolumeSlider(const char* name, const char* label, BMessage* message, 
+                 int32 min, int32 max)
+        : BSlider(name, label, message, min, max, B_HORIZONTAL) {}
+
+    virtual void MessageReceived(BMessage* message) {
+        if (message->what == B_MOUSE_WHEEL_CHANGED) {
+            float deltaY;
+            if (message->FindFloat("be:wheel_delta_y", &deltaY) == B_OK) {
+                // Scroll up (negative delta) increases volume, scroll down decreases
+                int32 newValue = Value() - (int32)(deltaY * 5); // Adjust '5' for sensitivity
+                
+                // Clamp values between 0 and 100
+                if (newValue > 100) newValue = 100;
+                if (newValue < 0) newValue = 0;
+                
+                SetValue(newValue);
+                Invoke(); // Sends MSG_VOL_CHANGE to the target
+            }
+        } else {
+            BSlider::MessageReceived(message);
+        }
+    }
+};
 
 
 SuperMusicWindow::SuperMusicWindow()
@@ -994,9 +1020,12 @@ SuperMusicWindow::SuperMusicWindow()
     fShuffleBtn = new BButton("shuffle", "Shuffle", new BMessage(MSG_SHUFFLE));
     BButton* stopBtn = new BButton("stop", "Stop", new BMessage(MSG_STOP));
     
-    fVolumeSlider = new BSlider("volume", "Volume", new BMessage(MSG_VOL_CHANGE), 
-                                0, 100, B_HORIZONTAL);
+    fVolumeSlider = new VolumeSlider("volume", "Volume", new BMessage(MSG_VOL_CHANGE), 0, 100);
     fVolumeSlider->SetValue(100);
+    fVolumeSlider->SetTarget(this); 
+    fVolumeSlider->SetModificationMessage(new BMessage(MSG_VOL_CHANGE));
+
+
 
     // --- LAYOUT BUILDER FOR PLAYER TAB ---
     BLayoutBuilder::Group<>(playerGroup, B_VERTICAL, 10)
@@ -1066,8 +1095,11 @@ SuperMusicWindow::SuperMusicWindow()
     "Enable Visualizer", new BMessage(MSG_TOGGLE_VISUALS));
     fVisualsCheckbox->SetValue(cfg.showVisuals ? B_CONTROL_ON : B_CONTROL_OFF);
     
-    BCheckBox* chkShuffle = new BCheckBox("chk_shuffle", "Auto Shuffle", new BMessage(MSG_CFG_AUTO_SHUFFLE));
-    chkShuffle->SetValue(cfg.autoShuffle ? B_CONTROL_ON : B_CONTROL_OFF);
+    BCheckBox* chkShuffle = new BCheckBox("chk_shuffle", "Auto Shuffle On Start", new BMessage(MSG_CFG_AUTO_SHUFFLE));
+    chkShuffle->SetValue(cfg.autoShuffle ? B_CONTROL_ON : B_CONTROL_OFF);    
+    
+    BCheckBox* chkPresetTimer = new BCheckBox("chk_PresetTimer", "Auto Shuffle Visual Presets 30/s", new BMessage(MSG_CFG_AUTO_PresetTimer));
+    chkPresetTimer->SetValue(cfg.autoShuffleVisuals ? B_CONTROL_ON : B_CONTROL_OFF);
 
     BCheckBox* chkNotify = new BCheckBox("chk_notify", "Show Notifications", new BMessage(MSG_CFG_NOTIFY));
     chkNotify->SetValue(cfg.showNotifications ? B_CONTROL_ON : B_CONTROL_OFF);
@@ -1084,6 +1116,7 @@ SuperMusicWindow::SuperMusicWindow()
             .AddGlue()
         .End()
         .Add(chkShuffle)
+        .Add(chkPresetTimer)
         .Add(chkNotify)
         .Add(chkTheme)
         .Add(fVisualsCheckbox)
@@ -1310,6 +1343,15 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_shuffle"));
         	if (chk) {
             	cfg.autoShuffle = (chk->Value() == B_CONTROL_ON);
+            	save_config(); 
+        	}
+        	break;
+    	}
+    	
+    	case MSG_CFG_AUTO_PresetTimer: {
+        BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_PresetTimer"));
+        	if (chk) {
+            	cfg.autoShuffleVisuals = (chk->Value() == B_CONTROL_ON);
             	save_config(); 
         	}
         	break;
