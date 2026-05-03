@@ -14,6 +14,7 @@
 -	 optional notifications.
 -	 fade in/out on song change. 
 -	 config manger.
+-	 Visualizer window for supported platforms.
 ### Tested  Haiku OS x86_64  and x86
 
 
