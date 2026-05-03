@@ -37,5 +37,5 @@ cd HaikuSuperMusicThingy
 make release ENABLE_PROJECTM=ON
 ```
 ### Presets for Visualizer Window
--   Download from a huge selection of [presets](https://github.com/projectM-visualizer/projectm?tab=readme-ov-file#presets) and install in SuperMusicThingy config presets folder.<br> I recommend [projectm_presets](http://spiegelmc.com/pub/projectm_presets.zip). Then move to ~/config/settings/SuperMusicThingy/milk_presets/presets folder.
+-   Download from a huge selection of [presets](https://github.com/projectM-visualizer/projectm?tab=readme-ov-file#presets) and install in ~/config/settings/SuperMusicThingy/milk_presets/presets folder.<br> I recommend [projectm_presets](http://spiegelmc.com/pub/projectm_presets.zip). 
 
