@@ -37,10 +37,11 @@ make release ENABLE_PROJECTM=ON
 ### Presets for Visualizer Window
 -   Download from a huge selection of [presets](https://github.com/projectM-visualizer/projectm?tab=readme-ov-file#presets) and install in ~/config/settings/SuperMusicThingy/milk_presets/presets folder.<br> I recommend [projectm_presets](http://spiegelmc.com/pub/projectm_presets.zip). </p>
 
+### Screenshots
 <p align="center">
-  <img width="122" height="250" align=right alt="Image" src="https://github.com/user-attachments/assets/9e54003e-b25c-4361-971d-00115341d9d6" />
-  <img width="122" height="250" align=right alt="Image" src="https://github.com/user-attachments/assets/73c6b4b8-a2a9-401b-8d99-634aa9a11b2c" />
-  <img width="369" height="228" align=right  alt="Image" src="https://github.com/user-attachments/assets/2290681c-05ce-4037-aceb-391171c1e5c7" />
+  <img width="122" height="250" align=left alt="Image" src="https://github.com/user-attachments/assets/9e54003e-b25c-4361-971d-00115341d9d6" />
+  <img width="122" height="250" align=left alt="Image" src="https://github.com/user-attachments/assets/73c6b4b8-a2a9-401b-8d99-634aa9a11b2c" />
+  <img width="369" height="228" align=left  alt="Image" src="https://github.com/user-attachments/assets/2290681c-05ce-4037-aceb-391171c1e5c7" />
 </p>
 
 
