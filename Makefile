@@ -20,10 +20,21 @@ ifeq ($(UNAME_M), x86)
     CXX = g++-x86
     ARCH = x86_gcc2
     LIB_ARCH_DIR = /x86
+ifeq ($(ENABLE_PROJECTM), ON)
+    TPL_FILE := $(NAME)_projectm_x86.tpl
+else
+    TPL_FILE := $(NAME)_x86.tpl
+endif
 else
     CXX = g++
     ARCH = x86_64
     LIB_ARCH_DIR = 
+ifeq ($(ENABLE_PROJECTM), ON)
+    TPL_FILE := $(NAME)_projectm.tpl
+else
+    TPL_FILE := $(NAME).tpl
+endif    
+
 endif
 
 # Set up Pkg-Config Environment
@@ -59,11 +70,7 @@ ifeq ($(ENABLE_PROJECTM), ON)
     CXXFLAGS += $(shell pkg-config --cflags projectM-4)
 endif
 
-ifeq ($(ENABLE_PROJECTM), ON)
-    TPL_FILE := $(NAME)_projectm.tpl
-else
-    TPL_FILE := $(NAME).tpl
-endif
+
 
 # --- 4. Build Targets ---
 .PHONY: build package release clean help setup_dummy
