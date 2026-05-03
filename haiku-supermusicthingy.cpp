@@ -275,12 +275,7 @@ void load_config() {
 void init_mpv() {
         mpv = mpv_create();
         if (!mpv) exit(1);
-        #ifdef __HAIKU__
         mpv_set_option_string(mpv, "ao", "openal");
-        #else
-        mpv_set_option_string(mpv, "ao", "pulse");
-        #endif
-
         mpv_set_option_string(mpv, "input-default-bindings", "yes");
         mpv_set_option_string(mpv, "terminal", "no");
         if (mpv_initialize(mpv) < 0) exit(1);
@@ -331,16 +326,9 @@ void fade_volume(mpv_handle *mpv, double target_vol, double duration_ms) {
 // Save Station to favorites list while listening
 void save_favorite() {
         std::string home = getenv("HOME") ? getenv("HOME") : ".";
-        #ifdef __HAIKU__
         std::string dir = home + "/config/settings/SuperMusicThingy";
         std::string path = dir + "/favorites.txt";
-        #else
-        std::string dir = home + "/.config/SuperMusicThingy";
-        std::string path = dir + "/favorites.txt";
-        #endif
-
         mkdir(dir.c_str(), 0755);
-
         std::string currentUrl = "";
         for(const auto& ch : channels) {
             if(ch.title == currentStation) {
@@ -383,12 +371,7 @@ void save_favorite() {
     
 void play_favorite() {
         std::string home = getenv("HOME") ? getenv("HOME") : ".";
-        #ifdef __HAIKU__
         std::string path = home + "/config/settings/SuperMusicThingy/favorites.txt";
-        #else
-        std::string path = home + "/.config/SuperMusicThingy/favorites.txt";
-        #endif
-
         std::ifstream infile(path);
         std::vector<std::string> favs;
         std::string line;
@@ -401,7 +384,6 @@ void play_favorite() {
         }
 
         std::string url = favs[rand() % favs.size()];
-
         size_t lastSlash = url.find_last_of('/');
         size_t lastDot = url.find_last_of('.');
         if (lastSlash != std::string::npos && lastDot != std::string::npos) {
@@ -478,12 +460,7 @@ void play_specific_url(std::string url) {
 // Delete Station from favorites list while listening
 void delete_favorite() {
         std::string home = getenv("HOME") ? getenv("HOME") : ".";
-        #ifdef __HAIKU__
         std::string path = home + "/config/settings/SuperMusicThingy/favorites.txt";
-        #else
-        std::string path = home + "/.config/SuperMusicThingy/favorites.txt";
-        #endif
-
         std::string currentUrl = "";
         for(const auto& ch : channels) {
             if(ch.title == currentStation) {
@@ -516,12 +493,9 @@ void delete_favorite() {
     
 void play_random() {
         if (channels.empty()) return;
-        double original_vol;
-        
+        double original_vol;        
         mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &original_vol);
         fade_volume(mpv, 0, 300);
-
-
         int idx = rand() % channels.size();
         currentStation = channels[idx].title;
         currentDesc = channels[idx].desc;
@@ -570,14 +544,11 @@ bool is_favorite() {
 
 void set_volume(char direction) {
     double vol;
-    mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &vol);
-    
+    mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &vol);    
     if (direction == '+') vol += 5;
     else if (direction == '-') vol -= 5;
-
     if (vol > 100) vol = 100;
     if (vol < 0) vol = 0;
-
     mpv_set_property(mpv, "volume", MPV_FORMAT_DOUBLE, &vol);
 }
 
@@ -594,14 +565,8 @@ void toggle_mute() {
 void load_random_preset(projectm_handle pm) {
     const char* home = getenv("HOME");
     if (!home) return;
-    #ifdef __HAIKU__
     std::string configPath = std::string(home) + "/config/settings/SuperMusicThingy/milk_presets/";
-    #else
-    std::string configPath = std::string(home) + "/.config/SuperMusicThingy/milk_presets/";
-    #endif
-
     std::vector<std::string> presets;
-
     try {
 
         if (!std::filesystem::exists(configPath)) {
@@ -614,7 +579,6 @@ void load_random_preset(projectm_handle pm) {
                 presets.push_back(entry.path().string());
             }
         }
-
 
         if (presets.empty()) {
             std::cerr << "No presets found in: " << configPath << std::endl;
@@ -723,7 +687,6 @@ int32 VisualsThread(void* data) {
                 projectm_pcm_add_float(pm, floatBuffer, 1024, PROJECTM_STEREO);
             }
         }
-
 
         uint32_t currentTime = SDL_GetTicks();
         if (cfg.autoShuffleVisuals && (currentTime - lastPresetChange >= PRESET_DURATION)) {
@@ -929,7 +892,6 @@ public:
 
     void FrameResized(float width, float height) override {
         BTextView::FrameResized(width, height);
-
         BRect r = Bounds();
         r.InsetBy(2, 2);
         SetTextRect(r);
@@ -976,7 +938,6 @@ SuperMusicWindow::SuperMusicWindow()
 {
     fAlbumArt = nullptr;
 
-
     BFont largeFont(be_bold_font);
     largeFont.SetSize(24.0); 
     BFont smallFont(be_bold_font);
@@ -999,8 +960,6 @@ SuperMusicWindow::SuperMusicWindow()
     fSongView = new SongLabel("song_view");
     fSongView->SetFontAndColor(&smallFont);
     fSongView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
-
-
     
     fquality = new BStringView("quality", "Quality: --");
     fquality->SetFont(&smallFont);
@@ -1024,7 +983,6 @@ SuperMusicWindow::SuperMusicWindow()
     fVolumeSlider->SetValue(100);
     fVolumeSlider->SetTarget(this); 
     fVolumeSlider->SetModificationMessage(new BMessage(MSG_VOL_CHANGE));
-
 
 
     // --- LAYOUT BUILDER FOR PLAYER TAB ---
@@ -1123,7 +1081,6 @@ SuperMusicWindow::SuperMusicWindow()
         .AddGlue() 
     .End();
 
-
     // ==========================================
     // TAB 4: ABOUT VIEW
     // ==========================================
@@ -1174,7 +1131,6 @@ SuperMusicWindow::SuperMusicWindow()
     c6->SetAlignment(B_ALIGN_CENTER);
     c7->SetAlignment(B_ALIGN_CENTER);
 
-
     // 4. Layout
     BLayoutBuilder::Group<>(aboutGroup, B_VERTICAL, 5)
         .SetInsets(20)
@@ -1206,7 +1162,6 @@ SuperMusicWindow::SuperMusicWindow()
         .SetInsets(0)
         .Add(fTabView)
     .End();
-
 
     RefreshFavorites();
     UpdateFavButtons();
@@ -1310,7 +1265,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		break;
 			}
 
-
         // --- SHUFFLE LOGIC ---
         case MSG_SHUFFLE: {
             play_random();
@@ -1401,8 +1355,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
   			ApplyTheme(); 
         	}
         	break;
-    	}
-            
+    	}            
 
         case MSG_UPDATE_ART: {
             BBitmap* newArt = BTranslationUtils::GetBitmap("/tmp/somafm_art.png");
@@ -1500,8 +1453,7 @@ void SuperMusicWindow::RefreshFavorites() {
 
 
 void SuperMusicWindow::UpdateFavButtons() {
-    bool isFav = is_favorite();
-    
+    bool isFav = is_favorite();    
     if (fBtnAddFav) fBtnAddFav->SetEnabled(!isFav); 
     if (fBtnDelFav) fBtnDelFav->SetEnabled(isFav); 
 }
@@ -1599,8 +1551,7 @@ public:
     
  
     
-virtual bool QuitRequested() {
-           	   	
+virtual bool QuitRequested() {           	   	
     	mpvthread_running = false;
         if (mpv) {
             mpv_terminate_destroy(mpv);
@@ -1626,7 +1577,6 @@ int32 mpv_loop_thread(void* data) {
                 win->PostMessage(&msg);
             }
         }
-
 
         mpv_event *event = mpv_wait_event(mpv, 0.05);        
         if (event->event_id == MPV_EVENT_NONE) continue;
@@ -1659,7 +1609,6 @@ bool SuperMusicWindow::QuitRequested() {
     be_app->PostMessage(B_QUIT_REQUESTED);
     return true; 
 }
-
 
 
 int main() {
