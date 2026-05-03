@@ -96,16 +96,20 @@ package: all
 	@[ -n "$(PACKAGE_DIR)" ] || { echo "PACKAGE_DIR is undefined"; exit 1; }
 	rm -rf "./$(PACKAGE_DIR)"
 	mkdir -p $(PACKAGE_DIR)
-	sed -e 's/$$(NAME)/$(NAME)/g' -e 's/$$(VERSION)/$(VERSION)/g' -e 's/$$(ARCH)/$(ARCH)/' -e 's/$$(YEAR)/$(shell date +%Y)/' $(TPL_FILE) > $(PACKAGE_DIR)/.PackageInfo
+	sed -e 's/$$(NAME)/$(NAME)/g' -e 's/$$(VERSION)/$(VERSION)/g' -e 's/$$(ARCH)/$(ARCH)/' -e 's/$$(YEAR)/$(shell date +%Y)/' tpl/$(TPL_FILE) > $(PACKAGE_DIR)/.PackageInfo
 	mkdir -p $(PACKAGE_DIR)/apps
 	mkdir -p $(PACKAGE_DIR)/bin
+ifeq ($(ENABLE_PROJECTM), ON)
+	mkdir -p $(PACKAGE_DIR)/lib
+	cp lib/lib* $(PACKAGE_DIR)/lib
+endif	
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
 	rc -o $(NAME).rsrc $(NAME).rdef 
 	xres -o $(NAME) $(NAME).rsrc  
 	mimeset -f $(NAME)
-	cp $(NAME) $(PACKAGE_DIR)/apps/$(NAME)
-	ln -s ../apps/$(NAME) $(PACKAGE_DIR)/bin/$(NAME)
-	ln -s ../../../../apps/$(NAME) $(PACKAGE_DIR)/data/deskbar/menu/Applications/$(NAME)
+	cp $(NAME) $(PACKAGE_DIR)/apps/
+	ln -s /system/apps/$(NAME) $(PACKAGE_DIR)/bin/$(NAME)
+	ln -s /system/apps/$(NAME) $(PACKAGE_DIR)/data/deskbar/menu/Applications/$(NAME)
 	package create -C $(PACKAGE_DIR) $(NAME)-$(VERSION)-1-$(ARCH).hpkg
 
 clean:
