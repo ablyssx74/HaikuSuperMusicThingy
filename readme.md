@@ -18,7 +18,7 @@
 
 
 
-### Build Latest Haiku SuperMusicThingy 
+### Build Latest Haiku SuperMusicThingy ( No Visualizer Window )
 ```shell
 #Download the source
 git clone https://github.com/ablyssx74/HaikuSuperMusicThingy
