@@ -1717,6 +1717,15 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             		this->PlayStation(item->GetChannel());
         		}
     		}
+    		
+    		BString qStr("Quality: ");
+            qStr << cfg.quality.c_str() << " (" << get_bitrate_text().c_str() << ")";
+            if (fquality) fquality->SetText(qStr.String());
+
+            BString lStr("Listeners: ");
+            lStr << currentListeners.c_str();
+            if (fListenersView) fListenersView->SetText(lStr.String());
+            
     		UpdateFavButtons(); 
     		break;
 		}
@@ -1781,6 +1790,14 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		if (index >= 0) {
         		StationItem* item = (StationItem*)fStationList->ItemAt(index);
         		this->PlayStation(item->GetChannel()); 
+        		
+        	BString qStr("Quality: ");
+            qStr << cfg.quality.c_str() << " (" << get_bitrate_text().c_str() << ")";
+            if (fquality) fquality->SetText(qStr.String());
+
+            BString lStr("Listeners: ");
+            lStr << currentListeners.c_str();
+            if (fListenersView) fListenersView->SetText(lStr.String());
         
         		UpdateFavButtons(); 
     		}
