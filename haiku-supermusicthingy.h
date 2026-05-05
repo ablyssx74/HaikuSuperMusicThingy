@@ -38,6 +38,9 @@ struct Channel {
     std::string url; 
 };
 
+class SongLabel; 
+
+
 class SuperMusicWindow : public BWindow {
 public:
     SuperMusicWindow();
@@ -75,6 +78,9 @@ private:
     BButton*     fShuffleBtn;
     BCheckBox*   fVisualsCheckbox; 
     BListView*   fStationList; 
+    SongLabel*   fDescView;
+
+
     std::map<std::string, BBitmap*> fIconCache;
     
 };

@@ -865,6 +865,12 @@ void SuperMusicWindow::PlayStation(const Channel& chan) {
     currentDesc = chan.desc;
     currentListeners = chan.listeners;
     currentAlbumArtUrl = chan.largeimage;
+    
+    if (Lock()) {
+       fDescView->SetText(currentDesc.c_str());
+        Unlock();
+    }
+    
     if (!currentAlbumArtUrl.empty()) {
         if (fArtCache.count(currentStationID) > 0) {
             if (Lock()) {
@@ -874,7 +880,7 @@ void SuperMusicWindow::PlayStation(const Channel& chan) {
                 Unlock();
             }
         } else {
-            if (Lock()) {
+            if (Lock()) {            	
                 fAlbumArt = nullptr;
                 if (fArtView) ((AlbumArtView*)fArtView)->SetBitmap(nullptr);
                 Unlock();
@@ -1348,13 +1354,17 @@ SuperMusicWindow::SuperMusicWindow()
               B_ASYNCHRONOUS_CONTROLS | B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE)
 {
     fAlbumArt = nullptr;
+    
     BFont largeFont(be_bold_font);
-    largeFont.SetSize(24.0); 
     BFont smallFont(be_bold_font);
+    BFont smallFont2(be_bold_font);
+    
+    largeFont.SetSize(24.0); 
     smallFont.SetSize(12.0); 
-
+	smallFont2.SetSize(10.0);
+	
     fTabView = new BTabView("tab_container");
-    fTabView->SetExplicitMinSize(BSize(345, 645)); 
+    fTabView->SetExplicitMinSize(BSize(345, 665)); 
 
     fTabView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
 
@@ -1368,6 +1378,15 @@ SuperMusicWindow::SuperMusicWindow()
     fStationView = new BStringView("station", "Press Shuffle to Start");
     fStationView->SetFont(&largeFont);
     fStationView->SetAlignment(B_ALIGN_CENTER);
+    
+    // After initializing fStationView and fListenersView
+	fDescView = new SongLabel("description_view");
+	fDescView->SetFontAndColor(&smallFont);
+	fDescView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+	// Set a reasonable height for multiple lines of description
+	fDescView->SetExplicitMinSize(BSize(B_SIZE_UNSET, 60)); 
+
+
 
     fSongView = new SongLabel("song_view");
     fSongView->SetFontAndColor(&smallFont);
@@ -1405,7 +1424,8 @@ SuperMusicWindow::SuperMusicWindow()
     BLayoutBuilder::Group<>(playerGroup, B_VERTICAL, 10)
         .SetInsets(10)
         .Add(fArtView)      
-        .Add(fStationView) 
+        //.Add(fStationView) 
+        .Add(fDescView) 
         .Add(fSongView)
 
         .AddGroup(B_HORIZONTAL, 0) 
@@ -1736,6 +1756,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             if (fStationView) fStationView->SetText(currentStation.c_str());
             if (fSongView) fSongView->SetText("Buffering...");
             
+            if (fDescView) fDescView->SetText(currentDesc.c_str());
+            
             BString qStr("Quality: ");
             qStr << cfg.quality.c_str() << " (" << get_bitrate_text().c_str() << ")";
             if (fquality) fquality->SetText(qStr.String());
@@ -1983,6 +2005,12 @@ void SuperMusicWindow::ApplyTheme() {
                 RecursiveColorApply(tabView, bgVal, txtVal);
             }
         }
+        
+        if (fDescView) {
+    		fDescView->SetViewColor(bgVal);
+    		fDescView->SetFontAndColor(be_plain_font, B_FONT_ALL, &txtVal);
+		}
+  
         
         if (fStationList) {    
    			 fStationList->SetFlags(fStationList->Flags() | B_FRAME_EVENTS);
