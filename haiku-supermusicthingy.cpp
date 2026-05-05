@@ -1680,19 +1680,30 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		UpdateFavButtons(); 
     		break;
 			}
+			
 			case MSG_DEL_FAV: { 
-    		int32 index = fFavList->CurrentSelection();
-    		if (index >= 0) {
-        		StationItem* item = (StationItem*)fFavList->ItemAt(index);
-        		if (item) {           
-            		currentStation = item->GetChannel().title;
-            		delete_favorite();             
-            		RefreshFavorites(); 
-            		UpdateFavButtons(); 
-        		}
-    		}
-    		break;
-		}
+    			int32 index = fFavList->CurrentSelection();
+    			if (index >= 0) {
+        			StationItem* item = (StationItem*)fFavList->ItemAt(index);
+        			if (item) {           
+            // 1. Store the station we want to delete
+            			std::string stationToDelete = item->GetChannel().title;
+            
+            // 2. Call a version of delete that takes a name, 
+            // or temporarily swap and swap back
+            			std::string savedCurrent = currentStation;
+            			currentStation = stationToDelete;
+            			delete_favorite(); 
+            			currentStation = savedCurrent; // Restore what is actually playing
+            
+            // 3. Refresh UI
+            			RefreshFavorites(); 
+            			UpdateFavButtons(); // Now it checks the "Now Playing" station again
+        			}
+    			}
+    			break;
+			}
+
 
 		case MSG_PLAY_FAV: {
     		int32 index = message->GetInt32("index", -1);
