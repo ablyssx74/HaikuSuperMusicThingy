@@ -114,6 +114,7 @@ class SuperMusicWindow;
 enum {
     MSG_SHUFFLE = 'shuf',
     MSG_STOP    = 'stop',
+    MSG_PLAY    = 'play',
     MSG_PAUSE   = 'paus',
     MSG_VOL_UP  = 'v_up',
     MSG_VOL_DN  = 'v_dn',
@@ -130,7 +131,8 @@ enum {
     MSG_CFG_QUALITY      = 'c_qu',
     MSG_CFG_THEME        = 'c_th',
     MSG_PLAY_STATION     = 'plst', 
-    MSG_TOGGLE_VISUALS   = 'tvis'
+    MSG_TOGGLE_VISUALS   = 'tvis',
+    MSG_SHUFFLE_FAVS_CHANGED = 'sfch'
  
 };
 
@@ -146,18 +148,7 @@ void ensure_config_dir() {
     }
 }
 
-struct Config {
-    bool showNotifications = true;
-    bool showVisuals = false;
-    bool autoShuffle = false;
-    bool autoShuffleVisuals = false;
-    bool autoVsync = false;
-    //int defaultVolume = 75;
-    std::string updateTheme = "Dark";
-    std::string quality = "Highest";
-} cfg;
 
-int selectedConfig = 0;
 
 BBitmap* GetVectorIcon(const unsigned char* data, size_t size, float dimensions) {
     BBitmap* icon = new BBitmap(BRect(0, 0, dimensions - 1, dimensions - 1), B_RGBA32);
@@ -320,6 +311,36 @@ const unsigned char kIconStop[] = {
 
 const size_t kIconStopSize = 127;
 
+const unsigned char kIconPause[] = {
+	0x6e, 0x63, 0x69, 0x66, 0x03, 0x04, 0x00, 0x66, 0x05, 0x00, 0x02, 0x00, 0x16, 0x02, 0x00, 0x00,
+	0x00, 0x3c, 0x60, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4c, 0x00, 0x00, 0x48, 0xa0, 0x00,
+	0x00, 0x80, 0xff, 0x28, 0x01, 0x0a, 0x04, 0x30, 0x22, 0x24, 0x22, 0x24, 0x48, 0x30, 0x48, 0x06,
+	0x0a, 0x00, 0x01, 0x00, 0x12, 0x40, 0xaa, 0xaa, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa,
+	0xaa, 0x44, 0xaa, 0xaa, 0x44, 0xaa, 0xaa, 0x01, 0x17, 0x84, 0x22, 0x04, 0x0a, 0x01, 0x01, 0x00,
+	0x12, 0x40, 0xaa, 0xaa, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa, 0xaa, 0x42, 0xaa, 0xaa,
+	0x42, 0xaa, 0xaa, 0x01, 0x17, 0x84, 0x22, 0x04, 0x0a, 0x02, 0x01, 0x00, 0x02, 0x40, 0xaa, 0xaa,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa, 0xaa, 0x42, 0xaa, 0xaa, 0x42, 0xaa, 0xaa, 0x0a,
+	0x00, 0x01, 0x00, 0x12, 0x40, 0xaa, 0xaa, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa, 0xaa,
+	0x4a, 0x2a, 0xaa, 0x44, 0xaa, 0xaa, 0x01, 0x17, 0x84, 0x22, 0x04, 0x0a, 0x01, 0x01, 0x00, 0x12,
+	0x40, 0xaa, 0xaa, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa, 0xaa, 0x4a, 0x00, 0x00, 0x42,
+	0xaa, 0xaa, 0x01, 0x17, 0x84, 0x22, 0x04, 0x0a, 0x02, 0x01, 0x00, 0x02, 0x40, 0xaa, 0xaa, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa, 0xaa, 0x4a, 0x00, 0x00, 0x42, 0xaa, 0xaa
+};
+
+const size_t kIconPauseSize = 206;
+
+const unsigned char kIconPlay[] = {
+	0x6e, 0x63, 0x69, 0x66, 0x03, 0x04, 0x00, 0x66, 0x05, 0x00, 0x02, 0x00, 0x16, 0x02, 0x00, 0x00,
+	0x00, 0x3c, 0x60, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4c, 0x00, 0x00, 0x48, 0xa0, 0x00,
+	0x00, 0x80, 0xff, 0x28, 0x01, 0x0a, 0x03, 0x46, 0x35, 0x24, 0xb3, 0xcb, 0x24, 0x48, 0x03, 0x0a,
+	0x00, 0x01, 0x00, 0x12, 0x40, 0xaa, 0xaa, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa, 0xaa,
+	0x44, 0xaa, 0xaa, 0x44, 0xaa, 0xaa, 0x01, 0x17, 0x84, 0x22, 0x04, 0x0a, 0x01, 0x01, 0x00, 0x12,
+	0x40, 0xaa, 0xaa, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa, 0xaa, 0x42, 0xaa, 0xaa, 0x42,
+	0xaa, 0xaa, 0x01, 0x17, 0x84, 0x22, 0x04, 0x0a, 0x02, 0x01, 0x00, 0x02, 0x40, 0xaa, 0xaa, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa, 0xaa, 0x42, 0xaa, 0xaa, 0x42, 0xaa, 0xaa
+};
+
+const size_t kIconPlaySize = 126;
 
 mpv_handle *mpv = nullptr;
 std::vector<Channel> channels;
@@ -385,7 +406,7 @@ void fetch_channels() {
                         ch.value("id", ""),
                         ch.value("description", ""),
                         ch.value("listeners", "0"),
-                        ch.value("largeimage", ""),
+                        ch.value("xlimage", ""),
                         ch.value("image", "")
                     });
                 }
@@ -481,6 +502,7 @@ public:
         MakeSelectable(false);
         SetWordWrap(true);
         SetAlignment(B_ALIGN_CENTER);
+        
    
         SetInsets(2, 2, 2, 2); 
         SetExplicitMinSize(BSize(B_SIZE_UNSET, 50));
@@ -515,6 +537,10 @@ class AlbumArtView : public BView {
 public:
     AlbumArtView() : BView("art_view", B_WILL_DRAW | B_FULL_UPDATE_ON_RESIZE) {
         fCurrentBitmap = nullptr;
+    	this->SetExplicitMinSize(BSize(300, 300));
+    	this->SetExplicitMaxSize(BSize(300, 300));
+    	this->SetExplicitPreferredSize(BSize(300, 300)); 
+        
     }
 
     void SetBitmap(BBitmap* bitmap) {
@@ -522,16 +548,31 @@ public:
         Invalidate(); 
     }
 
-    virtual void Draw(BRect updateRect) {
-        if (fCurrentBitmap) {
-            SetDrawingMode(B_OP_ALPHA);
-            DrawBitmap(fCurrentBitmap, Bounds());
-            SetDrawingMode(B_OP_COPY); // Reset
-        } else {
-            SetHighColor(30, 30, 30);
-            FillRect(Bounds());
-        }
-    }
+	virtual void Draw(BRect updateRect) {
+    if (fCurrentBitmap) {
+        SetHighColor(30, 30, 30);
+        FillRect(Bounds());
+        SetDrawingMode(B_OP_ALPHA);
+        DrawBitmap(fCurrentBitmap, fCurrentBitmap->Bounds(), Bounds(), B_FILTER_BITMAP_BILINEAR);        
+        SetDrawingMode(B_OP_COPY); 
+    } else {
+        	SetHighColor(30, 30, 30);
+        	FillRect(Bounds());
+        	SetHighColor(200, 200, 200);
+        
+        	const char* text = "Press Play or Shuffle";
+
+        	font_height fh;
+        	GetFontHeight(&fh);
+        	float textWidth = StringWidth(text);
+
+        	float x = (Bounds().Width() - textWidth) / 2;
+        	float y = (Bounds().Height() / 2) + (fh.ascent / 2) - (fh.descent / 2);
+
+        	DrawString(text, BPoint(x, y));
+    	}
+	}
+
 
 private:
     BBitmap* fCurrentBitmap;
@@ -574,7 +615,19 @@ public:
 };
 
 
+struct Config {
+    bool showNotifications = true;
+    bool showVisuals = false;
+    bool autoShuffle = false;
+    bool autoShuffleVisuals = false;
+    bool autoVsync = false;
+    bool shuffleFavsOnly = false;
+    //int defaultVolume = 75;
+    std::string updateTheme = "Dark";
+    std::string quality = "Highest";
+} cfg;
 
+int selectedConfig = 0;
 
 
 void save_config() {
@@ -584,6 +637,7 @@ void save_config() {
     j["showNotifications"] = cfg.showNotifications;
     j["autoShuffle"] = cfg.autoShuffle;
     j["autoShuffleVisuals"] = cfg.autoShuffleVisuals;
+    j["shuffleFavsOnly"] = cfg.shuffleFavsOnly;
     j["autoVsync"] = cfg.autoVsync;
     j["showVisuals"] = cfg.showVisuals;
     BPath path;
@@ -613,7 +667,8 @@ void load_config() {
                 cfg.autoShuffle = j.value("autoShuffle", false);
                 cfg.autoShuffleVisuals = j.value("autoShuffleVisuals", false);
                 cfg.autoVsync = j.value("autoVsync", false);
-                cfg.showVisuals = j.value("showVisuals", false);                
+                cfg.showVisuals = j.value("showVisuals", false);   
+                cfg.shuffleFavsOnly = j.value("shuffleFavsOnly", false);              
             } catch(...) {
 
             }
@@ -819,7 +874,7 @@ void play_favorite() {
                 currentStationID = ch.id; 
                 currentDesc = ch.desc;
                 currentListeners = ch.listeners;
-                currentAlbumArtUrl = ch.largeimage;
+                currentAlbumArtUrl = ch.xlimage;
 
                 if (!currentAlbumArtUrl.empty()) {
                     if (gGuiWindow && gGuiWindow->fArtCache.count(currentStationID) > 0) {
@@ -864,7 +919,7 @@ void SuperMusicWindow::PlayStation(const Channel& chan) {
     currentStationID = chan.id; 
     currentDesc = chan.desc;
     currentListeners = chan.listeners;
-    currentAlbumArtUrl = chan.largeimage;
+    currentAlbumArtUrl = chan.xlimage;
     
     if (Lock()) {
        fDescView->SetText(currentDesc.c_str());
@@ -957,7 +1012,7 @@ void play_random() {
     currentDesc = chan.desc;
     currentListeners = chan.listeners;
     currentSong = "Buffering...";
-    currentAlbumArtUrl = chan.largeimage;
+    currentAlbumArtUrl = chan.xlimage;
 
     if (!currentAlbumArtUrl.empty()) {
         if (gGuiWindow && gGuiWindow->fArtCache.count(currentStationID) > 0) {
@@ -1316,6 +1371,7 @@ void SuperMusicWindow::StopVisuals() {
 
 
 
+
 class VolumeSlider : public BSlider {
 public:
     VolumeSlider(const char* name, const char* label, BMessage* message, 
@@ -1342,11 +1398,13 @@ public:
 
 void SuperMusicWindow::UpdateStatus(const char* station, const char* song) {
     if (Lock()) {
-        fStationView->SetText(station);
+        fStationView->SetText("");
         fSongView->SetText(song);
         Unlock();
     }
 }
+
+
 
 
 SuperMusicWindow::SuperMusicWindow()
@@ -1359,12 +1417,12 @@ SuperMusicWindow::SuperMusicWindow()
     BFont smallFont(be_bold_font);
     BFont smallFont2(be_bold_font);
     
-    largeFont.SetSize(24.0); 
+    largeFont.SetSize(18.0); 
     smallFont.SetSize(12.0); 
 	smallFont2.SetSize(10.0);
 	
     fTabView = new BTabView("tab_container");
-    fTabView->SetExplicitMinSize(BSize(345, 665)); 
+    fTabView->SetExplicitMinSize(BSize(345, 685)); 
 
     fTabView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
 
@@ -1375,36 +1433,44 @@ SuperMusicWindow::SuperMusicWindow()
     playerGroup->SetName("Radio"); 
 
     // Text Labels
-    fStationView = new BStringView("station", "Press Shuffle to Start");
+    fStationView = new BStringView("", "Press Play or Shuffle");
     fStationView->SetFont(&largeFont);
-    fStationView->SetAlignment(B_ALIGN_CENTER);
+    fStationView->SetAlignment(B_ALIGN_CENTER);      
     
-    // After initializing fStationView and fListenersView
+    
 	fDescView = new SongLabel("description_view");
 	fDescView->SetFontAndColor(&smallFont);
+	fDescView->SetFont(&smallFont); 
 	fDescView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
-	// Set a reasonable height for multiple lines of description
 	fDescView->SetExplicitMinSize(BSize(B_SIZE_UNSET, 60)); 
-
-
 
     fSongView = new SongLabel("song_view");
     fSongView->SetFontAndColor(&smallFont);
     fSongView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
     
-    fquality = new BStringView("quality", "Quality: --");
+    fquality = new BStringView("quality", "");
     fquality->SetFont(&smallFont);
     
-    fListenersView = new BStringView("listeners", "Listeners: --");
+    fListenersView = new BStringView("listeners", "");
     fListenersView->SetFont(&smallFont);
     
     // Album Art
     fArtView = new AlbumArtView();
-    fArtView->SetExplicitMinSize(BSize(300, 300)); 
+	fArtView->SetExplicitSize(BSize(300, 300)); 
+    fArtView->SetExplicitMinSize(BSize(300, 300));
+	fArtView->SetExplicitMaxSize(BSize(300, 300));
     
     BBitmap* heartIcon = GetVectorIcon(kIconFav, kIconFavSize, 40);
 	fBtnAddFav = new IconButton("btn_add_fav", heartIcon, new BMessage(MSG_ADD_FAV));
 	fBtnAddFav->SetExplicitSize(BSize(40, 40));
+	
+	BBitmap* pauseIcon = GetVectorIcon(kIconPause, kIconPauseSize, 40);
+    IconButton* pauseBtn = new IconButton("btn_pause", pauseIcon, new BMessage(MSG_PAUSE));
+	pauseBtn->SetExplicitSize(BSize(75, 75)); 
+	
+	BBitmap* playIcon = GetVectorIcon(kIconPlay, kIconPlaySize, 40);
+    IconButton* playBtn = new IconButton("btn_play", playIcon, new BMessage(MSG_PLAY));
+	playBtn->SetExplicitSize(BSize(75, 75)); 
     
     BBitmap* stopIcon = GetVectorIcon(kIconStop, kIconStopSize, 40);
     IconButton* stopBtn = new IconButton("btn_stop", stopIcon, new BMessage(MSG_STOP));
@@ -1427,7 +1493,7 @@ SuperMusicWindow::SuperMusicWindow()
         //.Add(fStationView) 
         .Add(fDescView) 
         .Add(fSongView)
-
+		.AddGlue()
         .AddGroup(B_HORIZONTAL, 0) 
             .AddGroup(B_VERTICAL, 0) 
                 .Add(fListenersView)
@@ -1443,6 +1509,8 @@ SuperMusicWindow::SuperMusicWindow()
         .Add(fVolumeSlider)
         .AddGroup(B_HORIZONTAL, 10)
             .Add(stopBtn)
+            .Add(pauseBtn)
+            .Add(playBtn)
             .Add(fShuffleBtn)
         .End();
 
@@ -1503,6 +1571,12 @@ SuperMusicWindow::SuperMusicWindow()
     "Enable Visualizer", new BMessage(MSG_TOGGLE_VISUALS));
     fVisualsCheckbox->SetValue(cfg.showVisuals ? B_CONTROL_ON : B_CONTROL_OFF);
     
+    
+	fShuffleFavsCheckbox = new BCheckBox("shuffle_favs", "Shuffle only favorites", 
+    new BMessage(MSG_SHUFFLE_FAVS_CHANGED));
+	fShuffleFavsCheckbox->SetValue(cfg.shuffleFavsOnly ? B_CONTROL_ON : B_CONTROL_OFF);
+
+    
     BCheckBox* chkShuffle = new BCheckBox("chk_shuffle", "Auto Shuffle On Start", new BMessage(MSG_CFG_AUTO_SHUFFLE));
     chkShuffle->SetValue(cfg.autoShuffle ? B_CONTROL_ON : B_CONTROL_OFF);    
     
@@ -1514,6 +1588,8 @@ SuperMusicWindow::SuperMusicWindow()
     
     BCheckBox* chkTheme = new BCheckBox("chk_theme", "Dark Theme", new BMessage(MSG_CFG_THEME));
     chkTheme->SetValue(cfg.updateTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);
+    
+       
 
     // --- Layout ---
     BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 10)
@@ -1524,6 +1600,7 @@ SuperMusicWindow::SuperMusicWindow()
             .AddGlue()
         .End()
         .Add(chkShuffle)
+        .Add(fShuffleFavsCheckbox)
         .Add(chkPresetTimer)
         .Add(chkNotify)
         .Add(chkTheme)
@@ -1682,6 +1759,33 @@ void SuperMusicWindow::SendNotification(const char* songTitle) {
     notify.Send();
 }
 
+void SuperMusicWindow::UpdateUI() {
+    //if (fStationView) fStationView->SetText(currentStation.c_str());
+    
+    BFont smallFont(be_bold_font);
+    smallFont.SetSize(12.0);
+    
+    
+    if (fSongView) {
+        fSongView->SetText("Buffering...");
+        fSongView->SetFontAndColor(&smallFont); 
+    }
+
+    if (fDescView) {
+        fDescView->SetText(currentDesc.c_str());
+        fDescView->SetFontAndColor(&smallFont);
+    }
+
+    BString qStr("Quality: ");
+    qStr << cfg.quality.c_str() << " (" << get_bitrate_text().c_str() << ")";
+    if (fquality) fquality->SetText(qStr.String());
+
+    BString lStr("Listeners: ");
+    lStr << currentListeners.c_str();
+    if (fListenersView) fListenersView->SetText(lStr.String());
+
+    UpdateFavButtons();
+}
 
 
 void SuperMusicWindow::MessageReceived(BMessage* message)
@@ -1706,19 +1810,15 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     			if (index >= 0) {
         			StationItem* item = (StationItem*)fFavList->ItemAt(index);
         			if (item) {           
-            // 1. Store the station we want to delete
-            			std::string stationToDelete = item->GetChannel().title;
-            
-            // 2. Call a version of delete that takes a name, 
-            // or temporarily swap and swap back
+            			std::string stationToDelete = item->GetChannel().title;            
+
             			std::string savedCurrent = currentStation;
             			currentStation = stationToDelete;
             			delete_favorite(); 
-            			currentStation = savedCurrent; // Restore what is actually playing
-            
-            // 3. Refresh UI
+            			currentStation = savedCurrent;             
+
             			RefreshFavorites(); 
-            			UpdateFavButtons(); // Now it checks the "Now Playing" station again
+            			UpdateFavButtons(); 
         			}
     			}
     			break;
@@ -1749,26 +1849,22 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		UpdateFavButtons(); 
     		break;
 		}
+		
+		case MSG_SHUFFLE_FAVS_CHANGED: {
+    		cfg.shuffleFavsOnly = (fShuffleFavsCheckbox->Value() == B_CONTROL_ON);
+    		save_config(); 
+    		break;
+		}
 
-
-        case MSG_SHUFFLE: {
-            play_random();
-            if (fStationView) fStationView->SetText(currentStation.c_str());
-            if (fSongView) fSongView->SetText("Buffering...");
-            
-            if (fDescView) fDescView->SetText(currentDesc.c_str());
-            
-            BString qStr("Quality: ");
-            qStr << cfg.quality.c_str() << " (" << get_bitrate_text().c_str() << ")";
-            if (fquality) fquality->SetText(qStr.String());
-
-            BString lStr("Listeners: ");
-            lStr << currentListeners.c_str();
-            if (fListenersView) fListenersView->SetText(lStr.String());
-            
-            UpdateFavButtons(); 
-            break;
-        }   
+		case MSG_SHUFFLE: {
+    		if (cfg.shuffleFavsOnly) {
+        		play_favorite();
+    		} else {
+        		play_random();
+    		}
+    		this->UpdateUI();
+    		break;
+		} 
             
         case MSG_UPDATE_SONG: {
             const char* song = message->GetString("song", "Unknown");
@@ -1778,16 +1874,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
    			 }
             
             break;
-        }        
-        
-        case MSG_CFG_AUTO_SHUFFLE: {
-        BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_shuffle"));
-        	if (chk) {
-            	cfg.autoShuffle = (chk->Value() == B_CONTROL_ON);
-            	save_config(); 
-        	}
-        	break;
-    	}
+        }              
     	
     	case MSG_CFG_AUTO_PresetTimer: {
         BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_PresetTimer"));
@@ -1822,6 +1909,26 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             if (fListenersView) fListenersView->SetText(lStr.String());
         
         		UpdateFavButtons(); 
+    		}
+    		break;
+		}
+
+		case MSG_PLAY: { 
+    		if (fStationList->CountItems() > 0) {
+        		StationItem* item = (StationItem*)fStationList->ItemAt(0);        
+        		if (item) {
+            		this->PlayStation(item->GetChannel());             
+            		BString qStr("Quality: ");
+            		qStr << cfg.quality.c_str() << " (" << get_bitrate_text().c_str() << ")";
+            		if (fquality) fquality->SetText(qStr.String());
+
+            		BString lStr("Listeners: ");
+            		lStr << currentListeners.c_str();
+            		if (fListenersView) fListenersView->SetText(lStr.String());
+        
+            		UpdateFavButtons();            
+            		fStationList->Select(0);
+        		}
     		}
     		break;
 		}
@@ -1882,7 +1989,29 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             mpv_command_string(mpv, "stop");
             if (fSongView) fSongView->SetText("Stopped");
             break;
+            
+		case MSG_PAUSE: {
+    		mpv_command_string(mpv, "cycle pause");
+			const char* song = message->GetString("song", "Unknown");
+    		int is_paused = 0;
+    		mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &is_paused);
 
+    		if (fSongView) {
+        		if (is_paused) {
+            		fSongView->SetText("Paused");
+        		} else {
+            		char* current_title = mpv_get_property_string(mpv, "media-title");
+            		if (current_title) {
+                		song = current_title; 
+                		mpv_free(current_title);
+            		}
+            		fSongView->SetText(song);
+        		}
+    		}
+    		break;
+		}
+                
+    		
         case MSG_VOL_CHANGE: {
             if (fVolumeSlider) {
                 int32 value = fVolumeSlider->Value();
@@ -1976,7 +2105,6 @@ public:
             else 
                 txt = {0, 0, 0, 255};
         }
-
         owner->SetHighColor(txt);
         owner->MovePenTo(frame.left + 5, frame.bottom - 3); 
         owner->DrawString(Text());
@@ -1996,6 +2124,9 @@ void SuperMusicWindow::ApplyTheme() {
         txtVal = ui_color(B_PANEL_TEXT_COLOR);
     }
 
+    BFont boldFont(be_bold_font);
+    boldFont.SetSize(12.0);
+
     if (Lock()) {
         if (fTabView) {
             fTabView->SetViewColor(bgVal);
@@ -2006,10 +2137,17 @@ void SuperMusicWindow::ApplyTheme() {
             }
         }
         
-        if (fDescView) {
+	    if (fDescView) {
     		fDescView->SetViewColor(bgVal);
-    		fDescView->SetFontAndColor(be_plain_font, B_FONT_ALL, &txtVal);
+    		fDescView->SetFontAndColor(&boldFont, B_FONT_ALL, &txtVal);
+    		fDescView->Invalidate();
 		}
+		
+		if (fSongView) {
+			fSongView->SetViewColor(bgVal);
+        	fSongView->SetFontAndColor(&boldFont, B_FONT_ALL, &txtVal);
+        	fSongView->Invalidate();
+    	}
   
         
         if (fStationList) {    
@@ -2041,9 +2179,6 @@ void SuperMusicWindow::ApplyTheme() {
 }
 
 
-
-
-
 void SuperMusicWindow::RefreshFavorites() {
     if (!fFavList) return;
     fFavList->MakeEmpty();
@@ -2062,8 +2197,6 @@ void SuperMusicWindow::RefreshFavorites() {
                     std::string chUrl = BASE_URL + ch.id + ".pls";
                     if (chUrl == line) {
                         StationItem* item = new StationItem(ch);
-                        
-                        // Check if the icon was already downloaded
                         if (fIconCache.count(ch.id) > 0) {
                             item->SetIcon(new BBitmap(fIconCache[ch.id]));
                         }
@@ -2090,8 +2223,6 @@ void SuperMusicWindow::UpdateFavButtons() {
         fBtnAddFav->SetEnabled(true); 
     }
 }
-
-
 
 
 
@@ -2153,11 +2284,9 @@ public:
     	
     	if (cfg.autoShuffle) {
         gGuiWindow->PostMessage(MSG_SHUFFLE);
-    	}
-    	
-    }
-    
- 
+    }    	
+}
+     
     
 virtual bool QuitRequested() {           	   	
     	mpvthread_running = false;
@@ -2212,9 +2341,13 @@ int32 mpv_loop_thread(void* data) {
 
 
 bool SuperMusicWindow::QuitRequested() {
+    if (mpv) {
+        mpv_command_string(mpv, "quit");
+    }
     StopVisuals();
-    snooze(50000); 
+    snooze(100000); 
     be_app->PostMessage(B_QUIT_REQUESTED);
+    
     return true; 
 }
 

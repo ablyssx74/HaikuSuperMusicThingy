@@ -33,7 +33,7 @@ struct Channel {
     std::string id;
     std::string desc;
     std::string listeners;
-    std::string largeimage;
+    std::string xlimage;
     std::string image;
     std::string url; 
 };
@@ -57,6 +57,7 @@ public:
     void PlayStation(const Channel& chan);
     void PopulateStationList(); 
     void DownloadStationIcons(); 
+    bool shuffleFavsOnly;
     
     BBitmap*     fAlbumArt;
     BView*       fArtView;
@@ -77,8 +78,10 @@ private:
     BSlider*     fVolumeSlider;
     BButton*     fShuffleBtn;
     BCheckBox*   fVisualsCheckbox; 
+    BCheckBox*   fShuffleFavsCheckbox; 
     BListView*   fStationList; 
     SongLabel*   fDescView;
+    void 		 UpdateUI(); 
 
 
     std::map<std::string, BBitmap*> fIconCache;
