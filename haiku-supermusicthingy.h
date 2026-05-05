@@ -21,6 +21,22 @@
 #include <ScrollView.h> 
 #include <TextView.h> 
 #include <CheckBox.h>
+#include <map>
+#include <string>
+#include <ListView.h>
+#include <Bitmap.h>
+#include <vector>
+
+
+struct Channel {
+    std::string title;
+    std::string id;
+    std::string desc;
+    std::string listeners;
+    std::string largeimage;
+    std::string image;
+    std::string url; 
+};
 
 class SuperMusicWindow : public BWindow {
 public:
@@ -35,12 +51,16 @@ public:
     void StartVisuals();
     void StopVisuals();
     virtual bool QuitRequested();
+    void PlayStation(const Channel& chan);
+    void PopulateStationList(); 
+    void DownloadStationIcons(); 
     
     BBitmap*     fAlbumArt;
     BView*       fArtView;
+    std::map<std::string, BBitmap*> fArtCache; 
 
 private:
-
+	
     BTabView*    fTabView;
     BListView*   fFavList;
     
@@ -54,6 +74,9 @@ private:
     BSlider*     fVolumeSlider;
     BButton*     fShuffleBtn;
     BCheckBox*   fVisualsCheckbox; 
+    BListView*   fStationList; 
+    std::map<std::string, BBitmap*> fIconCache;
+    
 };
 
 

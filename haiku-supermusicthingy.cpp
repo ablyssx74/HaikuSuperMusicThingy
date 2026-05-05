@@ -15,7 +15,12 @@
 #include <MenuItem.h>
 #include <MenuField.h>
 #include <CheckBox.h>
-#include <TextView.h> 
+#include <TextView.h>
+#include <map>
+#include <string>
+#include <ListView.h>
+#include <IconUtils.h>
+
 
 // --- Haiku Storage Kit ---
 #include <Path.h>
@@ -124,6 +129,7 @@ enum {
     MSG_CFG_NOTIFY       = 'c_nt',
     MSG_CFG_QUALITY      = 'c_qu',
     MSG_CFG_THEME        = 'c_th',
+    MSG_PLAY_STATION     = 'plst', 
     MSG_TOGGLE_VISUALS   = 'tvis'
  
 };
@@ -153,34 +159,167 @@ struct Config {
 
 int selectedConfig = 0;
 
-void download_art(const std::string& url) {
-    if (url.empty()) return;
-    
-    CURL* curl = curl_easy_init();
-    if(curl) {
-        FILE* fp = fopen("/tmp/somafm_art.png", "wb");     
-        if (fp) {
-            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, NULL);
-            curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
-            curl_easy_perform(curl);
-            fclose(fp);
-            if (gGuiWindow) {
-                gGuiWindow->PostMessage(new BMessage(MSG_UPDATE_ART));
+BBitmap* GetVectorIcon(const unsigned char* data, size_t size, float dimensions) {
+    BBitmap* icon = new BBitmap(BRect(0, 0, dimensions - 1, dimensions - 1), B_RGBA32);
+    if (BIconUtils::GetVectorIcon(data, size, icon) != B_OK) {
+        delete icon;
+        return nullptr;
+    }
+    return icon;
+}
+
+class IconButton : public BButton {
+public:
+    IconButton(const char* name, BBitmap* icon, BMessage* msg)
+        : BButton(name, "", msg), fIcon(icon), fIsFavorite(false) 
+    {
+        SetViewColor(B_TRANSPARENT_COLOR);
+    }
+
+    void SetFavorite(bool fav) {
+        if (fIsFavorite != fav) {
+            fIsFavorite = fav;
+            Invalidate(); 
+        }
+    }
+
+void Draw(BRect updateRect) override {
+    if (fIcon) {
+        BRect b = Bounds();
+        float x = (b.Width() - fIcon->Bounds().Width()) / 2.0f;
+        float y = (b.Height() - fIcon->Bounds().Height()) / 2.0f;
+
+        if (Value() == B_CONTROL_ON) {
+            x += 1.0f;
+            y += 1.0f;
+        }
+
+        bool isFavBtn = (strcmp(Name(), "btn_add_fav") == 0);
+
+        if (isFavBtn) {
+            if (fIsFavorite) {
+                // Heart is a favorite: Solid/Bright
+                SetDrawingMode(B_OP_ALPHA);
+                SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+            } else {
+                // Heart is NOT a favorite: Grayed/Blended
+                SetDrawingMode(B_OP_BLEND);
+            }
+        } else {
+            // Standard buttons (Stop/Shuffle): Always Solid/Bright
+            SetDrawingMode(B_OP_ALPHA);
+            SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+            
+            // Optional: If the button is actually disabled, then blend it
+            if (!IsEnabled()) {
+                SetDrawingMode(B_OP_BLEND);
             }
         }
-        curl_easy_cleanup(curl);
+        
+        DrawBitmap(fIcon, BPoint(x, y));
+        SetDrawingMode(B_OP_COPY);
     }
 }
 
 
-struct Channel {
-    std::string title;
-    std::string id;
-    std::string desc;
-    std::string listeners;
-    std::string largeimage;
+private:
+    BBitmap* fIcon;
+    bool fIsFavorite;
 };
+
+const unsigned char kIconShuffle[] = {
+	0x6e, 0x63, 0x69, 0x66, 0x03, 0x04, 0x00, 0x66, 0x05, 0x00, 0x02, 0x00, 0x16, 0x02, 0x00, 0x00,
+	0x00, 0x3c, 0x60, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4c, 0x00, 0x00, 0x48, 0xa0, 0x00,
+	0x00, 0x80, 0xff, 0x28, 0x04, 0x04, 0x04, 0x3e, 0x40, 0x40, 0x38, 0x40, 0x3e, 0x40, 0x32, 0x40,
+	0x2c, 0x2a, 0x32, 0x2a, 0x26, 0x2a, 0x24, 0x04, 0x04, 0x3e, 0x40, 0x2a, 0x38, 0x2a, 0x3e, 0x2a,
+	0x32, 0x2a, 0x2c, 0x40, 0x32, 0x40, 0x26, 0x40, 0x24, 0x0a, 0x03, 0x40, 0x22, 0x40, 0x32, 0x48,
+	0x2a, 0x0a, 0x03, 0x40, 0x38, 0x40, 0x48, 0x48, 0x40, 0x09, 0x0a, 0x00, 0x01, 0x01, 0x12, 0x40,
+	0xaa, 0xaa, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa, 0xaa, 0x44, 0xaa, 0xaa, 0x44, 0xaa,
+	0xaa, 0x01, 0x17, 0x88, 0x22, 0x04, 0x0a, 0x00, 0x01, 0x00, 0x12, 0x40, 0xaa, 0xaa, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x40, 0xaa, 0xaa, 0x44, 0xaa, 0xaa, 0x44, 0xaa, 0xaa, 0x01, 0x17, 0x88,
+	0x22, 0x04, 0x0a, 0x00, 0x02, 0x02, 0x03, 0x12, 0x40, 0xaa, 0xaa, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x40, 0xaa, 0xaa, 0x44, 0xaa, 0xaa, 0x44, 0xaa, 0xaa, 0x01, 0x17, 0x84, 0x02, 0x04, 0x0a,
+	0x01, 0x02, 0x02, 0x03, 0x12, 0x40, 0xaa, 0xaa, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa,
+	0xaa, 0x42, 0xaa, 0xaa, 0x42, 0xaa, 0xaa, 0x01, 0x17, 0x84, 0x02, 0x04, 0x0a, 0x01, 0x01, 0x00,
+	0x12, 0x40, 0xaa, 0xaa, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa, 0xaa, 0x42, 0xaa, 0xaa,
+	0x42, 0xaa, 0xaa, 0x01, 0x17, 0x88, 0x22, 0x04, 0x0a, 0x02, 0x01, 0x00, 0x12, 0x40, 0xaa, 0xaa,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa, 0xaa, 0x42, 0xaa, 0xaa, 0x42, 0xaa, 0xaa, 0x01,
+	0x17, 0x84, 0x22, 0x04, 0x0a, 0x01, 0x01, 0x01, 0x12, 0x40, 0xaa, 0xaa, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x40, 0xaa, 0xaa, 0x42, 0xaa, 0xaa, 0x42, 0xaa, 0xaa, 0x01, 0x17, 0x88, 0x22, 0x04,
+	0x0a, 0x02, 0x01, 0x01, 0x12, 0x40, 0xaa, 0xaa, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa,
+	0xaa, 0x42, 0xaa, 0xaa, 0x42, 0xaa, 0xaa, 0x01, 0x17, 0x84, 0x22, 0x04, 0x0a, 0x02, 0x02, 0x02,
+	0x03, 0x02, 0x40, 0xaa, 0xaa, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa, 0xaa, 0x42, 0xaa,
+	0xaa, 0x42, 0xaa, 0xaa
+};
+
+const size_t kIconShuffleSize = 340;
+
+const unsigned char kIconFav[] = {
+	0x6e, 0x63, 0x69, 0x66, 0x07, 0x02, 0x00, 0x16, 0x02, 0xba, 0x75, 0x56, 0x34, 0xef, 0xed, 0xb5,
+	0x1a, 0xee, 0xba, 0x53, 0x4a, 0x4b, 0x2e, 0xca, 0x4a, 0xd8, 0x00, 0x00, 0xff, 0xff, 0x00, 0x05,
+	0x00, 0x02, 0x00, 0x06, 0x02, 0xbc, 0xd3, 0x35, 0xba, 0x45, 0xf3, 0x00, 0x00, 0x00, 0x3d, 0x53,
+	0xcd, 0x49, 0xf1, 0xe7, 0x4c, 0xb7, 0x0e, 0x00, 0xff, 0x00, 0x00, 0xff, 0xff, 0x66, 0x66, 0x02,
+	0x00, 0x06, 0x02, 0xbc, 0xd3, 0x34, 0xba, 0x45, 0xf3, 0x00, 0x00, 0x00, 0x3d, 0x53, 0xcd, 0x49,
+	0x11, 0xb3, 0x4c, 0xa0, 0x81, 0x00, 0xff, 0x00, 0x00, 0xff, 0xff, 0x66, 0x66, 0x02, 0x00, 0x06,
+	0x02, 0xb6, 0x2f, 0x3c, 0xb7, 0x71, 0xa3, 0x37, 0xa4, 0x0f, 0xb6, 0x10, 0xfb, 0x48, 0xc8, 0xbc,
+	0x47, 0x16, 0xd8, 0x00, 0xff, 0x00, 0x00, 0xff, 0xff, 0x66, 0x66, 0x02, 0x00, 0x06, 0x02, 0x37,
+	0x6c, 0x19, 0x3a, 0x32, 0x54, 0xba, 0x52, 0x7d, 0x37, 0x3c, 0xb4, 0x4a, 0x0b, 0x89, 0x4a, 0x6e,
+	0x10, 0x00, 0xff, 0x00, 0x00, 0xff, 0xbd, 0x00, 0x00, 0x02, 0x00, 0x06, 0x02, 0x00, 0x00, 0x00,
+	0xba, 0x47, 0x16, 0x3a, 0x68, 0x6f, 0x00, 0x00, 0x00, 0x4a, 0x22, 0xd2, 0x49, 0xd5, 0xd6, 0x00,
+	0xff, 0x00, 0x00, 0xff, 0xff, 0x66, 0x66, 0x07, 0x06, 0x04, 0xba, 0xbc, 0x85, 0xce, 0x13, 0xca,
+	0x40, 0xcc, 0xf8, 0xcc, 0x55, 0xc7, 0xa6, 0xcc, 0xc0, 0xcb, 0x97, 0xcc, 0x2f, 0xc6, 0x3c, 0xc6,
+	0xea, 0xc4, 0x7f, 0x06, 0x10, 0xef, 0xfb, 0xff, 0xfb, 0xb8, 0xb3, 0xb4, 0xb4, 0xb9, 0xfd, 0xb4,
+	0x25, 0xb8, 0x39, 0xb4, 0xe9, 0xb7, 0x69, 0xb5, 0x7c, 0xb7, 0xca, 0xb5, 0x2c, 0xb7, 0x69, 0xb5,
+	0x7c, 0xb7, 0x7b, 0xb5, 0x6e, 0xb4, 0xe1, 0xb7, 0x2f, 0xb4, 0xe1, 0xb7, 0x2f, 0xae, 0x67, 0xbb,
+	0xde, 0xbc, 0x1a, 0xcd, 0x82, 0xb9, 0xc3, 0xca, 0x9a, 0xbc, 0x1a, 0xcd, 0x82, 0xbc, 0x8f, 0xce,
+	0x13, 0xbd, 0x3e, 0xcd, 0xc6, 0xbd, 0x3e, 0xcd, 0xc6, 0xbd, 0xe2, 0xcd, 0x7f, 0xc2, 0x47, 0xca,
+	0xb9, 0xc0, 0x21, 0xcc, 0x73, 0xc4, 0x39, 0xc9, 0x98, 0xc9, 0xaf, 0xc2, 0x0f, 0xc8, 0xb4, 0xc6,
+	0x8f, 0xc9, 0xcf, 0xc1, 0x7e, 0xc9, 0xde, 0xc0, 0x5b, 0xc9, 0xde, 0xc0, 0xec, 0xc9, 0xde, 0xbe,
+	0x72, 0xc7, 0xc6, 0xba, 0xb0, 0xc9, 0x2b, 0xbc, 0x8b, 0xc6, 0x43, 0xb8, 0xad, 0xc3, 0x71, 0xb7,
+	0xfd, 0xc4, 0x95, 0xb8, 0x1c, 0xc2, 0x41, 0xb7, 0xdc, 0xc0, 0x4e, 0xb8, 0xd4, 0xc1, 0x15, 0xb8,
+	0x2d, 0xc0, 0x4e, 0xb8, 0xd4, 0xc0, 0x62, 0xb8, 0xc5, 0xc0, 0x10, 0xb8, 0xfd, 0xc0, 0x2c, 0xb8,
+	0xea, 0xbf, 0x79, 0xb7, 0xa2, 0xbc, 0xc5, 0xb5, 0x22, 0xbe, 0x40, 0xb6, 0x0b, 0xbb, 0x65, 0xb4,
+	0x4b, 0x06, 0x03, 0x2e, 0xbf, 0xba, 0xcb, 0x23, 0xbf, 0x93, 0xca, 0xf2, 0xbf, 0xac, 0xcb, 0x12,
+	0xbf, 0x79, 0xca, 0xfd, 0xbf, 0x6b, 0xcb, 0x03, 0x06, 0x03, 0x2e, 0xbf, 0xba, 0xcb, 0x23, 0xbf,
+	0x93, 0xca, 0xf2, 0xbf, 0xac, 0xcb, 0x12, 0xbf, 0x79, 0xca, 0xfd, 0xbf, 0x6b, 0xcb, 0x03, 0x06,
+	0x06, 0xef, 0x0e, 0xb9, 0x07, 0xb5, 0x63, 0xbc, 0x5d, 0xb3, 0xf0, 0xb8, 0x9d, 0xb5, 0x91, 0xb7,
+	0xf6, 0xb6, 0x08, 0xb8, 0x43, 0xb5, 0xc9, 0xb7, 0xf6, 0xb6, 0x08, 0xb5, 0x5b, 0xb7, 0xc9, 0xb8,
+	0xc8, 0x2b, 0xb8, 0xc8, 0x2b, 0xbb, 0x3e, 0xb8, 0xa4, 0xbc, 0xc8, 0xbc, 0xe0, 0xbf, 0x69, 0xba,
+	0x8f, 0xbd, 0xc3, 0xba, 0xf7, 0xbf, 0xc9, 0xb9, 0x40, 0x06, 0x07, 0xaf, 0x3f, 0xc6, 0xf1, 0xbb,
+	0x14, 0xcc, 0x2a, 0xc2, 0x08, 0xc4, 0xc7, 0xb8, 0x32, 0xc0, 0xdd, 0xb9, 0x5f, 0xc2, 0x02, 0xb8,
+	0x68, 0xc0, 0xdd, 0xb9, 0x5f, 0xbe, 0x56, 0xbb, 0x15, 0xc1, 0x36, 0xbc, 0x09, 0xc1, 0xe2, 0xbb,
+	0x27, 0xc1, 0xe2, 0xbb, 0x27, 0xc2, 0x58, 0xbb, 0x7a, 0xc3, 0x54, 0xbc, 0x8f, 0xc2, 0xd3, 0xbb,
+	0xef, 0xc8, 0x28, 0xc2, 0x8c, 0xc1, 0x41, 0xca, 0x3f, 0xc4, 0xaa, 0xc7, 0x7b, 0xc5, 0x16, 0xc8,
+	0x0a, 0x06, 0x05, 0xfb, 0x03, 0xc3, 0x54, 0xbc, 0x8f, 0xcb, 0x9c, 0xc6, 0xd4, 0xbf, 0x6c, 0xb7,
+	0xb8, 0xbc, 0xc8, 0xbc, 0xe0, 0xb6, 0x3d, 0xb7, 0x4a, 0xba, 0x24, 0xb5, 0x98, 0xae, 0x79, 0xba,
+	0xaa, 0xbc, 0xc5, 0xcc, 0xd5, 0xbb, 0x24, 0xca, 0xd0, 0xbc, 0xc7, 0xcc, 0xd8, 0xbc, 0xcc, 0xcc,
+	0xdd, 0xbc, 0xc9, 0xcc, 0xdb, 0xbc, 0xcc, 0xcc, 0xdd, 0x06, 0x0a, 0x01, 0x01, 0x01, 0x02, 0x3f,
+	0xbf, 0xfb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3f, 0xc0, 0x86, 0x44, 0x7d, 0xf0, 0xc1, 0x93,
+	0x71, 0x0a, 0x02, 0x01, 0x02, 0x02, 0x3f, 0xbf, 0xfb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3f,
+	0xc0, 0x86, 0x44, 0x7d, 0xf0, 0xc1, 0x93, 0x71, 0x0a, 0x03, 0x01, 0x03, 0x02, 0x3f, 0xbf, 0xfb,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3f, 0xc0, 0x86, 0x44, 0x7d, 0xf0, 0xc1, 0x93, 0x71, 0x0a,
+	0x04, 0x01, 0x04, 0x02, 0x3f, 0xbf, 0xfb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3f, 0xc0, 0x86,
+	0x44, 0x7d, 0xf0, 0xc1, 0x93, 0x71, 0x0a, 0x05, 0x01, 0x05, 0x02, 0x3f, 0xbf, 0xfb, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x3f, 0xc0, 0x86, 0x44, 0x7d, 0xf0, 0xc1, 0x93, 0x71, 0x0a, 0x06, 0x01,
+	0x06, 0x02, 0x3f, 0xbf, 0xfb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3f, 0xc0, 0x86, 0x44, 0x7d,
+	0xf0, 0xc1, 0x93, 0x71
+};
+
+const size_t kIconFavSize = 756;
+
+const unsigned char kIconStop[] = {
+	0x6e, 0x63, 0x69, 0x66, 0x03, 0x04, 0x00, 0x66, 0x05, 0x00, 0x02, 0x00, 0x16, 0x02, 0x00, 0x00,
+	0x00, 0x3c, 0x60, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4c, 0x00, 0x00, 0x48, 0xa0, 0x00,
+	0x00, 0x80, 0xff, 0x28, 0x01, 0x0a, 0x04, 0x48, 0x48, 0x48, 0x22, 0x22, 0x22, 0x22, 0x48, 0x03,
+	0x0a, 0x00, 0x01, 0x00, 0x12, 0x40, 0xaa, 0xaa, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa,
+	0xaa, 0x44, 0xaa, 0xaa, 0x44, 0xaa, 0xaa, 0x01, 0x17, 0x84, 0x22, 0x04, 0x0a, 0x01, 0x01, 0x00,
+	0x12, 0x40, 0xaa, 0xaa, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa, 0xaa, 0x42, 0xaa, 0xaa,
+	0x42, 0xaa, 0xaa, 0x01, 0x17, 0x84, 0x22, 0x04, 0x0a, 0x02, 0x01, 0x00, 0x02, 0x40, 0xaa, 0xaa,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xaa, 0xaa, 0x42, 0xaa, 0xaa, 0x42, 0xaa, 0xaa
+};
+
+const size_t kIconStopSize = 127;
+
 
 mpv_handle *mpv = nullptr;
 std::vector<Channel> channels;
@@ -189,6 +328,7 @@ std::time_t notifyTimer = 0;
 std::string currentSong = "None";
 std::string currentDesc = "None";
 std::string currentStation = "";
+std::string currentStationID = ""; 
 std::string currentListeners = "";
 std::string currentAlbumArtUrl = "";
 
@@ -197,6 +337,34 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* use
     ((std::string*)userp)->append((char*)contents, size * nmemb);
     return size * nmemb;
 }
+
+
+void download_art(const std::string& url) {
+    if (url.empty()) return;
+    
+    CURL* curl = curl_easy_init();
+    if(curl) {
+        std::string buffer;
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "SuperMusicThingy/1.0");
+
+        if(curl_easy_perform(curl) == CURLE_OK) {
+            // Convert the raw memory buffer into a Haiku BBitmap
+            BMemoryIO memIO(buffer.data(), buffer.size());
+            BBitmap* newBitmap = BTranslationUtils::GetBitmap(&memIO);
+
+            if (newBitmap && gGuiWindow) {
+                BMessage* msg = new BMessage(MSG_UPDATE_ART);
+                msg->AddPointer("bitmap", newBitmap);
+                gGuiWindow->PostMessage(msg);
+            }
+        }
+        curl_easy_cleanup(curl);
+    }
+}
+
 
 
 void fetch_channels() {
@@ -217,7 +385,8 @@ void fetch_channels() {
                         ch.value("id", ""),
                         ch.value("description", ""),
                         ch.value("listeners", "0"),
-                        ch.value("largeimage", "")
+                        ch.value("largeimage", ""),
+                        ch.value("image", "")
                     });
                 }
             } catch(...) {}
@@ -225,6 +394,187 @@ void fetch_channels() {
         curl_easy_cleanup(curl);
     }
 }
+
+
+
+class StationItem : public BListItem {
+public:
+    StationItem(Channel chan) : BListItem(), fChannel(chan), fIcon(nullptr) {}
+
+    virtual ~StationItem() {
+        delete fIcon;
+    }
+
+    void SetIcon(BBitmap* icon) { fIcon = icon; }
+    Channel GetChannel() { return fChannel; }
+
+	virtual void DrawItem(BView* owner, BRect frame, bool complete) override {
+    	rgb_color bgColor = owner->ViewColor(); 
+    	rgb_color textColor = owner->HighColor();
+    
+    	if ((bgColor.red + bgColor.green + bgColor.blue) / 3 < 128 && 
+        	(textColor.red + textColor.green + textColor.blue) / 3 < 128) {
+        	textColor = {255, 255, 255, 255}; 
+    	}
+
+    	if (IsSelected()) {
+        	bgColor = ui_color(B_LIST_SELECTED_BACKGROUND_COLOR);
+        	textColor = ui_color(B_LIST_SELECTED_ITEM_TEXT_COLOR);
+    	}
+
+    	owner->SetLowColor(bgColor);
+    	owner->FillRect(frame, B_SOLID_LOW); 
+    
+    	float textOffset = 45.0;     
+    	if (fIcon && fIcon->IsValid()) {
+        	owner->SetDrawingMode(B_OP_ALPHA);
+        	owner->SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+        	owner->DrawBitmap(fIcon, BRect(frame.left + 4, frame.top + 4, 
+                                     frame.left + 36, frame.top + 36));
+        	owner->SetDrawingMode(B_OP_COPY); // Reset after bitmap
+    	}
+
+    	owner->SetDrawingMode(B_OP_OVER);
+    	owner->SetHighColor(textColor);  
+    	owner->MovePenTo(frame.left + textOffset, frame.top + 18);
+    	owner->DrawString(fChannel.title.c_str());
+    
+    	BFont font;
+    	owner->GetFont(&font);
+    	float oldSize = font.Size();
+    	font.SetSize(10.0);
+    	owner->SetFont(&font);
+    
+    	rgb_color descColor = textColor;
+    	if (!IsSelected()) {
+        	descColor.alpha = 180; // Slight transparency for visual hierarchy
+        	owner->SetDrawingMode(B_OP_ALPHA);
+    	} else {
+        	owner->SetDrawingMode(B_OP_OVER);
+    	}
+    
+    	owner->SetHighColor(descColor);
+    	owner->MovePenTo(frame.left + textOffset, frame.top + 32);
+    	owner->DrawString(fChannel.desc.c_str());
+    
+    	owner->SetDrawingMode(B_OP_COPY);
+    	font.SetSize(oldSize);
+    	owner->SetFont(&font);
+	}
+
+    virtual void Update(BView* owner, const BFont* font) override {
+        SetHeight(42.0); // Slightly taller for breathing room
+    }
+
+private:
+    Channel fChannel;
+    BBitmap* fIcon; 
+};
+
+
+
+
+class SongLabel : public BTextView {
+public:
+    SongLabel(const char* name) : BTextView(name) {
+        MakeEditable(false);
+        MakeSelectable(false);
+        SetWordWrap(true);
+        SetAlignment(B_ALIGN_CENTER);
+   
+        SetInsets(2, 2, 2, 2); 
+        SetExplicitMinSize(BSize(B_SIZE_UNSET, 50));
+    }
+
+
+    void AttachedToWindow() override {
+        BTextView::AttachedToWindow();
+        SetViewColor(Parent()->ViewColor());
+        BRect r = Bounds();
+        r.InsetBy(2, 2); 
+        SetTextRect(r);
+    }
+
+
+    void FrameResized(float width, float height) override {
+        BTextView::FrameResized(width, height);
+        BRect r = Bounds();
+        r.InsetBy(2, 2);
+        SetTextRect(r);
+    }
+    
+    void SetCustomFont(const BFont* font) {
+        SetFontAndColor(font); 
+        Invalidate();
+    }
+};
+
+
+
+class AlbumArtView : public BView {
+public:
+    AlbumArtView() : BView("art_view", B_WILL_DRAW | B_FULL_UPDATE_ON_RESIZE) {
+        fCurrentBitmap = nullptr;
+    }
+
+    void SetBitmap(BBitmap* bitmap) {
+        fCurrentBitmap = bitmap;
+        Invalidate(); 
+    }
+
+    virtual void Draw(BRect updateRect) {
+        if (fCurrentBitmap) {
+            SetDrawingMode(B_OP_ALPHA);
+            DrawBitmap(fCurrentBitmap, Bounds());
+            SetDrawingMode(B_OP_COPY); // Reset
+        } else {
+            SetHighColor(30, 30, 30);
+            FillRect(Bounds());
+        }
+    }
+
+private:
+    BBitmap* fCurrentBitmap;
+};
+
+
+void SuperMusicWindow::PopulateStationList() {
+    fStationList->MakeEmpty(); 
+    for (const auto& chan : channels) {
+        fStationList->AddItem(new StationItem(chan));
+    }
+}
+
+class FavListView : public BListView {
+public:
+    FavListView(const char* name) 
+        : BListView(name) {} 
+
+    virtual void MouseDown(BPoint where) override {
+        BMessage* msg = Window()->CurrentMessage();
+        int32 buttons = msg->GetInt32("buttons", 0);
+        
+        int32 index = IndexOf(where);
+
+        if ((buttons & B_SECONDARY_MOUSE_BUTTON) != 0 && index >= 0) {
+            Select(index); 
+            
+            BPopUpMenu* menu = new BPopUpMenu("fav_context_menu");
+            BMenuItem* deleteItem = new BMenuItem("Remove from Favorites", new BMessage(MSG_DEL_FAV));
+            
+            menu->AddItem(deleteItem);
+            menu->SetTargetForItems(Window());
+
+            BPoint screenPoint = ConvertToScreen(where);
+            menu->Go(screenPoint, true, true, true);
+        } else {
+            BListView::MouseDown(where);
+        }
+    }
+};
+
+
+
 
 
 void save_config() {
@@ -270,6 +620,81 @@ void load_config() {
         }
     }
 }
+
+
+void SuperMusicWindow::DownloadStationIcons() {
+    std::thread([this]() {
+        snooze(100000); 
+
+        int32 mainCount = 0;
+        if (Lock()) {
+            mainCount = fStationList->CountItems();
+            Unlock();
+        }
+
+        for (int32 i = 0; i < mainCount; i++) {
+            StationItem* mainItem = nullptr;
+            if (Lock()) {
+                mainItem = (StationItem*)fStationList->ItemAt(i);
+                Unlock();
+            }
+            if (!mainItem) continue;
+            
+            Channel chan = mainItem->GetChannel();
+            if (chan.image.empty()) continue;
+
+            if (fIconCache.count(chan.id) > 0) {
+                if (Lock()) {
+                    mainItem->SetIcon(new BBitmap(fIconCache[chan.id]));
+                    fStationList->InvalidateItem(i);
+                    
+                    for (int32 j = 0; j < fFavList->CountItems(); j++) {
+                        StationItem* favItem = (StationItem*)fFavList->ItemAt(j);
+                        if (favItem && favItem->GetChannel().id == chan.id) {
+                            favItem->SetIcon(new BBitmap(fIconCache[chan.id]));
+                            fFavList->InvalidateItem(j);
+                        }
+                    }
+                    Unlock();
+                }
+                continue;
+            }
+
+            CURL* curl = curl_easy_init();
+            std::string buffer;
+            if (curl) {
+                curl_easy_setopt(curl, CURLOPT_URL, chan.image.c_str());
+                curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+                curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
+                curl_easy_setopt(curl, CURLOPT_USERAGENT, "SuperMusicThingy/1.0");
+                curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
+
+                if (curl_easy_perform(curl) == CURLE_OK && !buffer.empty()) {
+                    BMemoryIO mem(buffer.data(), buffer.size());
+                    BBitmap* icon = BTranslationUtils::GetBitmap(&mem);
+                    
+                    if (icon && Lock()) {
+                        fIconCache[chan.id] = new BBitmap(icon);                         
+                        mainItem->SetIcon(icon);
+                        fStationList->InvalidateItem(i); 
+
+                        for (int32 j = 0; j < fFavList->CountItems(); j++) {
+                            StationItem* favItem = (StationItem*)fFavList->ItemAt(j);
+                            if (favItem && favItem->GetChannel().id == chan.id) {
+                                favItem->SetIcon(new BBitmap(icon));
+                                fFavList->InvalidateItem(j);
+                            }
+                        }
+                        Unlock();
+                    }
+                }
+                curl_easy_cleanup(curl);
+            }
+        }
+    }).detach();
+}
+
+
 
 
 void init_mpv() {
@@ -370,91 +795,112 @@ void save_favorite() {
 }
     
 void play_favorite() {
-        std::string home = getenv("HOME") ? getenv("HOME") : ".";
-        std::string path = home + "/config/settings/SuperMusicThingy/favorites.txt";
-        std::ifstream infile(path);
-        std::vector<std::string> favs;
-        std::string line;
-        while (std::getline(infile, line)) if (!line.empty()) favs.push_back(line);
+    std::string home = getenv("HOME") ? getenv("HOME") : ".";
+    std::string path = home + "/config/settings/SuperMusicThingy/favorites.txt";
+    std::ifstream infile(path);
+    std::vector<std::string> favs;
+    std::string line;
+    while (std::getline(infile, line)) if (!line.empty()) favs.push_back(line);
 
-        if (favs.empty()) {
-            statusMsg = "No favorites saved!";
-            statusExpiry = std::time(nullptr) + 2;
-            return;
-        }
+    if (favs.empty()) {
+        return;
+    }
 
-        std::string url = favs[rand() % favs.size()];
-        size_t lastSlash = url.find_last_of('/');
-        size_t lastDot = url.find_last_of('.');
-        if (lastSlash != std::string::npos && lastDot != std::string::npos) {
-            std::string id = url.substr(lastSlash + 1, lastDot - lastSlash - 1);
-            for (const auto& ch : channels) {
-                if (ch.id == id) {
-                    currentStation = ch.title;
-                    currentDesc = ch.desc;
-                    currentListeners = ch.listeners;
-                    currentAlbumArtUrl = ch.largeimage;
-
-                    if (!currentAlbumArtUrl.empty()) {
-                        std::thread([url = currentAlbumArtUrl]() {
-                            download_art(url);
-                        }).detach();
-                    }
-
-                    break;
-                }
-            }
-        }
-
-        double original_vol;
-        mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &original_vol);
-        fade_volume(mpv, 0, 300);
-
-        currentSong = "Loading Favorite...";
-        const char *cmd[] = {"loadfile", url.c_str(), NULL};
-        mpv_command(mpv, cmd);
-        fade_volume(mpv, original_vol, 500);
-}
-
-
-void play_specific_url(std::string url) {
-    if (url.empty()) return;
+    std::string url = favs[rand() % favs.size()];
+    
     size_t lastSlash = url.find_last_of('/');
     size_t lastDot = url.find_last_of('.');
-    
     if (lastSlash != std::string::npos && lastDot != std::string::npos) {
         std::string id = url.substr(lastSlash + 1, lastDot - lastSlash - 1);
         
         for (const auto& ch : channels) {
             if (ch.id == id) {
                 currentStation = ch.title;
+                currentStationID = ch.id; 
                 currentDesc = ch.desc;
                 currentListeners = ch.listeners;
-                currentAlbumArtUrl = ch.largeimage; 
+                currentAlbumArtUrl = ch.largeimage;
 
                 if (!currentAlbumArtUrl.empty()) {
-                    std::thread([url = currentAlbumArtUrl]() {
-                        download_art(url);
-                    }).detach();
+                    if (gGuiWindow && gGuiWindow->fArtCache.count(currentStationID) > 0) {
+                        if (gGuiWindow->Lock()) {
+                            gGuiWindow->fAlbumArt = gGuiWindow->fArtCache[currentStationID];
+                            if (gGuiWindow->fArtView)
+                                ((AlbumArtView*)gGuiWindow->fArtView)->SetBitmap(gGuiWindow->fAlbumArt);
+                            gGuiWindow->Unlock();
+                        }
+                    } else {
+                        // CACHE MISS
+                        std::thread([url = currentAlbumArtUrl]() {
+                            download_art(url);
+                        }).detach();
+                    }
                 }
                 break;
             }
         }
     }
 
-    // 2. Send Command to MPV
     double original_vol;
     mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &original_vol);
-    fade_volume(mpv, 0, 200); // Quick fade out
+    fade_volume(mpv, 0, 300);
 
     currentSong = "Loading Favorite...";
+    
+    if (gGuiWindow && gGuiWindow->Lock()) {
+        gGuiWindow->UpdateStatus(currentStation.c_str(), currentSong.c_str());
+        gGuiWindow->Unlock();
+    }
+
     const char *cmd[] = {"loadfile", url.c_str(), NULL};
     mpv_command(mpv, cmd);
-    
-    fade_volume(mpv, original_vol, 500); // Fade in
+    fade_volume(mpv, original_vol, 500);
 }
 
 
+
+void SuperMusicWindow::PlayStation(const Channel& chan) {
+    currentStation = chan.title;
+    currentStationID = chan.id; 
+    currentDesc = chan.desc;
+    currentListeners = chan.listeners;
+    currentAlbumArtUrl = chan.largeimage;
+    if (!currentAlbumArtUrl.empty()) {
+        if (fArtCache.count(currentStationID) > 0) {
+            if (Lock()) {
+                fAlbumArt = fArtCache[currentStationID];
+                if (fArtView) 
+                    ((AlbumArtView*)fArtView)->SetBitmap(fAlbumArt);
+                Unlock();
+            }
+        } else {
+            if (Lock()) {
+                fAlbumArt = nullptr;
+                if (fArtView) ((AlbumArtView*)fArtView)->SetBitmap(nullptr);
+                Unlock();
+            }
+            std::thread([url = currentAlbumArtUrl]() {
+                download_art(url);
+            }).detach();
+        }
+    }
+
+    double original_vol;
+    mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &original_vol);
+    fade_volume(mpv, 0, 200); 
+
+    currentSong = "Buffering...";
+    UpdateStatus(currentStation.c_str(), currentSong.c_str());
+
+    std::string url = get_quality_url(chan.id); 
+    const char *cmd[] = {"loadfile", url.c_str(), NULL};
+    mpv_command(mpv, cmd);    
+    fade_volume(mpv, original_vol, 500);
+    if (Lock()) {
+        fTabView->Select(0);
+        Unlock();
+    }
+}
 
 
 // Delete Station from favorites list while listening
@@ -492,27 +938,39 @@ void delete_favorite() {
 }
     
 void play_random() {
-        if (channels.empty()) return;
-        double original_vol;        
-        mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &original_vol);
-        fade_volume(mpv, 0, 300);
-        int idx = rand() % channels.size();
-        currentStation = channels[idx].title;
-        currentDesc = channels[idx].desc;
-        currentListeners = channels[idx].listeners;
-        currentSong = "Buffering...";
-        currentAlbumArtUrl = channels[idx].largeimage;
+    if (channels.empty()) return;
 
-        if (!currentAlbumArtUrl.empty()) {
+    double original_vol;        
+    mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &original_vol);
+    fade_volume(mpv, 0, 300);
+
+    int idx = rand() % channels.size();
+    Channel& chan = channels[idx];
+    currentStation = chan.title;
+    currentStationID = chan.id; 
+    currentDesc = chan.desc;
+    currentListeners = chan.listeners;
+    currentSong = "Buffering...";
+    currentAlbumArtUrl = chan.largeimage;
+
+    if (!currentAlbumArtUrl.empty()) {
+        if (gGuiWindow && gGuiWindow->fArtCache.count(currentStationID) > 0) {
+            gGuiWindow->fAlbumArt = gGuiWindow->fArtCache[currentStationID];
+            if (gGuiWindow->fArtView) {
+                gGuiWindow->fArtView->Invalidate();
+            }
+        } else {
             std::thread([url = currentAlbumArtUrl]() {
                 download_art(url);
             }).detach();
         }
-        
-        std::string url = get_quality_url(channels[idx].id);
-        const char *cmd[] = {"loadfile", url.c_str(), NULL};
-        mpv_command(mpv, cmd);
-        fade_volume(mpv, original_vol, 500);
+    }
+    
+    std::string url = get_quality_url(chan.id);
+    const char *cmd[] = {"loadfile", url.c_str(), NULL};
+    mpv_command(mpv, cmd);
+    
+    fade_volume(mpv, original_vol, 500);
 }
 
 
@@ -851,59 +1309,6 @@ void SuperMusicWindow::StopVisuals() {
 }
 
 
-class AlbumArtView : public BView {
-public:
-    AlbumArtView() : BView("art_view", B_WILL_DRAW | B_FULL_UPDATE_ON_RESIZE) {}
-
-	virtual void Draw(BRect updateRect) {
-    	// Look at the class member inside the window instance
-    	if (gGuiWindow && gGuiWindow->fAlbumArt) {
-        	DrawBitmap(gGuiWindow->fAlbumArt, Bounds());
-    	} else {
-        	SetHighColor(30, 30, 30);
-        	FillRect(Bounds());
-    	}
-	}
-
-};
-
-
-class SongLabel : public BTextView {
-public:
-    SongLabel(const char* name) : BTextView(name) {
-        MakeEditable(false);
-        MakeSelectable(false);
-        SetWordWrap(true);
-        SetAlignment(B_ALIGN_CENTER);
-   
-        SetInsets(2, 2, 2, 2); 
-        SetExplicitMinSize(BSize(B_SIZE_UNSET, 50));
-    }
-
-
-    void AttachedToWindow() override {
-        BTextView::AttachedToWindow();
-        SetViewColor(Parent()->ViewColor());
-        BRect r = Bounds();
-        r.InsetBy(2, 2); 
-        SetTextRect(r);
-    }
-
-
-    void FrameResized(float width, float height) override {
-        BTextView::FrameResized(width, height);
-        BRect r = Bounds();
-        r.InsetBy(2, 2);
-        SetTextRect(r);
-    }
-    
-    void SetCustomFont(const BFont* font) {
-        // Set default font for new text
-        SetFontAndColor(font); 
-        // Force redraw
-        Invalidate();
-    }
-};
 
 class VolumeSlider : public BSlider {
 public:
@@ -915,15 +1320,12 @@ public:
         if (message->what == B_MOUSE_WHEEL_CHANGED) {
             float deltaY;
             if (message->FindFloat("be:wheel_delta_y", &deltaY) == B_OK) {
-                // Scroll up (negative delta) increases volume, scroll down decreases
-                int32 newValue = Value() - (int32)(deltaY * 5); // Adjust '5' for sensitivity
-                
-                // Clamp values between 0 and 100
+                               int32 newValue = Value() - (int32)(deltaY * 5);                
                 if (newValue > 100) newValue = 100;
                 if (newValue < 0) newValue = 0;
                 
                 SetValue(newValue);
-                Invoke(); // Sends MSG_VOL_CHANGE to the target
+                Invoke(); 
             }
         } else {
             BSlider::MessageReceived(message);
@@ -932,18 +1334,28 @@ public:
 };
 
 
+void SuperMusicWindow::UpdateStatus(const char* station, const char* song) {
+    if (Lock()) {
+        fStationView->SetText(station);
+        fSongView->SetText(song);
+        Unlock();
+    }
+}
+
+
 SuperMusicWindow::SuperMusicWindow()
-    : BWindow(BRect(100, 100, 500, 300), "SuperMusicThingy", B_TITLED_WINDOW, 
+    : BWindow(BRect(100, 100, 550, 300), "SuperMusicThingy", B_TITLED_WINDOW, 
               B_ASYNCHRONOUS_CONTROLS | B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE)
 {
     fAlbumArt = nullptr;
-
     BFont largeFont(be_bold_font);
     largeFont.SetSize(24.0); 
     BFont smallFont(be_bold_font);
     smallFont.SetSize(12.0); 
 
     fTabView = new BTabView("tab_container");
+    fTabView->SetExplicitMinSize(BSize(345, 645)); 
+
     fTabView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
 
     // ==========================================
@@ -969,15 +1381,19 @@ SuperMusicWindow::SuperMusicWindow()
     
     // Album Art
     fArtView = new AlbumArtView();
-    fArtView->SetExplicitMinSize(BSize(256, 256)); 
-
-    // NEW: Fav Buttons
-    fBtnAddFav = new BButton("add_fav", "Add Fav", new BMessage(MSG_ADD_FAV));
-    fBtnDelFav = new BButton("del_fav", "Del Fav", new BMessage(MSG_DEL_FAV));
+    fArtView->SetExplicitMinSize(BSize(300, 300)); 
     
-    // Standard Controls
-    fShuffleBtn = new BButton("shuffle", "Shuffle", new BMessage(MSG_SHUFFLE));
-    BButton* stopBtn = new BButton("stop", "Stop", new BMessage(MSG_STOP));
+    BBitmap* heartIcon = GetVectorIcon(kIconFav, kIconFavSize, 40);
+	fBtnAddFav = new IconButton("btn_add_fav", heartIcon, new BMessage(MSG_ADD_FAV));
+	fBtnAddFav->SetExplicitSize(BSize(40, 40));
+    
+    BBitmap* stopIcon = GetVectorIcon(kIconStop, kIconStopSize, 40);
+    IconButton* stopBtn = new IconButton("btn_stop", stopIcon, new BMessage(MSG_STOP));
+	stopBtn->SetExplicitSize(BSize(75, 75)); 
+	
+	BBitmap* shuffleIcon = GetVectorIcon(kIconShuffle, kIconShuffleSize, 40);
+   	fShuffleBtn = new IconButton("btn_shuffle", shuffleIcon, new BMessage(MSG_SHUFFLE));
+	fShuffleBtn->SetExplicitSize(BSize(75, 75)); 	
     
     fVolumeSlider = new VolumeSlider("volume", "Volume", new BMessage(MSG_VOL_CHANGE), 0, 100);
     fVolumeSlider->SetValue(100);
@@ -1000,7 +1416,6 @@ SuperMusicWindow::SuperMusicWindow()
             .AddGlue() 
             .AddGroup(B_VERTICAL, 5) 
                 .Add(fBtnAddFav)
-                .Add(fBtnDelFav)
             .End()
         .End()
         // End Split Row
@@ -1011,14 +1426,29 @@ SuperMusicWindow::SuperMusicWindow()
             .Add(fShuffleBtn)
         .End();
 
+
     // ==========================================
-    // TAB 2: FAVORITES VIEW (The List)
+    // TAB 2: STATIONS VIEW (The Directory)
+    // ==========================================
+    BGroupView* stationGroup = new BGroupView(B_VERTICAL, 0);
+    stationGroup->SetName("Stations"); 
+
+    fStationList = new BListView("station_list");
+    fStationList->SetInvocationMessage(new BMessage(MSG_PLAY_STATION)); 
+    
+    BLayoutBuilder::Group<>(stationGroup, B_VERTICAL, 0)
+        .SetInsets(10)
+        .Add(new BScrollView("station_scroll", fStationList, 0, false, true))
+    .End();
+
+    // ==========================================
+    // TAB 3. FAVORITES VIEW (The List)
     // ==========================================
     BGroupView* favGroup = new BGroupView(B_VERTICAL, 10);
     favGroup->SetName("Fav"); 
 
-    fFavList = new BListView("fav_list");
-    fFavList->SetInvocationMessage(new BMessage(MSG_PLAY_FAV)); 
+    fFavList = new FavListView("favorites_list");
+	fFavList->SetInvocationMessage(new BMessage(MSG_PLAY_FAV)); 
     
     BLayoutBuilder::Group<>(favGroup, B_VERTICAL, 0)
         .SetInsets(10)
@@ -1026,7 +1456,7 @@ SuperMusicWindow::SuperMusicWindow()
     .End();
 
     // ==========================================
-    // TAB 3: CONFIG VIEW (Placeholder)
+    // TAB 4: CONFIG VIEW (Placeholder)
     // ==========================================
 	BGroupView* configGroup = new BGroupView(B_VERTICAL, 10);
 	configGroup->SetName("Config");
@@ -1153,6 +1583,7 @@ SuperMusicWindow::SuperMusicWindow()
 
     // 3. Attach Tabs
     fTabView->AddTab(playerGroup);
+    fTabView->AddTab(stationGroup); 
     fTabView->AddTab(favGroup);
     fTabView->AddTab(configGroup);
     fTabView->AddTab(aboutGroup); 
@@ -1163,12 +1594,14 @@ SuperMusicWindow::SuperMusicWindow()
         .Add(fTabView)
     .End();
 
-    RefreshFavorites();
     UpdateFavButtons();
     ApplyTheme(); 
+    PopulateStationList();
+    DownloadStationIcons();
+    RefreshFavorites();
     if (cfg.showVisuals) {
         StartVisuals();
-     }  
+    }
 }
 
 void SuperMusicWindow::SendNotification(const char* songTitle) {
@@ -1176,6 +1609,7 @@ void SuperMusicWindow::SendNotification(const char* songTitle) {
     
     std::string song = songTitle;
 
+    // Clean up song title based on current station
     if (song.find(currentStation) == 0) {
         song.erase(0, currentStation.length());
         size_t start = song.find_first_not_of(": -");
@@ -1193,8 +1627,8 @@ void SuperMusicWindow::SendNotification(const char* songTitle) {
     notify.SetGroup("SuperMusicThingy");
     notify.SetTitle(currentStation.c_str());
     notify.SetContent(song.c_str());
-    if (fAlbumArt && fAlbumArt->IsValid()) {        
 
+    if (fAlbumArt && fAlbumArt->IsValid()) {        
         int dstW = 64;
         int dstH = 64;        
 
@@ -1204,20 +1638,24 @@ void SuperMusicWindow::SendNotification(const char* songTitle) {
             uint32 srcBPR = fAlbumArt->BytesPerRow();
             int srcW = fAlbumArt->Bounds().IntegerWidth() + 1;
             int srcH = fAlbumArt->Bounds().IntegerHeight() + 1;
+            
             uint8* dstBits = (uint8*)scaledIcon->Bits();
             uint32 dstBPR = scaledIcon->BytesPerRow();
+
             for (int y = 0; y < dstH; y++) {
                 for (int x = 0; x < dstW; x++) {
                     int srcX = (x * srcW) / dstW;
                     int srcY = (y * srcH) / dstH;
+
                     uint32* srcPixel = (uint32*)(srcBits + (srcY * srcBPR) + (srcX * 4));
                     uint32* dstPixel = (uint32*)(dstBits + (y * dstBPR) + (x * 4));                    
+                    
                     *dstPixel = *srcPixel;
                 }
             }
             
             notify.SetIcon(scaledIcon);
-            delete scaledIcon;
+            delete scaledIcon; 
         }
     }
 
@@ -1231,41 +1669,48 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     switch (message->what) {
         
         // --- FAVORITES LOGIC ---
-        case MSG_ADD_FAV:
-            save_favorite(); 
-            RefreshFavorites(); 
-            UpdateFavButtons(); 
-            break;
-
-        case MSG_DEL_FAV:
-            delete_favorite();
-            RefreshFavorites();
-            UpdateFavButtons(); 
-            break;
+        
+		case MSG_ADD_FAV: {
+    		if (is_favorite()) {        
+         		delete_favorite(); 
+   		 	} else {        
+        		save_favorite(); 
+   			 }
+    		RefreshFavorites(); 
+    		UpdateFavButtons(); 
+    		break;
+			}
+			case MSG_DEL_FAV: { 
+    		int32 index = fFavList->CurrentSelection();
+    		if (index >= 0) {
+        		StationItem* item = (StationItem*)fFavList->ItemAt(index);
+        		if (item) {           
+            		currentStation = item->GetChannel().title;
+            		delete_favorite();             
+            		RefreshFavorites(); 
+            		UpdateFavButtons(); 
+        		}
+    		}
+    		break;
+		}
 
 		case MSG_PLAY_FAV: {
     		int32 index = message->GetInt32("index", -1);
     		if (index < 0 && fFavList) {
         		index = fFavList->CurrentSelection();
-   			 }
+    		}
 
     		if (index >= 0) {
-        		BStringItem* item = dynamic_cast<BStringItem*>(fFavList->ItemAt(index));
-        		if (item) {
-            		play_specific_url(item->Text());
-            	if (fStationView) fStationView->SetText(currentStation.c_str());
-           		if (fSongView) fSongView->SetText("Buffering...");
-            
-            	BString lStr("Listeners: ");
-            	lStr << currentListeners.c_str();
-            	if (fListenersView) fListenersView->SetText(lStr.String());
+                StationItem* item = dynamic_cast<StationItem*>(fFavList->ItemAt(index));
+        		if (item) {           
+            		this->PlayStation(item->GetChannel());
         		}
     		}
     		UpdateFavButtons(); 
     		break;
-			}
+		}
 
-        // --- SHUFFLE LOGIC ---
+
         case MSG_SHUFFLE: {
             play_random();
             if (fStationView) fStationView->SetText(currentStation.c_str());
@@ -1320,6 +1765,18 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         	break;
     	}
     	
+		case MSG_PLAY_STATION: {
+    		int32 index = fStationList->CurrentSelection();
+    		if (index >= 0) {
+        		StationItem* item = (StationItem*)fStationList->ItemAt(index);
+        		this->PlayStation(item->GetChannel()); 
+        
+        		UpdateFavButtons(); 
+    		}
+    		break;
+		}
+
+    	
     	case MSG_TOGGLE_VISUALS:
         {
             int32 value = 0;
@@ -1349,7 +1806,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
        case MSG_CFG_THEME: {
         BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_theme"));
         if (chk) {
-            // Toggle between "Dark" and "Default"
             cfg.updateTheme = (chk->Value() == B_CONTROL_ON) ? "Dark" : "Default";
             save_config();
   			ApplyTheme(); 
@@ -1357,18 +1813,20 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         	break;
     	}            
 
-        case MSG_UPDATE_ART: {
-            BBitmap* newArt = BTranslationUtils::GetBitmap("/tmp/somafm_art.png");
-            if (newArt) {
-                if (Lock()) {
-                    delete fAlbumArt; 
-                    fAlbumArt = newArt;
-                    if (fArtView) fArtView->Invalidate();
-                    Unlock();
-                }
-            }
-            break;
-        }
+		case MSG_UPDATE_ART: {
+    		BBitmap* newArt;
+    		if (message->FindPointer("bitmap", (void**)&newArt) == B_OK) {
+        		if (Lock()) {
+            		fArtCache[currentStationID] = newArt;
+            		fAlbumArt = newArt;
+            		if (fArtView) {
+                		((AlbumArtView*)fArtView)->SetBitmap(fAlbumArt);
+            		}
+            		Unlock();
+        		}
+    		}
+    		break;
+		}
 
         case MSG_STOP:
             mpv_command_string(mpv, "stop");
@@ -1393,6 +1851,53 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             break;
     }
 }
+
+void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
+    if (!view) return;
+
+    view->SetViewColor(bg);
+    view->SetLowColor(bg);
+    view->SetHighColor(txt);
+    
+    BSlider* slider = dynamic_cast<BSlider*>(view);
+    if (slider) {
+        slider->UseFillColor(true, &txt);
+    }
+
+    BStringView* stringView = dynamic_cast<BStringView*>(view);
+    if (stringView) {
+        stringView->SetHighColor(txt);
+    }
+
+    BTextView* textView = dynamic_cast<BTextView*>(view);
+    if (textView) {
+        textView->SetFontAndColor(NULL, B_FONT_ALL, &txt);
+    }
+
+    BListView* listView = dynamic_cast<BListView*>(view);
+    if (listView) {
+        listView->SetViewColor(bg);
+        listView->SetLowColor(bg);
+        listView->SetHighColor(txt);        
+ 
+        for (int32 i = 0; i < listView->CountItems(); i++) {
+            listView->InvalidateItem(i);
+        }
+         listView->Invalidate();
+    }
+
+    BCheckBox* checkBox = dynamic_cast<BCheckBox*>(view);
+    if (checkBox) {
+        checkBox->SetHighColor(txt);
+    }
+
+    view->Invalidate();
+
+    for (int32 i = 0; i < view->CountChildren(); i++) {
+        RecursiveColorApply(view->ChildAt(i), bg, txt);
+    }
+}
+
 
 class FavItem : public BStringItem {
 public:
@@ -1429,56 +1934,6 @@ public:
 };
 
 
-
-void SuperMusicWindow::RefreshFavorites() {
-    if (!fFavList) return;
-    fFavList->MakeEmpty();
-
-    BPath path;
-    if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) == B_OK) {
-        path.Append("SuperMusicThingy/favorites.txt");
-        
-        std::ifstream infile(path.Path());
-        if (infile.is_open()) {
-            std::string line;
-            while (std::getline(infile, line)) {
-                if (!line.empty()) {
-                     fFavList->AddItem(new FavItem(line.c_str())); 
-                }
-            }
-            infile.close();
-        }
-    }
-}
-
-
-void SuperMusicWindow::UpdateFavButtons() {
-    bool isFav = is_favorite();    
-    if (fBtnAddFav) fBtnAddFav->SetEnabled(!isFav); 
-    if (fBtnDelFav) fBtnDelFav->SetEnabled(isFav); 
-}
-
-
-void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
-    if (!view) return;
-
-    view->SetViewColor(bg);
-    view->SetLowColor(bg);
-    view->SetHighColor(txt);
-
-    BTextView* textView = dynamic_cast<BTextView*>(view);
-    if (textView) {
-        textView->SetFontAndColor(NULL, B_FONT_ALL, &txt);
-    }
-
-    view->Invalidate();
-
-    for (int32 i = 0; i < view->CountChildren(); i++) {
-        RecursiveColorApply(view->ChildAt(i), bg, txt);
-    }
-}
-
-
 void SuperMusicWindow::ApplyTheme() {
     rgb_color bgVal;
     rgb_color txtVal;
@@ -1499,26 +1954,123 @@ void SuperMusicWindow::ApplyTheme() {
                 BView* tabView = fTabView->ViewForTab(i);
                 RecursiveColorApply(tabView, bgVal, txtVal);
             }
-            fTabView->Invalidate();
         }
+        
+        if (fStationList) {    
+   			 fStationList->SetFlags(fStationList->Flags() | B_FRAME_EVENTS);
+   			 
+       		 if (fStationList->Parent()) {
+            	fStationList->SetViewColor(bgVal); 
+            	fStationList->SetLowColor(bgVal);
+            	fStationList->SetHighColor(txtVal); 
+            	fStationList->Invalidate();
+        	}
+        }
+        
         if (fFavList) {
             fFavList->SetViewColor(bgVal);
             fFavList->SetLowColor(bgVal);
+            fFavList->SetHighColor(txtVal); 
             fFavList->Invalidate(); 
-        }        
+        }    
+        if (fBtnAddFav) {
+    		fBtnAddFav->SetViewColor(bgVal);
+    		fBtnAddFav->SetHighColor(txtVal); 
+    		fBtnAddFav->Invalidate();
+		}    
+
+        if (fTabView) fTabView->Invalidate();
         Unlock();
     }
 }
 
 
 
-SuperMusicWindow::~SuperMusicWindow()
-{
-    if (fAlbumArt != nullptr) {
-        delete fAlbumArt;
-        fAlbumArt = nullptr;
+
+
+void SuperMusicWindow::RefreshFavorites() {
+    if (!fFavList) return;
+    fFavList->MakeEmpty();
+
+    BPath path;
+    if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) == B_OK) {
+        path.Append("SuperMusicThingy/favorites.txt");
+        
+        std::ifstream infile(path.Path());
+        if (infile.is_open()) {
+            std::string line;
+            while (std::getline(infile, line)) {
+                if (line.empty()) continue;
+
+                for (const auto& ch : channels) {
+                    std::string chUrl = BASE_URL + ch.id + ".pls";
+                    if (chUrl == line) {
+                        StationItem* item = new StationItem(ch);
+                        
+                        // Check if the icon was already downloaded
+                        if (fIconCache.count(ch.id) > 0) {
+                            item->SetIcon(new BBitmap(fIconCache[ch.id]));
+                        }
+                        
+                        fFavList->AddItem(item); 
+                        break; 
+                    }
+                }
+            }
+            infile.close();
+        }
     }
 }
+
+
+
+void SuperMusicWindow::UpdateFavButtons() {
+    bool isFav = is_favorite();        
+    if (fBtnAddFav) {
+        IconButton* favBtn = dynamic_cast<IconButton*>(fBtnAddFav);
+        if (favBtn) {
+            favBtn->SetFavorite(isFav);
+        }        
+        fBtnAddFav->SetEnabled(true); 
+    }
+}
+
+
+
+
+
+SuperMusicWindow::~SuperMusicWindow()
+{
+    for (auto const& [id, bitmap] : fIconCache) {
+        delete bitmap;
+    }
+    fIconCache.clear();
+
+    for (auto const& [id, bitmap] : fArtCache) {
+        delete bitmap;
+    }
+    fArtCache.clear();
+    fAlbumArt = nullptr;
+
+    #if ENABLE_VISUALIZER
+    cleanup_capture_device();
+    
+    if (glContext) { 
+        SDL_GL_MakeCurrent(visualWin, NULL); 
+        SDL_GL_DeleteContext(glContext); 
+        glContext = nullptr; 
+    }
+    if (visualWin) { 
+        SDL_DestroyWindow(visualWin); 
+        visualWin = nullptr; 
+    }
+    if (pm) {
+        projectm_destroy(pm);
+        pm = nullptr;
+    }
+    #endif
+}
+
 
 
 class SuperMusicApp : public BApplication {
