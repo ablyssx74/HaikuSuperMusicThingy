@@ -1572,7 +1572,7 @@ SuperMusicWindow::SuperMusicWindow()
     fVisualsCheckbox->SetValue(cfg.showVisuals ? B_CONTROL_ON : B_CONTROL_OFF);
     
     
-	fShuffleFavsCheckbox = new BCheckBox("shuffle_favs", "Shuffle only favorites", 
+	fShuffleFavsCheckbox = new BCheckBox("shuffle_favs", "Shuffle Only Favorites", 
     new BMessage(MSG_SHUFFLE_FAVS_CHANGED));
 	fShuffleFavsCheckbox->SetValue(cfg.shuffleFavsOnly ? B_CONTROL_ON : B_CONTROL_OFF);
 
