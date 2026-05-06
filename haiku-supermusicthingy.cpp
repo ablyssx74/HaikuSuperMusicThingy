@@ -125,7 +125,7 @@ enum {
     MSG_FAVS    = 'favs',
     MSG_OPEN_URL = 'burl',
     MSG_VOL_CHANGE = 'vchg',
-    
+    MSG_UPDATE_BITRATE = 'bitr',
 	MSG_PRESET_SELECTED   = 'prsl',
 	MSG_REFRESH_PRESETS   = 'prrf',
 
@@ -823,6 +823,7 @@ void init_mpv() {
         if (mpv_initialize(mpv) < 0) exit(1);
         mpv_observe_property(mpv, 0, "media-title", MPV_FORMAT_STRING);
         mpv_observe_property(mpv, 0, "paused-for-cache", MPV_FORMAT_FLAG);
+        mpv_observe_property(mpv, 0, "audio-bitrate", MPV_FORMAT_DOUBLE);
 }
     
 std::string get_quality_url(const Channel& ch) {
@@ -1940,6 +1941,17 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     switch (message->what) {
         
         
+        case MSG_UPDATE_BITRATE: {
+    		int32 kbps;
+    		if (message->FindInt32("kbps", &kbps) == B_OK) {
+        		BString qStr("Quality: ");
+        		qStr << kbps << "k";
+        		if (fquality) fquality->SetText(qStr.String());
+    		}
+    		break;
+		}	
+
+        
 		case MSG_ADD_FAV: {
     		if (is_favorite()) {        
          		delete_favorite(); 
@@ -1984,9 +1996,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		}
     		}
     		
-    		BString qStr("Quality: ");
-            qStr << get_bitrate_text().c_str();
-            if (fquality) fquality->SetText(qStr.String());
+    		//BString qStr("Quality: ");
+           // qStr << get_bitrate_text().c_str();
+            //if (fquality) fquality->SetText(qStr.String());
 
             BString lStr("Listeners: ");
             lStr << currentListeners.c_str();
@@ -2055,9 +2067,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		StationItem* item = (StationItem*)fStationList->ItemAt(index);
         		this->PlayStation(item->GetChannel()); 
         		
-        	BString qStr("Quality: ");
-            qStr << get_bitrate_text().c_str();
-            if (fquality) fquality->SetText(qStr.String());
+        	//BString qStr("Quality: ");
+            //qStr << get_bitrate_text().c_str();
+            //if (fquality) fquality->SetText(qStr.String());
 
             BString lStr("Listeners: ");
             lStr << currentListeners.c_str();
@@ -2073,9 +2085,10 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		StationItem* item = (StationItem*)fStationList->ItemAt(0);        
         		if (item) {
             		this->PlayStation(item->GetChannel());             
-            		BString qStr("Quality: ");
-            		qStr << get_bitrate_text().c_str();
-            		if (fquality) fquality->SetText(qStr.String());
+            		
+            		//BString qStr("Quality: ");
+            		//qStr << get_bitrate_text().c_str();
+            		//if (fquality) fquality->SetText(qStr.String());
 
             		BString lStr("Listeners: ");
             		lStr << currentListeners.c_str();
@@ -2103,9 +2116,11 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         if (message->FindString("val", &val) == B_OK) {
             cfg.quality = val;
             save_config();
+            
             BString qStr("Quality: ");
             qStr << get_bitrate_text().c_str();
             if (fquality) fquality->SetText(qStr.String());
+            
         	}
         	break;
     	}
@@ -2201,11 +2216,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		int32 index = fPresetList->CurrentSelection();
     		if (index >= 0) {
         		BStringItem* item = (BStringItem*)fPresetList->ItemAt(index);
-        
-		
         		load_specific_preset(item->Text()); 
-		
-
         		if (chkShuffle) chkShuffle->SetValue(B_CONTROL_OFF);
         		cfg.autoShuffle = false;
         		cfg.autoShuffleVisuals = false;
@@ -2514,9 +2525,10 @@ virtual bool QuitRequested() {
 
 int32 mpv_loop_thread(void* data) {
     SuperMusicWindow* win = (SuperMusicWindow*)data;
+    int32 lastBitrate = 0;
+
     while (mpvthread_running) {
         if (notifyTimer > 0 && std::time(nullptr) >= notifyTimer) {
-        	std::string songToSend = pendingSong; 
             currentSong = pendingSong;
             pendingSong = "";
             notifyTimer = 0; 
@@ -2531,6 +2543,7 @@ int32 mpv_loop_thread(void* data) {
         mpv_event *event = mpv_wait_event(mpv, 0.05);        
         if (event->event_id == MPV_EVENT_NONE) continue;
         if (event->event_id == MPV_EVENT_SHUTDOWN) break;
+        
         if (event->event_id == MPV_EVENT_PROPERTY_CHANGE) {
             mpv_event_property *prop = (mpv_event_property *)event->data;
             if (prop && prop->data && prop->name) {
@@ -2546,11 +2559,23 @@ int32 mpv_loop_thread(void* data) {
                         }
                     }
                 }
+                else if (propName == "audio-bitrate") {
+                    double bps = *(double*)prop->data;
+                    int32 kbps = (int32)(bps / 1000);
+                    
+                    if (kbps > 0 && kbps != lastBitrate && win) {
+                        lastBitrate = kbps;
+                        BMessage msg(MSG_UPDATE_BITRATE);
+                        msg.AddInt32("kbps", kbps);
+                        win->PostMessage(&msg);
+                    }
+                }
             }
         }
     }
     return 0;
 }
+
 
 
 bool SuperMusicWindow::QuitRequested() {
