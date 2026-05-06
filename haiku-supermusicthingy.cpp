@@ -1136,12 +1136,10 @@ void PopulatePresetList(BListView* list, const char* folderPath) {
         if (entry.is_regular_file()) {
             std::string ext = entry.path().extension().string();
             if (ext == ".milk" || ext == ".milk2") {
-                // Use the filename for the list display
                 list->AddItem(new BStringItem(entry.path().filename().string().c_str()));
             }
         }
     }
-   fprintf(stdout, "[Debug] Global pm handle: %p\n", pm);
 }
 
 
@@ -2197,6 +2195,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             break;
         }
         
+        #ifdef USE_PROJECTM
 		case MSG_REFRESH_PRESETS: {
     		const char* home = getenv("HOME");
     		if (home && fPresetList) {
@@ -2205,16 +2204,17 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		}
     		break;
 		}
-
-
+		#endif
+		
+		#ifdef USE_PROJECTM
 		case MSG_PRESET_SELECTED: {
     		int32 index = fPresetList->CurrentSelection();
     		if (index >= 0) {
         		BStringItem* item = (BStringItem*)fPresetList->ItemAt(index);
         
-		#ifdef USE_PROJECTM
+		
         		load_specific_preset(item->Text()); 
-		#endif
+		
 
         		if (chkShuffle) chkShuffle->SetValue(B_CONTROL_OFF);
         		cfg.autoShuffle = false;
@@ -2222,7 +2222,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		}
     		break;
 		}
-
+		#endif
 
         case B_QUIT_REQUESTED:
             be_app->PostMessage(B_QUIT_REQUESTED);
