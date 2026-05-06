@@ -136,7 +136,7 @@ enum {
     MSG_PLAY_FAV    = 'plfv',
     MSG_CFG_AUTO_SHUFFLE = 'c_as',
     MSG_CFG_ICON_SIZE = 'i_sz',
-
+    MSG_TOGGLE_PRESETS = 'e_cv',
     MSG_CFG_AUTO_PresetTimer = 'c_pt',
     MSG_CFG_NOTIFY       = 'c_nt',
     MSG_CFG_QUALITY      = 'c_qu',
@@ -224,9 +224,6 @@ private:
     BBitmap* fIcon;
     bool fIsFavorite;
 };
-
-
-
 
 
 
@@ -384,7 +381,6 @@ void download_art(const std::string& url) {
         curl_easy_setopt(curl, CURLOPT_USERAGENT, "SuperMusicThingy/1.0");
 
         if(curl_easy_perform(curl) == CURLE_OK) {
-            // Convert the raw memory buffer into a Haiku BBitmap
             BMemoryIO memIO(buffer.data(), buffer.size());
             BBitmap* newBitmap = BTranslationUtils::GetBitmap(&memIO);
 
@@ -404,29 +400,50 @@ void fetch_channels() {
     channels.clear();
     CURL* curl = curl_easy_init();
     std::string buffer;
+    
     if(curl) {
         curl_easy_setopt(curl, CURLOPT_URL, (BASE_URL + "channels.json").c_str());
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
         curl_easy_setopt(curl, CURLOPT_USERAGENT, "SuperMusicThingy/1.0");
+
         if(curl_easy_perform(curl) == CURLE_OK) {
             try {
                 auto data = json::parse(buffer);
                 for (auto& ch : data["channels"]) {
-                    channels.push_back({
-                        ch.value("title", ""),
-                        ch.value("id", ""),
-                        ch.value("description", ""),
-                        ch.value("listeners", "0"),
-                        ch.value("largeimage", ""),
-                        ch.value("image", "")
-                    });
-                }
-            } catch(...) {}
+                    // 1. Create the object and fill basic info
+                    Channel channel;
+                    channel.title      = ch.value("title", "");
+                    channel.id         = ch.value("id", "");
+                    channel.desc       = ch.value("description", "");
+                    channel.listeners  = ch.value("listeners", "0");
+                    channel.largeimage = ch.value("largeimage", "");
+                    channel.image      = ch.value("image", "");
+                    
+		if (ch.contains("playlists") && ch["playlists"].is_array()) {
+    		for (auto& pl : ch["playlists"]) {
+        		std::string url = pl.value("url", "");
+        		size_t lastDot = url.find_last_of('.');
+        		if (lastDot != std::string::npos) {
+
+            		if (url.find("320.pls") != std::string::npos) channel.supported_bitrates.insert("320k");
+            		if (url.find("256.pls") != std::string::npos) channel.supported_bitrates.insert("256k");
+            		if (url.find("64.pls") != std::string::npos)  channel.supported_bitrates.insert("64k");
+            		if (url.find("32.pls") != std::string::npos)  channel.supported_bitrates.insert("32k");
+        		}
+    		}
+		}
+
+        channels.push_back(channel);
+                	}
+            	} catch(...) {
+            }
         }
         curl_easy_cleanup(curl);
     }
 }
+
+
 
 
 
@@ -664,7 +681,7 @@ struct Config {
     int notifyIconSize = 64; 
     //int defaultVolume = 75;
     std::string updateTheme = "Dark";
-    std::string quality = "Highest";
+    std::string quality = "128k";
 } cfg;
 
 int selectedConfig = 0;
@@ -702,7 +719,7 @@ void load_config() {
         if (infile.is_open()) {
             try {
                 json j = json::parse(infile);
-                cfg.quality = j.value("quality", "highest");
+                cfg.quality = j.value("quality", "128k");
                 int val = j.value("notifyIconSize", 64);
                 if (val == 32 || val == 40 || val == 64 || val == 96 || val == 128) {
                     cfg.notifyIconSize = val;
@@ -797,8 +814,6 @@ void SuperMusicWindow::DownloadStationIcons() {
 }
 
 
-
-
 void init_mpv() {
         mpv = mpv_create();
         if (!mpv) exit(1);
@@ -810,45 +825,40 @@ void init_mpv() {
         mpv_observe_property(mpv, 0, "paused-for-cache", MPV_FORMAT_FLAG);
 }
     
-    
-    
+std::string get_quality_url(const Channel& ch) {
+    if (ch.supported_bitrates.count(cfg.quality)) {
+        if (cfg.quality == "320k") return BASE_URL + ch.id + "320.pls";
+        if (cfg.quality == "256k") return BASE_URL + ch.id + "256.pls";
+        if (cfg.quality == "64k")  return BASE_URL + ch.id + "64.pls";
+        if (cfg.quality == "32k")  return BASE_URL + ch.id + "32.pls";
+    }
+    return BASE_URL + ch.id + ".pls";
+}
+
+        
 void fade_volume(mpv_handle *mpv, double target_vol, double duration_ms) {
-        double current_vol;
-        mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &current_vol);
+    double current_vol = 0;
+    mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &current_vol);
 
-        int steps = 20; // Number of small volume jumps
-        double step_size = (target_vol - current_vol) / steps;
-        int step_duration = (int)(duration_ms * 1000 / steps); // in microseconds
+    const int steps = 50; 
+    double step_size = (target_vol - current_vol) / steps;
+    // (ms * 1000) / steps gives us delay per step in microseconds
+    useconds_t step_duration = (useconds_t)((duration_ms * 1000) / steps);
 
-        for (int i = 0; i < steps; ++i) {
-            current_vol += step_size;
-            mpv_set_property(mpv, "volume", MPV_FORMAT_DOUBLE, &current_vol);
-            usleep(step_duration);
-        	}
-
-        mpv_set_property(mpv, "volume", MPV_FORMAT_DOUBLE, &target_vol);
-   		}
-    
-       std::string get_quality_url(const std::string& id) {
-        if (cfg.quality == "Highest") {
-            return BASE_URL + id + ".pls";
-        }
-        if (cfg.quality == "High") {
-            return BASE_URL + id + "64.pls";
-        }
-        if (cfg.quality == "Low") {
-            return BASE_URL + id + "32.pls";
-        }
-        // Default: 128k AAC (id + "130.pls")
-        return BASE_URL + id + ".pls";
+    for (int i = 0; i < steps; ++i) {
+        current_vol += step_size;
+        mpv_set_property(mpv, "volume", MPV_FORMAT_DOUBLE, &current_vol);
+        usleep(step_duration);
     }
 
-    std::string get_bitrate_text() {
-        if (cfg.quality == "Highest") return "128k";
-        if (cfg.quality == "High")    return "64k";
-        if (cfg.quality == "Low")     return "32k";
-        return "";
+    mpv_set_property(mpv, "volume", MPV_FORMAT_DOUBLE, &target_vol);
 }
+
+std::string get_bitrate_text() {
+    if (cfg.quality.empty()) return "128k";
+    return cfg.quality;
+}
+
 
 // Save Station to favorites
 void save_favorite() {
@@ -904,42 +914,41 @@ void play_favorite() {
     std::string line;
     while (std::getline(infile, line)) if (!line.empty()) favs.push_back(line);
 
-    if (favs.empty()) {
-        return;
-    }
+    if (favs.empty()) return;
 
-    std::string url = favs[rand() % favs.size()];
+    std::string favUrl = favs[rand() % favs.size()];
     
-    size_t lastSlash = url.find_last_of('/');
-    size_t lastDot = url.find_last_of('.');
-    if (lastSlash != std::string::npos && lastDot != std::string::npos) {
-        std::string id = url.substr(lastSlash + 1, lastDot - lastSlash - 1);
-        
-        for (const auto& ch : channels) {
-            if (ch.id == id) {
-                currentStation = ch.title;
-                currentStationID = ch.id; 
-                currentDesc = ch.desc;
-                currentListeners = ch.listeners;
-                currentAlbumArtUrl = ch.largeimage;
+    size_t lastSlash = favUrl.find_last_of('/');
+    size_t lastDot = favUrl.find_last_of('.');
+    if (lastSlash == std::string::npos || lastDot == std::string::npos) return;
+    std::string id = favUrl.substr(lastSlash + 1, lastDot - lastSlash - 1);
 
-                if (!currentAlbumArtUrl.empty()) {
-                    if (gGuiWindow && gGuiWindow->fArtCache.count(currentStationID) > 0) {
-                        if (gGuiWindow->Lock()) {
-                            gGuiWindow->fAlbumArt = gGuiWindow->fArtCache[currentStationID];
-                            if (gGuiWindow->fArtView)
-                                ((AlbumArtView*)gGuiWindow->fArtView)->SetBitmap(gGuiWindow->fAlbumArt);
-                            gGuiWindow->Unlock();
-                        }
-                    } else {
-                        // CACHE MISS
-                        std::thread([url = currentAlbumArtUrl]() {
-                            download_art(url);
-                        }).detach();
+    std::string finalUrl = favUrl; 
+    for (const auto& ch : channels) {
+        if (ch.id == id) {
+            currentStation = ch.title;
+            currentStationID = ch.id; 
+            currentDesc = ch.desc;
+            currentListeners = ch.listeners;
+            currentAlbumArtUrl = ch.largeimage;
+
+            finalUrl = get_quality_url(ch); 
+
+            if (!currentAlbumArtUrl.empty()) {
+                if (gGuiWindow && gGuiWindow->fArtCache.count(currentStationID) > 0) {
+                    if (gGuiWindow->Lock()) {
+                        gGuiWindow->fAlbumArt = gGuiWindow->fArtCache[currentStationID];
+                        if (gGuiWindow->fArtView)
+                            ((AlbumArtView*)gGuiWindow->fArtView)->SetBitmap(gGuiWindow->fAlbumArt);
+                        gGuiWindow->Unlock();
                     }
+                } else {
+                    std::thread([artUrl = currentAlbumArtUrl]() {
+                        download_art(artUrl);
+                    }).detach();
                 }
-                break;
             }
+            break;
         }
     }
 
@@ -948,14 +957,14 @@ void play_favorite() {
     fade_volume(mpv, 0, 300);
 
     currentSong = "Loading Favorite...";
-    
     if (gGuiWindow && gGuiWindow->Lock()) {
         gGuiWindow->UpdateStatus(currentStation.c_str(), currentSong.c_str());
         gGuiWindow->Unlock();
     }
 
-    const char *cmd[] = {"loadfile", url.c_str(), NULL};
+    const char *cmd[] = {"loadfile", finalUrl.c_str(), NULL};
     mpv_command(mpv, cmd);
+    
     fade_volume(mpv, original_vol, 500);
 }
 
@@ -1000,7 +1009,7 @@ void SuperMusicWindow::PlayStation(const Channel& chan) {
     currentSong = "Buffering...";
     UpdateStatus(currentStation.c_str(), currentSong.c_str());
 
-    std::string url = get_quality_url(chan.id); 
+    std::string url = get_quality_url(chan); 
     const char *cmd[] = {"loadfile", url.c_str(), NULL};
     mpv_command(mpv, cmd);    
     fade_volume(mpv, original_vol, 500);
@@ -1074,7 +1083,8 @@ void play_random() {
         }
     }
     
-    std::string url = get_quality_url(chan.id);
+    std::string url = get_quality_url(chan); 
+    
     const char *cmd[] = {"loadfile", url.c_str(), NULL};
     mpv_command(mpv, cmd);
     
@@ -1312,10 +1322,6 @@ int32 VisualsThread(void* data) {
             // Keyboard Events
             else if (e.type == SDL_KEYDOWN) {
                 switch (e.key.keysym.sym) {
-                    case SDLK_v:
-                        load_random_preset(pm);
-                        lastPresetChange = SDL_GetTicks();
-                        break;
                     case SDLK_q:
                         visualsRunning = false;
                         break;
@@ -1331,32 +1337,15 @@ int32 VisualsThread(void* data) {
                         mpv_command(mpv, cmd_mute);
                         break;
                     }
-                    case SDLK_x: {
-                        const char* cmd_stop[] = {"stop", NULL};
-                        mpv_command(mpv, cmd_stop);
-                        break;
-                    }
                     case SDLK_p: {
                         const char* cmd_pause[] = {"cycle", "pause", NULL};
                         mpv_command(mpv, cmd_pause);
                         break;
                     }
-                    case SDLK_EQUALS:
-                    case SDLK_KP_PLUS:
-                        set_volume('+');
-                        break;
-                    case SDLK_MINUS:
-                    case SDLK_KP_MINUS:
-                        set_volume('-');
-                        break;
-                    case SDLK_k:
-                    case SDLK_ESCAPE: {
+                      case SDLK_ESCAPE: {
                         uint32_t flags = SDL_GetWindowFlags(visualWin);
                         bool isFullscreen = (flags & SDL_WINDOW_FULLSCREEN_DESKTOP);
-                        
-                        // If ESC, only toggle if currently fullscreen
                         if (e.key.keysym.sym == SDLK_ESCAPE && !isFullscreen) break;
-
                         SDL_SetWindowFullscreen(visualWin, isFullscreen ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
                         SDL_ShowCursor(isFullscreen ? SDL_ENABLE : SDL_DISABLE);
                         
@@ -1467,7 +1456,6 @@ class ClickableURL : public BStringView {
 public:
     ClickableURL(const char* name, const char* text, const char* url)
         : BStringView(name, text), fUrl(url) {
-        // Optional: Make it look like a link
         SetHighColor(0, 102, 204); 
     }
 
@@ -1514,8 +1502,6 @@ void SuperMusicWindow::UpdateStatus(const char* station, const char* song) {
 }
 
 
-
-
 SuperMusicWindow::SuperMusicWindow()
     : BWindow(BRect(100, 100, 550, 300), "SuperMusicThingy", B_TITLED_WINDOW, 
               B_ASYNCHRONOUS_CONTROLS | B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE)
@@ -1524,7 +1510,6 @@ SuperMusicWindow::SuperMusicWindow()
     #ifdef USE_PROJECTM
     fProjectM = pm; 
 	#endif
-
     
     BFont largeFont(be_bold_font);
     BFont smallFont(be_bold_font);
@@ -1548,8 +1533,7 @@ SuperMusicWindow::SuperMusicWindow()
     // Text Labels
     fStationView = new BStringView("", "Press Play or Shuffle");
     fStationView->SetFont(&largeFont);
-    fStationView->SetAlignment(B_ALIGN_CENTER);      
-    
+    fStationView->SetAlignment(B_ALIGN_CENTER);   
     
 	fDescView = new SongLabel("description_view");
 	fDescView->SetFontAndColor(&smallFont);
@@ -1664,13 +1648,17 @@ SuperMusicWindow::SuperMusicWindow()
 
 	// --- Quality Selection (Menu Field) ---
 	BPopUpMenu* qualityMenu = new BPopUpMenu("Select");
-	BMessage* msgHighest = new BMessage(MSG_CFG_QUALITY); msgHighest->AddString("val", "Highest");
-	BMessage* msgHigh = new BMessage(MSG_CFG_QUALITY); msgHigh->AddString("val", "High"); 
-	BMessage* msgLow  = new BMessage(MSG_CFG_QUALITY); msgLow->AddString("val", "Low");
+	BMessage* msg320k = new BMessage(MSG_CFG_QUALITY); msg320k->AddString("val", "320k");
+	BMessage* msg256k = new BMessage(MSG_CFG_QUALITY); msg256k->AddString("val", "256k");
+	BMessage* msg128k = new BMessage(MSG_CFG_QUALITY); msg128k->AddString("val", "128k");
+	BMessage* msg64k = new BMessage(MSG_CFG_QUALITY);  msg64k->AddString("val", "64k"); 
+	BMessage* msg32k  = new BMessage(MSG_CFG_QUALITY); msg32k->AddString("val", "32k");
 
-	qualityMenu->AddItem(new BMenuItem("Highest", msgHighest));
-	qualityMenu->AddItem(new BMenuItem("High", msgHigh));  
-	qualityMenu->AddItem(new BMenuItem("Low", msgLow));
+	qualityMenu->AddItem(new BMenuItem("320k", msg320k));
+	qualityMenu->AddItem(new BMenuItem("256k", msg256k));
+	qualityMenu->AddItem(new BMenuItem("128k", msg128k));
+	qualityMenu->AddItem(new BMenuItem("64k", msg64k));  
+	qualityMenu->AddItem(new BMenuItem("32k", msg32k));
 
 	BMenuItem* selectedItem = qualityMenu->FindItem(cfg.quality.c_str());
 	if (selectedItem) selectedItem->SetMarked(true);
@@ -1699,18 +1687,21 @@ SuperMusicWindow::SuperMusicWindow()
 
     // --- Checkboxes ---
 
+	fPresetToggle = new BCheckBox("preset_toggle", "MilkDrop Presets:", new BMessage(MSG_TOGGLE_PRESETS));
+	
+	fPresetToggle->SetValue(B_CONTROL_OFF); 
 
 	fPresetList = new PresetListView("preset_list");
 	fPresetList->SetSelectionMessage(new BMessage(MSG_PRESET_SELECTED));
+	
 	fPresetScroll = new BScrollView("preset_scroll", fPresetList, 0, true, true, B_FANCY_BORDER);
+	fPresetScroll->Hide(); 
 	fPresetScroll->SetExplicitMinSize(BSize(B_SIZE_UNSET, 150));
 	fPresetScroll->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 300));
-    
    
     BCheckBox* fVisualsCheckbox = new BCheckBox(BRect(10, 10, 200, 30), "visuals_toggle", 
     "Enable Visualizer", new BMessage(MSG_TOGGLE_VISUALS));
-    fVisualsCheckbox->SetValue(cfg.showVisuals ? B_CONTROL_ON : B_CONTROL_OFF);
-    
+    fVisualsCheckbox->SetValue(cfg.showVisuals ? B_CONTROL_ON : B_CONTROL_OFF);    
     
 	fShuffleFavsCheckbox = new BCheckBox("shuffle_favs", "Shuffle Only Favorites", 
     new BMessage(MSG_SHUFFLE_FAVS_CHANGED));
@@ -1734,7 +1725,6 @@ SuperMusicWindow::SuperMusicWindow()
     // --- Layout ---
 BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 10)
     .SetInsets(20)
-    // Audio Quality Row
     .AddGroup(B_HORIZONTAL, 5) 
         .Add(qualityLabel)    
         .Add(qualityField)    
@@ -1750,7 +1740,7 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 10)
     .Add(fShuffleFavsCheckbox)
     .Add(chkTheme)
      #ifdef USE_PROJECTM
-    .Add(new BStringView("lbl_presets", "MilkDrop Presets:"))
+    .Add(fPresetToggle)
     .Add(fPresetScroll) 
     .Add(fVisualsCheckbox)
     .Add(chkPresetTimer)
@@ -1934,7 +1924,7 @@ void SuperMusicWindow::UpdateUI() {
     }
 
     BString qStr("Quality: ");
-    qStr << cfg.quality.c_str() << " (" << get_bitrate_text().c_str() << ")";
+    qStr << get_bitrate_text().c_str();
     if (fquality) fquality->SetText(qStr.String());
 
     BString lStr("Listeners: ");
@@ -1949,7 +1939,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 {
     switch (message->what) {
         
-        // --- FAVORITES LOGIC ---
         
 		case MSG_ADD_FAV: {
     		if (is_favorite()) {        
@@ -1996,7 +1985,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		}
     		
     		BString qStr("Quality: ");
-            qStr << cfg.quality.c_str() << " (" << get_bitrate_text().c_str() << ")";
+            qStr << get_bitrate_text().c_str();
             if (fquality) fquality->SetText(qStr.String());
 
             BString lStr("Listeners: ");
@@ -2067,7 +2056,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		this->PlayStation(item->GetChannel()); 
         		
         	BString qStr("Quality: ");
-            qStr << cfg.quality.c_str() << " (" << get_bitrate_text().c_str() << ")";
+            qStr << get_bitrate_text().c_str();
             if (fquality) fquality->SetText(qStr.String());
 
             BString lStr("Listeners: ");
@@ -2085,7 +2074,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		if (item) {
             		this->PlayStation(item->GetChannel());             
             		BString qStr("Quality: ");
-            		qStr << cfg.quality.c_str() << " (" << get_bitrate_text().c_str() << ")";
+            		qStr << get_bitrate_text().c_str();
             		if (fquality) fquality->SetText(qStr.String());
 
             		BString lStr("Listeners: ");
@@ -2099,21 +2088,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		break;
 		}
 
-    	
-    	case MSG_TOGGLE_VISUALS:
-        {
-            int32 value = 0;
-            if (message->FindInt32("be:value", &value) == B_OK) {
-                cfg.showVisuals = (value == B_CONTROL_ON);
-                if (cfg.showVisuals) {
-                    StartVisuals(); 
-                } else {
-                    StopVisuals();
-                }
-            }
-            break;
-        }
-        
+    
         case MSG_CFG_ICON_SIZE: {
     		int32 newSize;
     		if (message->FindInt32("val", &newSize) == B_OK) {
@@ -2129,7 +2104,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             cfg.quality = val;
             save_config();
             BString qStr("Quality: ");
-            qStr << cfg.quality.c_str() << " (" << get_bitrate_text().c_str() << ")";
+            qStr << get_bitrate_text().c_str();
             if (fquality) fquality->SetText(qStr.String());
         	}
         	break;
@@ -2196,6 +2171,21 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         }
         
         #ifdef USE_PROJECTM
+        case MSG_TOGGLE_VISUALS:
+        {
+            int32 value = 0;
+            if (message->FindInt32("be:value", &value) == B_OK) {
+                cfg.showVisuals = (value == B_CONTROL_ON);
+                if (cfg.showVisuals) {
+                    StartVisuals(); 
+                } else {
+                    StopVisuals();
+                }
+            }
+            break;
+        }       
+        
+        
 		case MSG_REFRESH_PRESETS: {
     		const char* home = getenv("HOME");
     		if (home && fPresetList) {
@@ -2204,9 +2194,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		}
     		break;
 		}
-		#endif
 		
-		#ifdef USE_PROJECTM
+		
+		
 		case MSG_PRESET_SELECTED: {
     		int32 index = fPresetList->CurrentSelection();
     		if (index >= 0) {
@@ -2220,6 +2210,18 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		cfg.autoShuffle = false;
         		cfg.autoShuffleVisuals = false;
     		}
+    		break;
+		}
+		
+
+		case MSG_TOGGLE_PRESETS: {
+    		bool show = (fPresetToggle->Value() == B_CONTROL_ON);    
+    		if (show) {
+        		fPresetScroll->Show();
+    		} else {
+        		fPresetScroll->Hide();    	
+        	}    
+    		InvalidateLayout();
     		break;
 		}
 		#endif

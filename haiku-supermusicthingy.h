@@ -32,7 +32,7 @@
 #include <ListView.h>
 #include <Bitmap.h>
 #include <vector>
-
+#include <set>
 
 struct Channel {
     std::string title;
@@ -42,6 +42,8 @@ struct Channel {
     std::string largeimage;
     std::string image;
     std::string url; 
+    std::set<std::string> supported_bitrates; 
+    std::map<std::string, std::string> quality_map; 
 };
 
 class SongLabel; 
@@ -75,6 +77,7 @@ private:
     
     BListView*   fPresetList;
     BScrollView* fPresetScroll;
+    BCheckBox*   fPresetToggle;  
     BCheckBox*   chkShuffle; 
     
 #ifdef USE_PROJECTM
