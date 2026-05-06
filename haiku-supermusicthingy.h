@@ -33,7 +33,7 @@ struct Channel {
     std::string id;
     std::string desc;
     std::string listeners;
-    std::string xlimage;
+    std::string largeimage;
     std::string image;
     std::string url; 
 };

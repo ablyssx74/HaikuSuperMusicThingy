@@ -406,7 +406,7 @@ void fetch_channels() {
                         ch.value("id", ""),
                         ch.value("description", ""),
                         ch.value("listeners", "0"),
-                        ch.value("xlimage", ""),
+                        ch.value("largeimage", ""),
                         ch.value("image", "")
                     });
                 }
@@ -874,7 +874,7 @@ void play_favorite() {
                 currentStationID = ch.id; 
                 currentDesc = ch.desc;
                 currentListeners = ch.listeners;
-                currentAlbumArtUrl = ch.xlimage;
+                currentAlbumArtUrl = ch.largeimage;
 
                 if (!currentAlbumArtUrl.empty()) {
                     if (gGuiWindow && gGuiWindow->fArtCache.count(currentStationID) > 0) {
@@ -919,7 +919,7 @@ void SuperMusicWindow::PlayStation(const Channel& chan) {
     currentStationID = chan.id; 
     currentDesc = chan.desc;
     currentListeners = chan.listeners;
-    currentAlbumArtUrl = chan.xlimage;
+    currentAlbumArtUrl = chan.largeimage;
     
     if (Lock()) {
        fDescView->SetText(currentDesc.c_str());
@@ -1012,7 +1012,7 @@ void play_random() {
     currentDesc = chan.desc;
     currentListeners = chan.listeners;
     currentSong = "Buffering...";
-    currentAlbumArtUrl = chan.xlimage;
+    currentAlbumArtUrl = chan.largeimage;
 
     if (!currentAlbumArtUrl.empty()) {
         if (gGuiWindow && gGuiWindow->fArtCache.count(currentStationID) > 0) {
