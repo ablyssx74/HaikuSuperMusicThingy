@@ -536,11 +536,7 @@ public:
 class AlbumArtView : public BView {
 public:
     AlbumArtView() : BView("art_view", B_WILL_DRAW | B_FULL_UPDATE_ON_RESIZE) {
-        fCurrentBitmap = nullptr;
-    	this->SetExplicitMinSize(BSize(300, 300));
-    	this->SetExplicitMaxSize(BSize(300, 300));
-    	this->SetExplicitPreferredSize(BSize(300, 300)); 
-        
+        fCurrentBitmap = nullptr;        
     }
 
     void SetBitmap(BBitmap* bitmap) {
@@ -1456,9 +1452,9 @@ SuperMusicWindow::SuperMusicWindow()
     
     // Album Art
     fArtView = new AlbumArtView();
-	fArtView->SetExplicitSize(BSize(300, 300)); 
-    fArtView->SetExplicitMinSize(BSize(300, 300));
-	fArtView->SetExplicitMaxSize(BSize(300, 300));
+	fArtView->SetExplicitSize(BSize(325, 300)); 
+    fArtView->SetExplicitMinSize(BSize(325, 300));
+	fArtView->SetExplicitMaxSize(BSize(325, 300));
     
     BBitmap* heartIcon = GetVectorIcon(kIconFav, kIconFavSize, 40);
 	fBtnAddFav = new IconButton("btn_add_fav", heartIcon, new BMessage(MSG_ADD_FAV));
