@@ -1874,7 +1874,16 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
    			 }
             
             break;
-        }              
+        }
+        
+        case MSG_CFG_AUTO_SHUFFLE: {
+        BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_shuffle"));
+        	if (chk) {
+            	cfg.autoShuffle = (chk->Value() == B_CONTROL_ON);
+            	save_config(); 
+        	}
+        	break;
+    	}              
     	
     	case MSG_CFG_AUTO_PresetTimer: {
         BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_PresetTimer"));
