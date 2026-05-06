@@ -20,10 +20,13 @@
 #include <string>
 #include <ListView.h>
 #include <IconUtils.h>
+#include <Roster.h>
+#include <StringView.h>
 
 
 // --- Haiku Storage Kit ---
 #include <Path.h>
+#include <Entry.h>
 #include <FindDirectory.h>
 #include <Directory.h> 
 #include <storage/Entry.h>
@@ -92,6 +95,7 @@ void cleanup_capture_device() {
         alcCaptureDevice = nullptr;
     }
 }
+std::string gPendingPresetPath = "";
 
 #endif
 
@@ -119,13 +123,20 @@ enum {
     MSG_VOL_UP  = 'v_up',
     MSG_VOL_DN  = 'v_dn',
     MSG_FAVS    = 'favs',
+    MSG_OPEN_URL = 'burl',
     MSG_VOL_CHANGE = 'vchg',
+    
+	MSG_PRESET_SELECTED   = 'prsl',
+	MSG_REFRESH_PRESETS   = 'prrf',
+
     MSG_UPDATE_SONG = 'updt', 
     MSG_UPDATE_ART = 'dart',    
     MSG_ADD_FAV     = 'adfv', 
     MSG_DEL_FAV     = 'dlfv',
     MSG_PLAY_FAV    = 'plfv',
     MSG_CFG_AUTO_SHUFFLE = 'c_as',
+    MSG_CFG_ICON_SIZE = 'i_sz',
+
     MSG_CFG_AUTO_PresetTimer = 'c_pt',
     MSG_CFG_NOTIFY       = 'c_nt',
     MSG_CFG_QUALITY      = 'c_qu',
@@ -189,19 +200,15 @@ void Draw(BRect updateRect) override {
 
         if (isFavBtn) {
             if (fIsFavorite) {
-                // Heart is a favorite: Solid/Bright
                 SetDrawingMode(B_OP_ALPHA);
                 SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
             } else {
-                // Heart is NOT a favorite: Grayed/Blended
                 SetDrawingMode(B_OP_BLEND);
             }
         } else {
-            // Standard buttons (Stop/Shuffle): Always Solid/Bright
             SetDrawingMode(B_OP_ALPHA);
             SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
             
-            // Optional: If the button is actually disabled, then blend it
             if (!IsEnabled()) {
                 SetDrawingMode(B_OP_BLEND);
             }
@@ -217,6 +224,11 @@ private:
     BBitmap* fIcon;
     bool fIsFavorite;
 };
+
+
+
+
+
 
 const unsigned char kIconShuffle[] = {
 	0x6e, 0x63, 0x69, 0x66, 0x03, 0x04, 0x00, 0x66, 0x05, 0x00, 0x02, 0x00, 0x16, 0x02, 0x00, 0x00,
@@ -610,6 +622,37 @@ public:
     }
 };
 
+class PresetListView : public BListView {
+public:
+    PresetListView(const char* name) 
+        : BListView(name) {} 
+
+	virtual void MouseDown(BPoint where) override {
+    BMessage* msg = Window()->CurrentMessage();
+    int32 buttons = msg->GetInt32("buttons", 0);
+    int32 index = IndexOf(where);
+
+    if ((buttons & B_SECONDARY_MOUSE_BUTTON) != 0 && index >= 0) {
+        Select(index);         
+        BPopUpMenu* menu = new BPopUpMenu("preset_context_menu", false, false);        
+        menu->AddItem(new BMenuItem("Load Preset", new BMessage(MSG_PRESET_SELECTED)));
+        menu->AddSeparatorItem();
+        menu->AddItem(new BMenuItem("Refresh List", new BMessage(MSG_REFRESH_PRESETS)));        
+        menu->SetTargetForItems(Window());
+        BPoint screenPoint = ConvertToScreen(where);
+        BMenuItem* selected = menu->Go(screenPoint);
+        	if (selected) {
+            	Window()->PostMessage(selected->Message());
+        	}
+        	delete menu; 
+    	} else {
+        	BListView::MouseDown(where);
+    	}
+	}
+
+};
+
+
 
 struct Config {
     bool showNotifications = true;
@@ -618,6 +661,7 @@ struct Config {
     bool autoShuffleVisuals = false;
     bool autoVsync = false;
     bool shuffleFavsOnly = false;
+    int notifyIconSize = 64; 
     //int defaultVolume = 75;
     std::string updateTheme = "Dark";
     std::string quality = "Highest";
@@ -629,6 +673,7 @@ int selectedConfig = 0;
 void save_config() {
     json j;
     j["quality"] = cfg.quality;
+    j["notifyIconSize"] = cfg.notifyIconSize;
     j["updateTheme"] = cfg.updateTheme;
     j["showNotifications"] = cfg.showNotifications;
     j["autoShuffle"] = cfg.autoShuffle;
@@ -658,6 +703,12 @@ void load_config() {
             try {
                 json j = json::parse(infile);
                 cfg.quality = j.value("quality", "highest");
+                int val = j.value("notifyIconSize", 64);
+                if (val == 32 || val == 40 || val == 64 || val == 96 || val == 128) {
+                    cfg.notifyIconSize = val;
+                } else {
+                    cfg.notifyIconSize = 64; 
+                }
                 cfg.updateTheme = j.value("updateTheme", "Dark");
                 cfg.showNotifications = j.value("showNotifications", true);
                 cfg.autoShuffle = j.value("autoShuffle", false);
@@ -666,11 +717,11 @@ void load_config() {
                 cfg.showVisuals = j.value("showVisuals", false);   
                 cfg.shuffleFavsOnly = j.value("shuffleFavsOnly", false);              
             } catch(...) {
-
             }
         }
     }
 }
+
 
 
 void SuperMusicWindow::DownloadStationIcons() {
@@ -1076,6 +1127,28 @@ void toggle_mute() {
  }
 
 
+
+void PopulatePresetList(BListView* list, const char* folderPath) {
+    list->MakeEmpty();
+    if (!std::filesystem::exists(folderPath)) return;
+
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(folderPath)) {
+        if (entry.is_regular_file()) {
+            std::string ext = entry.path().extension().string();
+            if (ext == ".milk" || ext == ".milk2") {
+                // Use the filename for the list display
+                list->AddItem(new BStringItem(entry.path().filename().string().c_str()));
+            }
+        }
+    }
+   fprintf(stdout, "[Debug] Global pm handle: %p\n", pm);
+}
+
+
+
+
+
+
 #ifdef USE_PROJECTM
 void load_random_preset(projectm_handle pm) {
     const char* home = getenv("HOME");
@@ -1187,6 +1260,13 @@ int32 VisualsThread(void* data) {
 
     // 3. RENDER LOOP
     while (visualsRunning && pm) { // added '&& pm' safety check
+    
+    
+    if (!gPendingPresetPath.empty()) {
+        projectm_load_preset_file(pm, gPendingPresetPath.c_str(), true);
+        gPendingPresetPath = "";
+        lastPresetChange = SDL_GetTicks(); 
+    }
         
         // --- Audio Capture ---
         if (alcCaptureDevice) {
@@ -1366,6 +1446,41 @@ void SuperMusicWindow::StopVisuals() {
 }
 
 
+#ifdef USE_PROJECTM
+void load_specific_preset(const char* filename) {
+    const char* home = getenv("HOME");
+    if (!home || !filename) return;
+    
+    std::string configPath = std::string(home) + "/config/settings/SuperMusicThingy/milk_presets/";
+
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(configPath)) {
+        if (entry.is_regular_file() && entry.path().filename() == filename) {
+            gPendingPresetPath = entry.path().string();
+             break;
+        }
+    }
+}
+
+#endif
+
+
+
+class ClickableURL : public BStringView {
+public:
+    ClickableURL(const char* name, const char* text, const char* url)
+        : BStringView(name, text), fUrl(url) {
+        // Optional: Make it look like a link
+        SetHighColor(0, 102, 204); 
+    }
+
+    void MouseDown(BPoint point) override {
+        const char* url = fUrl.String();
+        be_roster->Launch("text/html", 1, (char**)&url);
+    }
+
+private:
+    BString fUrl;
+};
 
 
 class VolumeSlider : public BSlider {
@@ -1408,6 +1523,10 @@ SuperMusicWindow::SuperMusicWindow()
               B_ASYNCHRONOUS_CONTROLS | B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE)
 {
     fAlbumArt = nullptr;
+    #ifdef USE_PROJECTM
+    fProjectM = pm; 
+	#endif
+
     
     BFont largeFont(be_bold_font);
     BFont smallFont(be_bold_font);
@@ -1562,7 +1681,34 @@ SuperMusicWindow::SuperMusicWindow()
 
     BMenuField* qualityField = new BMenuField("quality_field", NULL, qualityMenu);
 
+    
+	BPopUpMenu* sizeMenu = new BPopUpMenu("Select");
+	int sizes[] = {32, 40, 64, 96, 128};
+	for (int s : sizes) {
+    	BString label;
+    	label << s << "x" << s;    
+    	BMessage* msg = new BMessage(MSG_CFG_ICON_SIZE);
+    	msg->AddInt32("val", s);    
+    	BMenuItem* item = new BMenuItem(label.String(), msg);    
+    	if (s == cfg.notifyIconSize) {
+        	item->SetMarked(true);
+    	}    
+    	sizeMenu->AddItem(item);
+	}
+	BStringView* sizeLabel = new BStringView("lbl_size", "Notify Icon Size:"); 
+	BMenuField* sizeField = new BMenuField("size_field", NULL, sizeMenu);
+
+
     // --- Checkboxes ---
+
+
+	fPresetList = new PresetListView("preset_list");
+	fPresetList->SetSelectionMessage(new BMessage(MSG_PRESET_SELECTED));
+	fPresetScroll = new BScrollView("preset_scroll", fPresetList, 0, true, true, B_FANCY_BORDER);
+	fPresetScroll->SetExplicitMinSize(BSize(B_SIZE_UNSET, 150));
+	fPresetScroll->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 300));
+    
+   
     BCheckBox* fVisualsCheckbox = new BCheckBox(BRect(10, 10, 200, 30), "visuals_toggle", 
     "Enable Visualizer", new BMessage(MSG_TOGGLE_VISUALS));
     fVisualsCheckbox->SetValue(cfg.showVisuals ? B_CONTROL_ON : B_CONTROL_OFF);
@@ -1588,23 +1734,32 @@ SuperMusicWindow::SuperMusicWindow()
        
 
     // --- Layout ---
-    BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 10)
-        .SetInsets(20)
-        .AddGroup(B_HORIZONTAL, 5) 
-            .Add(qualityLabel)    
-            .Add(qualityField)    
-            .AddGlue()
-        .End()
-        .Add(chkShuffle)
-        .Add(fShuffleFavsCheckbox)
-        .Add(chkNotify)
-        .Add(chkTheme)
-         #ifdef USE_PROJECTM
-        .Add(fVisualsCheckbox)
-        .Add(chkPresetTimer)
-         #endif
-        .AddGlue() 
-    .End();
+BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 10)
+    .SetInsets(20)
+    // Audio Quality Row
+    .AddGroup(B_HORIZONTAL, 5) 
+        .Add(qualityLabel)    
+        .Add(qualityField)    
+        .AddGlue()
+    .End()
+    .Add(chkNotify)
+    .AddGroup(B_HORIZONTAL, 5)
+        .Add(sizeLabel)
+        .Add(sizeField)
+        .AddGlue()
+    .End()
+    .Add(chkShuffle)
+    .Add(fShuffleFavsCheckbox)
+    .Add(chkTheme)
+     #ifdef USE_PROJECTM
+    .Add(new BStringView("lbl_presets", "MilkDrop Presets:"))
+    .Add(fPresetScroll) 
+    .Add(fVisualsCheckbox)
+    .Add(chkPresetTimer)
+     #endif
+    .AddGlue() 
+.End();
+
 
     // ==========================================
     // TAB 4: ABOUT VIEW
@@ -1627,6 +1782,11 @@ SuperMusicWindow::SuperMusicWindow()
 
     BStringView* txtVer = new BStringView("abt_ver", "Version 1.0.0 (Haiku)");
     txtVer->SetAlignment(B_ALIGN_CENTER);
+    
+  	ClickableURL* txturl = new ClickableURL("abt_url", 
+    	"Source Available Online (click me!)", 
+    	"https://github.com/ablyssx74/HaikuSuperMusicThingy");
+	txturl->SetAlignment(B_ALIGN_CENTER);  
 
     BStringView* txtCopy = new BStringView("abt_copy", "Copyright " B_UTF8_COPYRIGHT " 2026 Kris Beazley");
     txtCopy->SetAlignment(B_ALIGN_CENTER);
@@ -1662,6 +1822,7 @@ SuperMusicWindow::SuperMusicWindow()
         .AddGlue() // Pushes content to the middle
         .Add(titleApp)
         .Add(txtVer)
+        .Add(txturl)
         .AddStrut(10)
         .Add(txtCopy)
         .Add(txtEmail)
@@ -1688,6 +1849,9 @@ SuperMusicWindow::SuperMusicWindow()
         .SetInsets(0)
         .Add(fTabView)
     .End();
+    
+    std::string configPath = std::string(getenv("HOME")) + "/config/settings/SuperMusicThingy/milk_presets/";
+	PopulatePresetList(fPresetList, configPath.c_str());
 
     UpdateFavButtons();
     ApplyTheme(); 
@@ -1700,11 +1864,8 @@ SuperMusicWindow::SuperMusicWindow()
 }
 
 void SuperMusicWindow::SendNotification(const char* songTitle) {
-    if (!songTitle || strlen(songTitle) == 0) return;
-    
+    if (!songTitle || strlen(songTitle) == 0) return;    
     std::string song = songTitle;
-
-    // Clean up song title based on current station
     if (song.find(currentStation) == 0) {
         song.erase(0, currentStation.length());
         size_t start = song.find_first_not_of(": -");
@@ -1724,8 +1885,8 @@ void SuperMusicWindow::SendNotification(const char* songTitle) {
     notify.SetContent(song.c_str());
 
     if (fAlbumArt && fAlbumArt->IsValid()) {        
-        int dstW = 64;
-        int dstH = 64;        
+        int dstW = cfg.notifyIconSize;
+        int dstH = cfg.notifyIconSize;        
 
         BBitmap* scaledIcon = new BBitmap(BRect(0, 0, dstW - 1, dstH - 1), fAlbumArt->ColorSpace());        
         if (scaledIcon->IsValid()) {
@@ -1954,6 +2115,15 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             }
             break;
         }
+        
+        case MSG_CFG_ICON_SIZE: {
+    		int32 newSize;
+    		if (message->FindInt32("val", &newSize) == B_OK) {
+        		cfg.notifyIconSize = newSize;
+        		save_config(); 
+    		}
+    		break;
+		}
 
     	case MSG_CFG_QUALITY: {
         const char* val;
@@ -2016,8 +2186,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		}
     		}
     		break;
-		}
-                
+		}                
     		
         case MSG_VOL_CHANGE: {
             if (fVolumeSlider) {
@@ -2027,6 +2196,33 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             }
             break;
         }
+        
+		case MSG_REFRESH_PRESETS: {
+    		const char* home = getenv("HOME");
+    		if (home && fPresetList) {
+        		std::string path = std::string(home) + "/config/settings/SuperMusicThingy/milk_presets/";
+        		PopulatePresetList(fPresetList, path.c_str());
+    		}
+    		break;
+		}
+
+
+		case MSG_PRESET_SELECTED: {
+    		int32 index = fPresetList->CurrentSelection();
+    		if (index >= 0) {
+        		BStringItem* item = (BStringItem*)fPresetList->ItemAt(index);
+        
+		#ifdef USE_PROJECTM
+        		load_specific_preset(item->Text()); 
+		#endif
+
+        		if (chkShuffle) chkShuffle->SetValue(B_CONTROL_OFF);
+        		cfg.autoShuffle = false;
+        		cfg.autoShuffleVisuals = false;
+    		}
+    		break;
+		}
+
 
         case B_QUIT_REQUESTED:
             be_app->PostMessage(B_QUIT_REQUESTED);
@@ -2235,16 +2431,24 @@ void SuperMusicWindow::UpdateFavButtons() {
 
 SuperMusicWindow::~SuperMusicWindow()
 {
-    for (auto const& [id, bitmap] : fIconCache) {
-        delete bitmap;
+    for (auto& [id, bitmap] : fIconCache) {
+        if (bitmap) {
+            delete bitmap;
+            bitmap = nullptr;
+        }
     }
     fIconCache.clear();
 
-    for (auto const& [id, bitmap] : fArtCache) {
-        delete bitmap;
+    // Clean up art cache safely
+    for (auto& [id, bitmap] : fArtCache) {
+        if (bitmap) {
+            delete bitmap;
+            bitmap = nullptr;
+        }
     }
     fArtCache.clear();
-    fAlbumArt = nullptr;
+    
+    fAlbumArt = nullptr; 
 
     #if ENABLE_VISUALIZER
     cleanup_capture_device();

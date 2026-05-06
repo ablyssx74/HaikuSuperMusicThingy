@@ -5,6 +5,12 @@
 #ifndef SUPER_MUSIC_WINDOW_H
 #define SUPER_MUSIC_WINDOW_H
 
+#ifdef USE_PROJECTM
+#include <projectM-4/projectM.h>
+#endif
+
+
+
 #include <Application.h>
 #include <Window.h>
 #include <StatusBar.h>
@@ -64,10 +70,21 @@ public:
     std::map<std::string, BBitmap*> fArtCache; 
 
 private:
-	
     BTabView*    fTabView;
     BListView*   fFavList;
     
+    BListView*   fPresetList;
+    BScrollView* fPresetScroll;
+    BCheckBox*   chkShuffle; 
+    
+#ifdef USE_PROJECTM
+    projectm_handle fProjectM; 
+#else
+    void*           fProjectM; 
+#endif
+
+
+
     BButton*     fBtnAddFav;
     BButton*     fBtnDelFav;
 
@@ -82,9 +99,8 @@ private:
     BListView*   fStationList; 
     SongLabel*   fDescView;
     void 		 UpdateUI(); 
-
-
     std::map<std::string, BBitmap*> fIconCache;
+
     
 };
 
