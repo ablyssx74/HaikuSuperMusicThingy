@@ -799,7 +799,7 @@ void fade_volume(mpv_handle *mpv, double target_vol, double duration_ms) {
         return "";
 }
 
-// Save Station to favorites list while listening
+// Save Station to favorites
 void save_favorite() {
         std::string home = getenv("HOME") ? getenv("HOME") : ".";
         std::string dir = home + "/config/settings/SuperMusicThingy";
@@ -960,7 +960,7 @@ void SuperMusicWindow::PlayStation(const Channel& chan) {
 }
 
 
-// Delete Station from favorites list while listening
+// Delete Station from favorites
 void delete_favorite() {
         std::string home = getenv("HOME") ? getenv("HOME") : ".";
         std::string path = home + "/config/settings/SuperMusicThingy/favorites.txt";
@@ -1597,10 +1597,12 @@ SuperMusicWindow::SuperMusicWindow()
         .End()
         .Add(chkShuffle)
         .Add(fShuffleFavsCheckbox)
-        .Add(chkPresetTimer)
         .Add(chkNotify)
         .Add(chkTheme)
+         #ifdef USE_PROJECTM
         .Add(fVisualsCheckbox)
+        .Add(chkPresetTimer)
+         #endif
         .AddGlue() 
     .End();
 
