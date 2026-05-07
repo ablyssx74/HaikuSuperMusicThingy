@@ -1924,10 +1924,6 @@ void SuperMusicWindow::UpdateUI() {
         fDescView->SetFontAndColor(&smallFont);
     }
 
-    BString qStr("Quality: ");
-    qStr << get_bitrate_text().c_str();
-    if (fquality) fquality->SetText(qStr.String());
-
     BString lStr("Listeners: ");
     lStr << currentListeners.c_str();
     if (fListenersView) fListenersView->SetText(lStr.String());
@@ -1974,9 +1970,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             			currentStation = stationToDelete;
             			delete_favorite(); 
             			currentStation = savedCurrent;             
-
+						
             			RefreshFavorites(); 
-            			UpdateFavButtons(); 
+            			this->UpdateUI(); 
         			}
     			}
     			break;
@@ -1996,15 +1992,11 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		}
     		}
     		
-    		//BString qStr("Quality: ");
-           // qStr << get_bitrate_text().c_str();
-            //if (fquality) fquality->SetText(qStr.String());
-
             BString lStr("Listeners: ");
             lStr << currentListeners.c_str();
             if (fListenersView) fListenersView->SetText(lStr.String());
             
-    		UpdateFavButtons(); 
+    		this->UpdateUI();
     		break;
 		}
 		
@@ -2066,16 +2058,12 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		if (index >= 0) {
         		StationItem* item = (StationItem*)fStationList->ItemAt(index);
         		this->PlayStation(item->GetChannel()); 
-        		
-        	//BString qStr("Quality: ");
-            //qStr << get_bitrate_text().c_str();
-            //if (fquality) fquality->SetText(qStr.String());
 
-            BString lStr("Listeners: ");
-            lStr << currentListeners.c_str();
-            if (fListenersView) fListenersView->SetText(lStr.String());
+            	BString lStr("Listeners: ");
+            	lStr << currentListeners.c_str();
+            	if (fListenersView) fListenersView->SetText(lStr.String());
         
-        		UpdateFavButtons(); 
+        		this->UpdateUI();
     		}
     		break;
 		}
@@ -2085,16 +2073,12 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		StationItem* item = (StationItem*)fStationList->ItemAt(0);        
         		if (item) {
             		this->PlayStation(item->GetChannel());             
-            		
-            		//BString qStr("Quality: ");
-            		//qStr << get_bitrate_text().c_str();
-            		//if (fquality) fquality->SetText(qStr.String());
-
+ 
             		BString lStr("Listeners: ");
             		lStr << currentListeners.c_str();
             		if (fListenersView) fListenersView->SetText(lStr.String());
         
-            		UpdateFavButtons();            
+            		this->UpdateUI();         
             		fStationList->Select(0);
         		}
     		}
