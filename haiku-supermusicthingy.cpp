@@ -1544,7 +1544,6 @@ SuperMusicWindow::SuperMusicWindow()
     
 	fDescView = new SongLabel("description_view");
 	fDescView->SetFontAndColor(&smallFont);
-	fDescView->SetFont(&smallFont); 
 	fDescView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
 	fDescView->SetExplicitMinSize(BSize(B_SIZE_UNSET, 60)); 
 
@@ -1929,8 +1928,10 @@ void SuperMusicWindow::SendNotification(const char* songTitle) {
 void SuperMusicWindow::UpdateUI() {
     //if (fStationView) fStationView->SetText(currentStation.c_str());
     
+    float scale = be_plain_font->Size() / 12.0f;
+    
     BFont smallFont(be_bold_font);
-    smallFont.SetSize(12.0);
+    smallFont.SetSize(12.0f * scale); 
     
     
     if (fSongView) {
@@ -2355,8 +2356,10 @@ void SuperMusicWindow::ApplyTheme() {
         txtVal = ui_color(B_PANEL_TEXT_COLOR);
     }
 
+    float scale = be_bold_font->Size() / 12.0f; 
+
     BFont boldFont(be_bold_font);
-    boldFont.SetSize(12.0);
+    boldFont.SetSize(12.0 * scale);
 
     if (Lock()) {
         if (fTabView) {
