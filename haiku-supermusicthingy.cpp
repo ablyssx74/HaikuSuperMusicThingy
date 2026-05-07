@@ -446,7 +446,6 @@ void fetch_channels() {
 
 
 
-
 class StationItem : public BListItem {
 public:
     StationItem(Channel chan) : BListItem(), fChannel(chan), fIcon(nullptr) {}
@@ -485,36 +484,44 @@ public:
     	}
 
     	owner->SetDrawingMode(B_OP_OVER);
-    	owner->SetHighColor(textColor);  
-    	owner->MovePenTo(frame.left + textOffset, frame.top + 18);
-    	owner->DrawString(fChannel.title.c_str());
+   owner->SetHighColor(textColor);  
+    owner->MovePenTo(frame.left + textOffset, frame.top + 18);
+    owner->DrawString(fChannel.title.c_str());
     
-    	BFont font;
-    	owner->GetFont(&font);
-    	float oldSize = font.Size();
-    	font.SetSize(10.0);
-    	owner->SetFont(&font);
+    // Set up Description Font
+    BFont font;
+    owner->GetFont(&font);
+    font.SetSize(10.0);
+    owner->SetFont(&font);
     
-    	rgb_color descColor = textColor;
-    	if (!IsSelected()) {
-        	descColor.alpha = 180; // Slight transparency for visual hierarchy
-        	owner->SetDrawingMode(B_OP_ALPHA);
-    	} else {
-        	owner->SetDrawingMode(B_OP_OVER);
-    	}
-    
-    	owner->SetHighColor(descColor);
-    	owner->MovePenTo(frame.left + textOffset, frame.top + 32);
-    	owner->DrawString(fChannel.desc.c_str());
-    
-    	owner->SetDrawingMode(B_OP_COPY);
-    	font.SetSize(oldSize);
-    	owner->SetFont(&font);
-	}
-
-    virtual void Update(BView* owner, const BFont* font) override {
-        SetHeight(42.0); // Slightly taller for breathing room
+    // Handle Description Color/Transparency
+    rgb_color descColor = textColor;
+    if (!IsSelected()) {
+        descColor.alpha = 180;
+        owner->SetDrawingMode(B_OP_ALPHA);
+    } else {
+        owner->SetDrawingMode(B_OP_OVER);
     }
+    
+    owner->SetHighColor(descColor);
+    owner->MovePenTo(frame.left + textOffset, frame.top + 32);
+
+    // FIX: Define the BString clearly and truncate it
+    BString truncatedDesc(fChannel.desc.c_str());
+    float maxWidth = frame.Width() - textOffset - 10; 
+    owner->TruncateString(&truncatedDesc, B_TRUNCATE_END, maxWidth);
+    owner->DrawString(truncatedDesc.String());
+    
+    // Clean up: Reset drawing mode and font for the next item
+    owner->SetDrawingMode(B_OP_COPY);
+    owner->SetFont(be_plain_font); 
+}
+
+virtual void Update(BView* owner, const BFont* font) override {
+
+    SetHeight(48.0);
+}
+
 
 private:
     Channel fChannel;

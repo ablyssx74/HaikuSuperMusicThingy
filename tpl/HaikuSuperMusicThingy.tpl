@@ -1,8 +1,8 @@
 name			$(NAME)
 version			$(VERSION)-1
 architecture	$(ARCH)
-summary 		"Portable streaming media client for SomaFM"
-description 	"SuperMusicThingy is a free streaming media client for SomaFM. Fast, light, and fun!"
+summary 		"SomaFM music player"
+description 	"HaikuSuperMusicThingy is a free streaming media client for SomaFM. Fast, light, and fun!"
 packager		"ablyss <jb@epluribusunix.net>"
 vendor			"Haiku Project"
 licenses {
