@@ -1527,7 +1527,7 @@ SuperMusicWindow::SuperMusicWindow()
 	smallFont.SetSize(12.0f * scale);
 	
     fTabView = new BTabView("tab_container");
-    fTabView->SetExplicitMinSize(BSize(345 * scale, 685 * scale));
+    fTabView->SetExplicitMinSize(BSize(345 * scale, 700 * scale));
 
     fTabView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
 
@@ -1560,9 +1560,9 @@ SuperMusicWindow::SuperMusicWindow()
     
     // Album Art
     fArtView = new AlbumArtView();
-	fArtView->SetExplicitSize(BSize(325 * scale, 300 * scale)); 
-    fArtView->SetExplicitMinSize(BSize(325 * scale, 300 * scale));
-	fArtView->SetExplicitMaxSize(BSize(325 * scale, 300 * scale));
+	fArtView->SetExplicitSize(BSize(325 * scale, 325 * scale)); 
+    fArtView->SetExplicitMinSize(BSize(325 * scale, 325 * scale));
+	fArtView->SetExplicitMaxSize(BSize(325 * scale, 325 * scale));
     
     BBitmap* heartIcon = GetVectorIcon(kIconFav, kIconFavSize, 40);
 	fBtnAddFav = new IconButton("btn_add_fav", heartIcon, new BMessage(MSG_ADD_FAV));
