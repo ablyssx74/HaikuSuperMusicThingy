@@ -2090,22 +2090,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		break;
 		}
 
-		case MSG_PLAY: { 
-    
-    		if (fStationList->CurrentSelection() < 0) {
-        		fTabView->Select(1); 
-    		} else {
-        		int32 index = fStationList->CurrentSelection();
-        		StationItem* item = (StationItem*)fStationList->ItemAt(index);
-        
-        		if (item) {
-            		this->PlayStation(item->GetChannel());   
-        		}
-    		}
-    		break;
-		}
-
-    
         case MSG_CFG_ICON_SIZE: {
     		int32 newSize;
     		if (message->FindInt32("val", &newSize) == B_OK) {
@@ -2178,7 +2162,34 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		}
     		}
     		break;
-		}                
+		}  
+		
+		case MSG_PLAY: { 
+    		int is_paused = 0;
+    		mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &is_paused);
+    		const char* song = message->GetString("song", "Unknown");
+    		if (is_paused) {
+       		 mpv_command_string(mpv, "set pause no");        
+            		char* current_title = mpv_get_property_string(mpv, "media-title");
+            		if (current_title) {
+                		song = current_title; 
+                		mpv_free(current_title);
+            		}
+            		fSongView->SetText(song);
+    		} 
+    		else if (fStationList->CurrentSelection() < 0) {
+        		fTabView->Select(1); 
+    		} 
+    		else {
+        		int32 index = fStationList->CurrentSelection();
+        		StationItem* item = (StationItem*)fStationList->ItemAt(index);
+        		if (item) {
+            		this->PlayStation(item->GetChannel());   
+            		this->UpdateUI();
+        		}
+    		}
+    		break;
+		}              
     		
         case MSG_VOL_CHANGE: {
             if (fVolumeSlider) {
