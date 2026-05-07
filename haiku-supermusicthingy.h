@@ -65,8 +65,7 @@ public:
     void PlayStation(const Channel& chan);
     void PopulateStationList(); 
     void DownloadStationIcons(); 
-    bool shuffleFavsOnly;
-    
+    bool shuffleFavsOnly;    
     BBitmap*     fAlbumArt;
     BView*       fArtView;
     std::map<std::string, BBitmap*> fArtCache; 
@@ -87,11 +86,8 @@ private:
     void*           fProjectM; 
 #endif
 
-
-
     BButton*     fBtnAddFav;
     BButton*     fBtnDelFav;
-
     BStringView* fStationView;
     BStringView* fListenersView;
     BStringView* fquality; 

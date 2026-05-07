@@ -1514,14 +1514,13 @@ SuperMusicWindow::SuperMusicWindow()
     
     BFont largeFont(be_bold_font);
     BFont smallFont(be_bold_font);
-    BFont smallFont2(be_bold_font);
     
-    largeFont.SetSize(18.0); 
-    smallFont.SetSize(12.0); 
-	smallFont2.SetSize(10.0);
+    float scale = be_plain_font->Size() / 12.0f; 
+	largeFont.SetSize(18.0f * scale);
+	smallFont.SetSize(12.0f * scale);
 	
     fTabView = new BTabView("tab_container");
-    fTabView->SetExplicitMinSize(BSize(345, 685)); 
+    fTabView->SetExplicitMinSize(BSize(345 * scale, 685 * scale));
 
     fTabView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
 
@@ -1554,9 +1553,9 @@ SuperMusicWindow::SuperMusicWindow()
     
     // Album Art
     fArtView = new AlbumArtView();
-	fArtView->SetExplicitSize(BSize(325, 300)); 
-    fArtView->SetExplicitMinSize(BSize(325, 300));
-	fArtView->SetExplicitMaxSize(BSize(325, 300));
+	fArtView->SetExplicitSize(BSize(325 * scale, 300 * scale)); 
+    fArtView->SetExplicitMinSize(BSize(325 * scale, 300 * scale));
+	fArtView->SetExplicitMaxSize(BSize(325 * scale, 300 * scale));
     
     BBitmap* heartIcon = GetVectorIcon(kIconFav, kIconFavSize, 40);
 	fBtnAddFav = new IconButton("btn_add_fav", heartIcon, new BMessage(MSG_ADD_FAV));
@@ -2080,17 +2079,15 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		}
 
 		case MSG_PLAY: { 
-    		if (fStationList->CountItems() > 0) {
-        		StationItem* item = (StationItem*)fStationList->ItemAt(0);        
-        		if (item) {
-            		this->PlayStation(item->GetChannel());             
- 
-            		BString lStr("Listeners: ");
-            		lStr << currentListeners.c_str();
-            		if (fListenersView) fListenersView->SetText(lStr.String());
+    
+    		if (fStationList->CurrentSelection() < 0) {
+        		fTabView->Select(1); 
+    		} else {
+        		int32 index = fStationList->CurrentSelection();
+        		StationItem* item = (StationItem*)fStationList->ItemAt(index);
         
-            		this->UpdateUI();         
-            		fStationList->Select(0);
+        		if (item) {
+            		this->PlayStation(item->GetChannel());   
         		}
     		}
     		break;
