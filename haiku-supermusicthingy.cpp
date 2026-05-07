@@ -1807,10 +1807,11 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 10)
     BStringView* c3 = new BStringView("c3", "nlohmann/json (The Data)");
     BStringView* c4 = new BStringView("c4", "Haiku Interface Kit (The GUI)");
     BStringView* c5 = new BStringView("c5", "libsdl / projectM / OpenGL (The Visuals)");
-    BStringView* c6 = new BStringView("c6", "libcurl (Network/Streaming)");
-    BStringView* c7 = new BStringView("c7", "Some AI Assistance");   
+    BStringView* c6 = new BStringView("c6", "SVGear (Scalable Vector Graphics)");
+    BStringView* c7 = new BStringView("c7", "libcurl (Network/Streaming)");   
+    BStringView* c8 = new BStringView("c8", "Some AI Assistance");   
     
-    // Center the credits
+    // Center the credits 
     c1->SetAlignment(B_ALIGN_CENTER);
     c2->SetAlignment(B_ALIGN_CENTER);
     c3->SetAlignment(B_ALIGN_CENTER);
@@ -1818,6 +1819,7 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 10)
     c5->SetAlignment(B_ALIGN_CENTER);
     c6->SetAlignment(B_ALIGN_CENTER);
     c7->SetAlignment(B_ALIGN_CENTER);
+    c8->SetAlignment(B_ALIGN_CENTER);
 
     // 4. Layout
     BLayoutBuilder::Group<>(aboutGroup, B_VERTICAL, 5)
@@ -1837,6 +1839,9 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 10)
         .Add(c3)
         .Add(c4)
         .Add(c5)
+        .Add(c6)
+        .Add(c7)
+        .Add(c8)
         .AddGlue()
     .End();
 
