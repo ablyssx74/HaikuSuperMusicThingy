@@ -41,8 +41,8 @@ make release ENABLE_PROJECTM=ON
 <p align="center">
 
 
-<img align="left" width="122" height="250" alt="Image" src="https://github.com/user-attachments/assets/0f0c7af2-5a90-4425-9a9b-4bb9ba9e5851" />
-<img align="left" width="122" height="250" alt="Image" src="https://github.com/user-attachments/assets/a88f861a-0a11-4ad0-b5a0-8f0284235725" />
+<img align="left" width="122" height="250" alt="Image" src="https://github.com/user-attachments/assets/9cefd5dd-2ae2-45a5-8c3d-46d8e7d46d3e" />
+<img align="left" width="122" height="250" alt="Image" src="https://github.com/user-attachments/assets/891f1498-1927-4f9e-82ce-b1baad0ec170" />
   <img align="left"  width="228" height="228" alt="Image" src="https://github.com/user-attachments/assets/5f037f02-ef14-449a-8454-1801205917d5" />
   <img align="left"  width="228" height="228" alt="Image" src="https://github.com/user-attachments/assets/a2e19365-471f-46ff-911a-eba72d88a83a" />
 
