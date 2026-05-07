@@ -483,18 +483,17 @@ public:
         	owner->SetDrawingMode(B_OP_COPY); // Reset after bitmap
     	}
 
-    	owner->SetDrawingMode(B_OP_OVER);
-   owner->SetHighColor(textColor);  
+    owner->SetDrawingMode(B_OP_OVER);
+    owner->SetHighColor(textColor);  
     owner->MovePenTo(frame.left + textOffset, frame.top + 18);
     owner->DrawString(fChannel.title.c_str());
     
-    // Set up Description Font
+    float scale = be_plain_font->Size() / 12.0f;
     BFont font;
     owner->GetFont(&font);
-    font.SetSize(10.0);
+    font.SetSize(10.0 * scale);
     owner->SetFont(&font);
-    
-    // Handle Description Color/Transparency
+
     rgb_color descColor = textColor;
     if (!IsSelected()) {
         descColor.alpha = 180;
@@ -506,7 +505,7 @@ public:
     owner->SetHighColor(descColor);
     owner->MovePenTo(frame.left + textOffset, frame.top + 32);
 
-    // FIX: Define the BString clearly and truncate it
+    // Define the BString and truncate it
     BString truncatedDesc(fChannel.desc.c_str());
     float maxWidth = frame.Width() - textOffset - 10; 
     owner->TruncateString(&truncatedDesc, B_TRUNCATE_END, maxWidth);
