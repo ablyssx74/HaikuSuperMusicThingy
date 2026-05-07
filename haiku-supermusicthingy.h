@@ -78,6 +78,7 @@ private:
     BListView*   fPresetList;
     BScrollView* fPresetScroll;
     BCheckBox*   fPresetToggle;  
+    BGroupView*  fSizeContainer; 
     BCheckBox*   chkShuffle; 
     
 #ifdef USE_PROJECTM

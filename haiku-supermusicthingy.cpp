@@ -1652,7 +1652,7 @@ SuperMusicWindow::SuperMusicWindow()
 	BMessage* msg320k = new BMessage(MSG_CFG_QUALITY); msg320k->AddString("val", "320k");
 	BMessage* msg256k = new BMessage(MSG_CFG_QUALITY); msg256k->AddString("val", "256k");
 	BMessage* msg128k = new BMessage(MSG_CFG_QUALITY); msg128k->AddString("val", "128k");
-	BMessage* msg64k = new BMessage(MSG_CFG_QUALITY);  msg64k->AddString("val", "64k"); 
+	BMessage* msg64k  = new BMessage(MSG_CFG_QUALITY); msg64k->AddString("val", "64k"); 
 	BMessage* msg32k  = new BMessage(MSG_CFG_QUALITY); msg32k->AddString("val", "32k");
 
 	qualityMenu->AddItem(new BMenuItem("320k", msg320k));
@@ -1664,26 +1664,41 @@ SuperMusicWindow::SuperMusicWindow()
 	BMenuItem* selectedItem = qualityMenu->FindItem(cfg.quality.c_str());
 	if (selectedItem) selectedItem->SetMarked(true);
 
-    BStringView* qualityLabel = new BStringView("lbl_qual", "Audio Quality:"); 
-
+    BStringView* qualityLabel = new BStringView("lbl_qual", "Audio Quality:");
     BMenuField* qualityField = new BMenuField("quality_field", NULL, qualityMenu);
 
+    // 1. Create the Checkbox
+    BCheckBox* chkNotify = new BCheckBox("chk_notify", "Show Notifications", new BMessage(MSG_CFG_NOTIFY));
+    chkNotify->SetValue(cfg.showNotifications ? B_CONTROL_ON : B_CONTROL_OFF);
     
-	BPopUpMenu* sizeMenu = new BPopUpMenu("Select");
-	int sizes[] = {32, 40, 64, 96, 128};
-	for (int s : sizes) {
-    	BString label;
-    	label << s << "x" << s;    
-    	BMessage* msg = new BMessage(MSG_CFG_ICON_SIZE);
-    	msg->AddInt32("val", s);    
-    	BMenuItem* item = new BMenuItem(label.String(), msg);    
-    	if (s == cfg.notifyIconSize) {
-        	item->SetMarked(true);
-    	}    
-    	sizeMenu->AddItem(item);
-	}
-	BStringView* sizeLabel = new BStringView("lbl_size", "Notify Icon Size:"); 
-	BMenuField* sizeField = new BMenuField("size_field", NULL, sizeMenu);
+    // 2. Create the Menu (unchanged logic)
+    BPopUpMenu* sizeMenu = new BPopUpMenu("Select");
+    int sizes[] = {128, 96, 64, 40, 32};
+    for (int s : sizes) {
+        BString label;
+        label << s << "x" << s;    
+        BMessage* msg = new BMessage(MSG_CFG_ICON_SIZE); msg->AddInt32("val", s);    
+        BMenuItem* item = new BMenuItem(label.String(), msg);    
+        if (s == cfg.notifyIconSize) {
+            item->SetMarked(true);
+        }    
+        sizeMenu->AddItem(item);
+    }
+    
+    BStringView* sizeLabel = new BStringView("lbl_size", "Notify Icon Size:"); 
+    BMenuField* sizeField = new BMenuField("size_field", NULL, sizeMenu);
+
+    // 3. NEW: The "MilkDrop" Container
+    // Group the label and field together
+    fSizeContainer = new BGroupView(B_HORIZONTAL);
+    fSizeContainer->AddChild(sizeLabel);
+    fSizeContainer->AddChild(sizeField);
+    
+    // Hide it immediately if the checkbox is off
+    if (!cfg.showNotifications) {
+        fSizeContainer->Hide();
+    }
+
 
 
     // --- Checkboxes ---
@@ -1715,9 +1730,6 @@ SuperMusicWindow::SuperMusicWindow()
     BCheckBox* chkPresetTimer = new BCheckBox("chk_PresetTimer", "Auto Shuffle Visual Presets 30/s", new BMessage(MSG_CFG_AUTO_PresetTimer));
     chkPresetTimer->SetValue(cfg.autoShuffleVisuals ? B_CONTROL_ON : B_CONTROL_OFF);
 
-    BCheckBox* chkNotify = new BCheckBox("chk_notify", "Show Notifications", new BMessage(MSG_CFG_NOTIFY));
-    chkNotify->SetValue(cfg.showNotifications ? B_CONTROL_ON : B_CONTROL_OFF);
-    
     BCheckBox* chkTheme = new BCheckBox("chk_theme", "Dark Theme", new BMessage(MSG_CFG_THEME));
     chkTheme->SetValue(cfg.updateTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);
     
@@ -1732,11 +1744,7 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 10)
         .AddGlue()
     .End()
     .Add(chkNotify)
-    .AddGroup(B_HORIZONTAL, 5)
-        .Add(sizeLabel)
-        .Add(sizeField)
-        .AddGlue()
-    .End()
+	.Add(fSizeContainer) 
     .Add(chkShuffle)
     .Add(fShuffleFavsCheckbox)
     .Add(chkTheme)
@@ -2040,14 +2048,21 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         	break;
     	}
 
-    	case MSG_CFG_NOTIFY: {
+    case MSG_CFG_NOTIFY: {
         BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_notify"));
-        	if (chk) {
-            	cfg.showNotifications = (chk->Value() == B_CONTROL_ON);
-            	save_config();
-        	}
-        	break;
-    	}
+        if (chk) {
+            cfg.showNotifications = (chk->Value() == B_CONTROL_ON);            
+            if (cfg.showNotifications)
+                fSizeContainer->Show();
+            else
+                fSizeContainer->Hide();
+            InvalidateLayout();
+
+            save_config();
+        }
+        break;
+    }
+
     	
 		case MSG_PLAY_STATION: {
     		int32 index = fStationList->CurrentSelection();
