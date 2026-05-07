@@ -1964,20 +1964,16 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     			if (index >= 0) {
         			StationItem* item = (StationItem*)fFavList->ItemAt(index);
         			if (item) {           
-            			std::string stationToDelete = item->GetChannel().title;            
-
+            			std::string stationToDelete = item->GetChannel().title;
             			std::string savedCurrent = currentStation;
             			currentStation = stationToDelete;
             			delete_favorite(); 
-            			currentStation = savedCurrent;             
-						
+            			currentStation = savedCurrent;
             			RefreshFavorites(); 
-            			this->UpdateUI(); 
         			}
     			}
     			break;
 			}
-
 
 		case MSG_PLAY_FAV: {
     		int32 index = message->GetInt32("index", -1);
