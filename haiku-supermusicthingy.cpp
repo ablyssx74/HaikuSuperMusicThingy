@@ -115,40 +115,7 @@ using json = nlohmann::json;
 
 class SuperMusicWindow; 
 
-enum {
-    MSG_SHUFFLE = 'shuf',
-    MSG_STOP    = 'stop',
-    MSG_PLAY    = 'play',
-    MSG_PAUSE   = 'paus',
-    MSG_VOL_UP  = 'v_up',
-    MSG_VOL_DN  = 'v_dn',
-    MSG_FAVS    = 'favs',
-    MSG_OPEN_URL = 'burl',
-    MSG_VOL_CHANGE = 'vchg',
-    MSG_UPDATE_BITRATE = 'bitr',
-	MSG_PRESET_SELECTED   = 'prsl',
-	MSG_REFRESH_PRESETS   = 'prrf',
-    MSG_UPDATE_SONG = 'updt', 
-    MSG_UPDATE_ART = 'dart',    
-    MSG_ADD_FAV     = 'adfv', 
-    MSG_DEL_FAV     = 'dlfv',
-    MSG_PLAY_FAV    = 'plfv',
-    MSG_CFG_AUTO_SHUFFLE = 'c_as',
-    MSG_CFG_ICON_SIZE = 'i_sz',
-    MSG_TOGGLE_PRESETS = 'e_cv',
-    MSG_CFG_AUTO_PresetTimer = 'c_pt',
-    MSG_CFG_NOTIFY       = 'c_nt',
-    MSG_CFG_QUALITY      = 'c_qu',
-    MSG_CFG_THEME        = 'c_th',
-    MSG_PLAY_STATION     = 'plst', 
-    MSG_TOGGLE_VISUALS   = 'tvis',
-    MSG_EQ_CHANGED = 'eqch',
-    MSG_TOGGLE_EQ  = 'eqtg',
-	MSG_AUDIO_READY = 'AudR',
-	MSG_UPDATE_BOUNCE = 'bnce',
-    MSG_SHUFFLE_FAVS_CHANGED = 'sfch'
- 
-};
+
 
 
 void ensure_config_dir() {
@@ -681,7 +648,7 @@ public:
 
 
 struct Config {
-    bool showNotifications = true;
+    bool showNotifications = false;
     bool showVisuals = false;
     bool autoShuffle = false;
     bool autoShuffleVisuals = false;
@@ -689,9 +656,9 @@ struct Config {
     bool autoVsync = false;
     bool shuffleFavsOnly = false;
     int notifyIconSize = 64; 
-    std::string updateTheme = "Dark";
+    std::string updateTheme = "Default";
     std::string quality = "128k";
-     bool eqEnabled = false;
+    bool eqEnabled = false;
     float eqBands[10] = {0.0f}; 
     float limitIn = 0.0f;
     float limitLmt = 0.0f;
@@ -751,8 +718,8 @@ void load_config() {
                 } else {
                     cfg.notifyIconSize = 64; 
                 }
-                cfg.updateTheme = j.value("updateTheme", "Dark");
-                cfg.showNotifications = j.value("showNotifications", true);
+                cfg.updateTheme = j.value("updateTheme", "Default");
+                cfg.showNotifications = j.value("showNotifications", false);
                 cfg.autoShuffle = j.value("autoShuffle", false);
                 cfg.autoShuffleVisuals = j.value("autoShuffleVisuals", false);
                 cfg.autoVsync = j.value("autoVsync", false);
@@ -1489,10 +1456,10 @@ void load_specific_preset(const char* filename) {
 
 class WheelSlider : public BSlider {
 public:
-    // Added 'orientation' parameter
     WheelSlider(const char* name, const char* label, BMessage* msg, 
-                int32 min, int32 max, orientation orient)
-        : BSlider(name, label, msg, min, max, orient) {}
+                int32 min, int32 max, orientation orient, int32 multiplier = 1)
+        : BSlider(name, label, msg, min, max, orient),
+          fMultiplier(multiplier) {}
 
     virtual void MessageReceived(BMessage* msg) {
         if (msg->what == B_MOUSE_WHEEL_CHANGED) {
@@ -1500,7 +1467,11 @@ public:
             if (msg->FindFloat("be:wheel_delta_y", &dy) == B_OK) {
                 int32 min, max;
                 GetLimits(&min, &max);
-                int32 newValue = Value() - (int32)dy;                 
+                
+                // Scale the delta by our multiplier
+                int32 newValue = Value() - (int32)(dy * fMultiplier);
+                
+                // Clamping values within limits
                 if (newValue < min) newValue = min;
                 if (newValue > max) newValue = max;
                 
@@ -1511,7 +1482,11 @@ public:
             BSlider::MessageReceived(msg);
         }
     }
+
+private:
+    int32 fMultiplier;
 };
+
 
 
 
@@ -1531,29 +1506,6 @@ private:
     BString fUrl;
 };
 
-
-class VolumeSlider : public BSlider {
-public:
-    VolumeSlider(const char* name, const char* label, BMessage* message, 
-                 int32 min, int32 max)
-        : BSlider(name, label, message, min, max, B_HORIZONTAL) {}
-
-    virtual void MessageReceived(BMessage* message) {
-        if (message->what == B_MOUSE_WHEEL_CHANGED) {
-            float deltaY;
-            if (message->FindFloat("be:wheel_delta_y", &deltaY) == B_OK) {
-                               int32 newValue = Value() - (int32)(deltaY * 5);                
-                if (newValue > 100) newValue = 100;
-                if (newValue < 0) newValue = 0;
-                
-                SetValue(newValue);
-                Invoke(); 
-            }
-        } else {
-            BSlider::MessageReceived(message);
-        }
-    }
-};
 
 
 
@@ -1697,7 +1649,7 @@ SuperMusicWindow::SuperMusicWindow()
    	fShuffleBtn = new IconButton("btn_shuffle", shuffleIcon, new BMessage(MSG_SHUFFLE));
 	fShuffleBtn->SetExplicitSize(BSize(75, 75)); 	
     
-    fVolumeSlider = new VolumeSlider("volume", "Volume", new BMessage(MSG_VOL_CHANGE), 0, 100);
+    fVolumeSlider = new WheelSlider("volume", "Vol", new BMessage(MSG_VOL_CHANGE), 0, 100, B_HORIZONTAL, 5);
     fVolumeSlider->SetValue(100);
     fVolumeSlider->SetTarget(this); 
     fVolumeSlider->SetModificationMessage(new BMessage(MSG_VOL_CHANGE));
@@ -1807,20 +1759,20 @@ SuperMusicWindow::SuperMusicWindow()
     BStringView* sizeLabel = new BStringView("lbl_size", "Notify Icon Size:"); 
     BMenuField* sizeField = new BMenuField("size_field", NULL, sizeMenu);
 
-    // 3. NEW: The "MilkDrop" Container
-    // Group the label and field together
-    fSizeContainer = new BGroupView(B_HORIZONTAL);
-    fSizeContainer->AddChild(sizeLabel);
-    fSizeContainer->AddChild(sizeField);
-    
-    // Hide it immediately if the checkbox is off
-    if (!cfg.showNotifications) {
-        fSizeContainer->Hide();
-    }
+fSizeContainer = new BGroupView(B_HORIZONTAL, 5); // Use Horizontal for label next to field
+fSizeContainer->AddChild(sizeLabel);
+fSizeContainer->AddChild(sizeField);
+if (!cfg.showNotifications) fSizeContainer->Hide();
 
 
 
     // --- Checkboxes ---
+    
+    BCheckBox* chkShuffle = new BCheckBox("chk_shuffle", "Auto Shuffle On Start", new BMessage(MSG_CFG_AUTO_SHUFFLE));
+    chkShuffle->SetValue(cfg.autoShuffle ? B_CONTROL_ON : B_CONTROL_OFF);    
+    
+    BCheckBox* chkTheme = new BCheckBox("chk_theme", "Dark Theme", new BMessage(MSG_CFG_THEME));
+    chkTheme->SetValue(cfg.updateTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);
 
 	fPresetToggle = new BCheckBox("preset_toggle", "MilkDrop Presets:", new BMessage(MSG_TOGGLE_PRESETS));
 	
@@ -1840,83 +1792,86 @@ SuperMusicWindow::SuperMusicWindow()
     
 	fShuffleFavsCheckbox = new BCheckBox("shuffle_favs", "Shuffle Only Favorites", 
     new BMessage(MSG_SHUFFLE_FAVS_CHANGED));
-	fShuffleFavsCheckbox->SetValue(cfg.shuffleFavsOnly ? B_CONTROL_ON : B_CONTROL_OFF);
-
-    
-    BCheckBox* chkShuffle = new BCheckBox("chk_shuffle", "Auto Shuffle On Start", new BMessage(MSG_CFG_AUTO_SHUFFLE));
-    chkShuffle->SetValue(cfg.autoShuffle ? B_CONTROL_ON : B_CONTROL_OFF);    
+	fShuffleFavsCheckbox->SetValue(cfg.shuffleFavsOnly ? B_CONTROL_ON : B_CONTROL_OFF);   
     
     BCheckBox* chkPresetTimer = new BCheckBox("chk_PresetTimer", "Auto Shuffle Visual Presets 30/s", new BMessage(MSG_CFG_AUTO_PresetTimer));
     chkPresetTimer->SetValue(cfg.autoShuffleVisuals ? B_CONTROL_ON : B_CONTROL_OFF);
 
-    BCheckBox* chkTheme = new BCheckBox("chk_theme", "Dark Theme", new BMessage(MSG_CFG_THEME));
-    chkTheme->SetValue(cfg.updateTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);
+
  
 
-	// --- EQ & Mastering Section ---
-	
-	
-	fEQToggle = new BCheckBox("eq_toggle", "Enable 10-Band EQ", new BMessage(MSG_TOGGLE_EQ));
-	fEQToggle->SetValue(cfg.eqEnabled ? B_CONTROL_ON : B_CONTROL_OFF);
-	
+// --- EQ & Mastering Section ---
 
-	fEQContainer = new BGroupView(B_HORIZONTAL, 3);
-	fEQContainer->SetName("EQPanel");
-	if (!cfg.eqEnabled) {
-    	fEQContainer->Hide();
-	}
+// Create a group for the buttons--------------------------
+BGroupView* buttonRow = new BGroupView(B_HORIZONTAL, 10);
+buttonRow->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_TOP));
 
-	fSpectrum = new SpectrumView(BRect(0, 0, 400, 50), "spectrum"); 
-	fSpectrum->SetExplicitMinSize(BSize(400, 50));
-	fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 50)); 
+fApplyEQBtn = new BButton("apply_eq", "Apply Settings", new BMessage(MSG_EQ_CHANGED));
+fResetEQBtn = new BButton("reset_eq", "Reset to Zero", new BMessage(MSG_EQ_RESET));
 
-	const char* freqLabels[] = { "50Hz", "100Hz", "156Hz", "220Hz", "311Hz", "440Hz", "622Hz", "880Hz", "1k2", "1k7" };
+buttonRow->AddChild(fResetEQBtn);
+buttonRow->AddChild(fApplyEQBtn);
+// Create a group for the buttons--------------------------
 
+// 1. Create Toggle Checkbox
+fEQToggle = new BCheckBox("eq_toggle", "Enable 10-Band EQ", new BMessage(MSG_TOGGLE_EQ));
+fEQToggle->SetValue(cfg.eqEnabled ? B_CONTROL_ON : B_CONTROL_OFF);
 
-	for (int i = 0; i < 10; i++) {
-    	BGroupView* bandGroup = new BGroupView(B_VERTICAL, 2);
-        fEQSliders[i] = new WheelSlider(freqLabels[i], "", new BMessage(MSG_EQ_CHANGED), -15, 15, B_VERTICAL);
-    	fEQSliders[i]->SetModificationMessage(new BMessage(MSG_EQ_CHANGED));
-    	fEQSliders[i]->SetValue(0);
+// 2. Create main Container (Vertical so button is below sliders)
+fEQContainer = new BGroupView(B_VERTICAL, 5); 
+fEQContainer->SetName("EQPanel");
+
+// 3. Create Row for Sliders (Horizontal)
+BGroupView* eqSliderRow = new BGroupView(B_HORIZONTAL, 3);
+
+const char* freqLabels[] = { "50Hz", "100Hz", "156Hz", "220Hz", "311Hz", "440Hz", "622Hz", "880Hz", "1k2", "1k7" };
+
+for (int i = 0; i < 10; i++) {
+    BGroupView* bandGroup = new BGroupView(B_VERTICAL, 2);
+    fEQSliders[i] = new WheelSlider(freqLabels[i], "", NULL, -15, 15, B_VERTICAL, 1);
+    fEQSliders[i]->SetValue((int32)cfg.eqBands[i]);
     
-    	BStringView* lbl = new BStringView(NULL, freqLabels[i]);
-    	lbl->SetFontSize(9);
+    BStringView* lbl = new BStringView(NULL, freqLabels[i]);
+    lbl->SetFontSize(9);
     
-    	bandGroup->AddChild(fEQSliders[i]);
-    	bandGroup->AddChild(lbl);
-    	fEQContainer->AddChild(bandGroup);
-	}
+    bandGroup->AddChild(fEQSliders[i]);
+    bandGroup->AddChild(lbl);
+    eqSliderRow->AddChild(bandGroup); // Add to eqSliderRow
+}
 
+// 4. Limiter Section
+BGroupView* limitGroup = new BGroupView(B_VERTICAL, 5);
+BStringView* lTitle = new BStringView(NULL, "Limiter");
+lTitle->SetFont(be_bold_font);
+limitGroup->AddChild(lTitle);
 
-	// Limiter Section
-    BGroupView* limitGroup = new BGroupView(B_VERTICAL, 5);
-    BStringView* lTitle = new BStringView(NULL, "Limiter");
-    lTitle->SetFont(be_bold_font);
-    limitGroup->AddChild(lTitle);
+fLimitInput = new WheelSlider("limit_in", "In", NULL, -20, 20, B_HORIZONTAL);
+fLimitInput->SetValue((int32)cfg.limitIn);
+fLimitLimit = new WheelSlider("limit_thr", "Lmt", NULL, -20, 0, B_HORIZONTAL);
+fLimitLimit->SetValue((int32)cfg.limitLmt);
+fLimitRelease = new WheelSlider("limit_rel", "Rel", NULL, 10, 1000, B_HORIZONTAL);
+fLimitRelease->SetValue((int32)cfg.limitRel);
 
-    fLimitInput = new WheelSlider("limit_in", "In", new BMessage(MSG_EQ_CHANGED), -20, 20, B_HORIZONTAL);
-    fLimitInput->SetModificationMessage(new BMessage(MSG_EQ_CHANGED));
+limitGroup->AddChild(fLimitInput);
+limitGroup->AddChild(fLimitLimit);
+limitGroup->AddChild(fLimitRelease);
 
-    fLimitLimit = new WheelSlider("limit_thr", "Lmt", new BMessage(MSG_EQ_CHANGED), -20, 0, B_HORIZONTAL);
-    fLimitLimit->SetModificationMessage(new BMessage(MSG_EQ_CHANGED));
+eqSliderRow->AddChild(limitGroup); // Add limiter to eqSliderRow
 
-    fLimitRelease = new WheelSlider("limit_rel", "Rel", new BMessage(MSG_EQ_CHANGED), 10, 1000, B_HORIZONTAL);
-    fLimitRelease->SetModificationMessage(new BMessage(MSG_EQ_CHANGED));
+// 5. Assemble fEQContainer
+fEQContainer->AddChild(eqSliderRow); // Add the row of sliders
 
-    limitGroup->AddChild(fLimitInput);
-    limitGroup->AddChild(fLimitLimit);
-    limitGroup->AddChild(fLimitRelease);
-    fEQContainer->AddChild(limitGroup);
+fApplyEQBtn = new BButton("apply_eq", "Apply EQ Settings", new BMessage(MSG_EQ_CHANGED));
+fApplyEQBtn->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_TOP));
+//fEQContainer->AddChild(fApplyEQBtn); // Add the button below the sliders
+fEQContainer->AddChild(buttonRow);
+
+if (!cfg.eqEnabled) {
+    fEQContainer->Hide();
+}
+
 	
-
-	for (int i = 0; i < 10; i++) {
-    	fEQSliders[i]->SetValue((int32)cfg.eqBands[i]);
-	}
-
-	fLimitInput->SetValue((int32)cfg.limitIn);
-	fLimitLimit->SetValue((int32)cfg.limitLmt);
-	fLimitRelease->SetValue((int32)cfg.limitRel);
-	UpdateMPVFilters();
+	//UpdateMPVFilters();
 
 
          
@@ -1936,6 +1891,7 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
     .Add(chkTheme)
     .Add(fEQToggle)
     .Add(fEQContainer)
+    //.Add(fApplyEQBtn)
     //.Add(fSpectrum)
 
      #ifdef USE_PROJECTM
@@ -2509,6 +2465,24 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		}
 		#endif
 //--------------------------------- Proectm     
+
+case MSG_EQ_RESET:
+{
+    // Reset the 10 EQ bands
+    for (int i = 0; i < 10; i++) {
+        fEQSliders[i]->SetValue(0);
+    }
+    
+    // Reset Limiter (usually 0 for In/Lmt and a default for Release)
+    fLimitInput->SetValue(0);
+    fLimitLimit->SetValue(0);
+    fLimitRelease->SetValue(500); // Or your preferred default release
+
+    // Optional: Auto-apply the reset
+    // UpdateMPVFilters();
+    break;
+}
+
 		
 		case MSG_EQ_CHANGED: {
     		cfg.eqEnabled = (fEQToggle->Value() == B_CONTROL_ON);
