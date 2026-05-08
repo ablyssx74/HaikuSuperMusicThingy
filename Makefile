@@ -100,9 +100,15 @@ package: all
 	mkdir -p $(PACKAGE_DIR)/apps
 	mkdir -p $(PACKAGE_DIR)/bin
 ifeq ($(ENABLE_PROJECTM), ON)
+ ifeq ($(ARCH), x86_64)
 	mkdir -p $(PACKAGE_DIR)/lib
 	cp lib/lib* $(PACKAGE_DIR)/lib
-endif	
+ endif
+endif
+ifeq ($(ARCH), x86_64)
+	mkdir -p $(PACKAGE_DIR)/lib/ladspa
+	cp lib/ladspa/* $(PACKAGE_DIR)/lib/ladspa		
+endif
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
 	rc -o $(NAME).rsrc $(NAME).rdef 
 	xres -o $(NAME) $(NAME).rsrc  

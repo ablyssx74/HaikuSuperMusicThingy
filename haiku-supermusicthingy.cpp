@@ -128,7 +128,6 @@ enum {
     MSG_UPDATE_BITRATE = 'bitr',
 	MSG_PRESET_SELECTED   = 'prsl',
 	MSG_REFRESH_PRESETS   = 'prrf',
-
     MSG_UPDATE_SONG = 'updt', 
     MSG_UPDATE_ART = 'dart',    
     MSG_ADD_FAV     = 'adfv', 
@@ -143,6 +142,10 @@ enum {
     MSG_CFG_THEME        = 'c_th',
     MSG_PLAY_STATION     = 'plst', 
     MSG_TOGGLE_VISUALS   = 'tvis',
+    MSG_EQ_CHANGED = 'eqch',
+    MSG_TOGGLE_EQ  = 'eqtg',
+	MSG_AUDIO_READY = 'AudR',
+	MSG_UPDATE_BOUNCE = 'bnce',
     MSG_SHUFFLE_FAVS_CHANGED = 'sfch'
  
 };
@@ -685,9 +688,13 @@ struct Config {
     bool autoVsync = false;
     bool shuffleFavsOnly = false;
     int notifyIconSize = 64; 
-    //int defaultVolume = 75;
     std::string updateTheme = "Dark";
     std::string quality = "128k";
+     bool eqEnabled = false;
+    float eqBands[10] = {0.0f}; 
+    float limitIn = 0.0f;
+    float limitLmt = 0.0f;
+    float limitRel = 100.0f; 
 } cfg;
 
 int selectedConfig = 0;
@@ -704,6 +711,16 @@ void save_config() {
     j["shuffleFavsOnly"] = cfg.shuffleFavsOnly;
     j["autoVsync"] = cfg.autoVsync;
     j["showVisuals"] = cfg.showVisuals;
+    j["eqEnabled"] = cfg.eqEnabled;
+    json eqArray = json::array();
+    for (int i = 0; i < 10; i++) {
+        eqArray.push_back(cfg.eqBands[i]);
+    }
+    j["eqBands"] = eqArray;
+    j["limitIn"] = cfg.limitIn;
+    j["limitLmt"] = cfg.limitLmt;
+    j["limitRel"] = cfg.limitRel;
+
     BPath path;
     if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) == B_OK) {
         path.Append("SuperMusicThingy/config.txt");
@@ -724,7 +741,7 @@ void load_config() {
         std::ifstream infile(path.Path());        
         if (infile.is_open()) {
             try {
-                json j = json::parse(infile);
+                json j = json::parse(infile);                
                 cfg.quality = j.value("quality", "128k");
                 int val = j.value("notifyIconSize", 64);
                 if (val == 32 || val == 40 || val == 64 || val == 96 || val == 128) {
@@ -738,7 +755,16 @@ void load_config() {
                 cfg.autoShuffleVisuals = j.value("autoShuffleVisuals", false);
                 cfg.autoVsync = j.value("autoVsync", false);
                 cfg.showVisuals = j.value("showVisuals", false);   
-                cfg.shuffleFavsOnly = j.value("shuffleFavsOnly", false);              
+                cfg.shuffleFavsOnly = j.value("shuffleFavsOnly", false); 
+                cfg.eqEnabled = j.value("eqEnabled", false);                
+                if (j.contains("eqBands") && j["eqBands"].is_array()) {
+                     for (size_t i = 0; i < 10 && i < j["eqBands"].size(); i++) {
+                        cfg.eqBands[i] = j["eqBands"][i].get<float>();
+                    }
+                }
+                cfg.limitIn = j.value("limitIn", 0.0f);
+                cfg.limitLmt = j.value("limitLmt", 0.0f);
+                cfg.limitRel = j.value("limitRel", 100.0f);                                    
             } catch(...) {
             }
         }
@@ -829,8 +855,12 @@ void init_mpv() {
         if (mpv_initialize(mpv) < 0) exit(1);
         mpv_observe_property(mpv, 0, "media-title", MPV_FORMAT_STRING);
         mpv_observe_property(mpv, 0, "paused-for-cache", MPV_FORMAT_FLAG);
-        mpv_observe_property(mpv, 0, "audio-bitrate", MPV_FORMAT_DOUBLE);
+        mpv_observe_property(mpv, 0, "audio-bitrate", MPV_FORMAT_DOUBLE);  
+   		mpv_observe_property(mpv, 0, "audio-params", MPV_FORMAT_NODE);
+		//mpv_observe_property(mpv, 0, "af-metadata/bouncy", MPV_FORMAT_NODE);
+
 }
+
     
 std::string get_quality_url(const Channel& ch) {
     if (ch.supported_bitrates.count(cfg.quality)) {
@@ -1161,9 +1191,6 @@ void PopulatePresetList(BListView* list, const char* folderPath) {
 
 
 
-
-
-
 #ifdef USE_PROJECTM
 void load_random_preset(projectm_handle pm) {
     const char* home = getenv("HOME");
@@ -1457,6 +1484,32 @@ void load_specific_preset(const char* filename) {
 
 #endif
 
+class WheelSlider : public BSlider {
+public:
+    // Added 'orientation' parameter
+    WheelSlider(const char* name, const char* label, BMessage* msg, 
+                int32 min, int32 max, orientation orient)
+        : BSlider(name, label, msg, min, max, orient) {}
+
+    virtual void MessageReceived(BMessage* msg) {
+        if (msg->what == B_MOUSE_WHEEL_CHANGED) {
+            float dy;
+            if (msg->FindFloat("be:wheel_delta_y", &dy) == B_OK) {
+                int32 min, max;
+                GetLimits(&min, &max);
+                int32 newValue = Value() - (int32)dy;                 
+                if (newValue < min) newValue = min;
+                if (newValue > max) newValue = max;
+                
+                SetValue(newValue);
+                Invoke(); 
+            }
+        } else {
+            BSlider::MessageReceived(msg);
+        }
+    }
+};
+
 
 
 class ClickableURL : public BStringView {
@@ -1500,6 +1553,63 @@ public:
 };
 
 
+
+class SpectrumView : public BView {
+public:
+    SpectrumView(BRect frame, const char* name)
+        : BView(frame, name, B_FOLLOW_ALL, B_WILL_DRAW | B_FRAME_EVENTS) {
+        SetViewColor(B_TRANSPARENT_COLOR); 
+        fCurrentLevel = -60.0;
+        memset(frequencyData, 0, 64);
+    }
+    
+    void UpdateLevel(double level) {
+        if (level > fCurrentLevel) {
+            fCurrentLevel = level;
+        } else {
+            fCurrentLevel = (fCurrentLevel * 0.85) + (level * 0.15);
+        }
+        Invalidate();
+    }
+
+    virtual void Draw(BRect updateRect) {
+        BRect b = Bounds();        
+        SetHighColor(0, 0, 0);
+        FillRect(b);        
+        float floor = -60.0f;
+        float peak = (float)fCurrentLevel;
+        if (peak < floor) peak = floor;
+        float magnitude = (peak - floor) / (0.0f - floor);
+        float width = b.Width();
+        float height = b.Height();
+        int numBars = 64;
+        float barWidth = width / numBars;
+
+        for (int i = 0; i < numBars; i++) {
+            float jitter = 0.8f + ((rand() % 40) / 100.0f); 
+            float barHeight = magnitude * height * jitter;            
+            if (barHeight > height) barHeight = height;
+            SetHighColor(0, 200 + (rand() % 55), 50 + (i * 2));             
+            FillRect(BRect(i * barWidth, height - barHeight, 
+                           (i + 1) * barWidth - 1, height));
+        }
+    }
+
+    // Note: real FFT would go here
+    void UpdateData(const uint8* data, size_t size) {
+        memcpy(frequencyData, data, size > 64 ? 64 : size);
+        Invalidate();
+    }
+
+private:
+    double fCurrentLevel; 
+    uint8 frequencyData[64];
+};
+
+
+
+
+
 void SuperMusicWindow::UpdateStatus(const char* station, const char* song) {
     if (Lock()) {
         fStationView->SetText("");
@@ -1510,7 +1620,7 @@ void SuperMusicWindow::UpdateStatus(const char* station, const char* song) {
 
 
 SuperMusicWindow::SuperMusicWindow()
-    : BWindow(BRect(100, 100, 550, 300), "SuperMusicThingy", B_TITLED_WINDOW, 
+    : BWindow(BRect(100, 100, 550, 380), "SuperMusicThingy", B_TITLED_WINDOW, 
               B_ASYNCHRONOUS_CONTROLS | B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE)
 {
     fAlbumArt = nullptr;
@@ -1518,6 +1628,8 @@ SuperMusicWindow::SuperMusicWindow()
     fProjectM = pm; 
 	#endif
     
+    setenv("LADSPA_PATH", "/boot/system/lib/ladspa", 1);     
+ 
     BFont largeFont(be_bold_font);
     BFont smallFont(be_bold_font);
     
@@ -1526,7 +1638,7 @@ SuperMusicWindow::SuperMusicWindow()
 	smallFont.SetSize(12.0f * scale);
 	
     fTabView = new BTabView("tab_container");
-    fTabView->SetExplicitMinSize(BSize(345 * scale, 700 * scale));
+    fTabView->SetExplicitMinSize(BSize(380 * scale, 700 * scale));
 
     fTabView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
 
@@ -1719,7 +1831,7 @@ SuperMusicWindow::SuperMusicWindow()
 	fPresetScroll->SetExplicitMinSize(BSize(B_SIZE_UNSET, 150));
 	fPresetScroll->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 300));
    
-    BCheckBox* fVisualsCheckbox = new BCheckBox(BRect(10, 10, 200, 30), "visuals_toggle", 
+    fVisualsCheckbox = new BCheckBox(BRect(10, 10, 200, 30), "visuals_toggle", 
     "Enable Visualizer", new BMessage(MSG_TOGGLE_VISUALS));
     fVisualsCheckbox->SetValue(cfg.showVisuals ? B_CONTROL_ON : B_CONTROL_OFF);    
     
@@ -1736,30 +1848,101 @@ SuperMusicWindow::SuperMusicWindow()
 
     BCheckBox* chkTheme = new BCheckBox("chk_theme", "Dark Theme", new BMessage(MSG_CFG_THEME));
     chkTheme->SetValue(cfg.updateTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);
+ 
+
+	// --- EQ & Mastering Section ---
+	
+	
+	fEQToggle = new BCheckBox("eq_toggle", "Enable 10-Band EQ", new BMessage(MSG_TOGGLE_EQ));
+	fEQToggle->SetValue(cfg.eqEnabled ? B_CONTROL_ON : B_CONTROL_OFF);
+	
+
+	fEQContainer = new BGroupView(B_HORIZONTAL, 3);
+	fEQContainer->SetName("EQPanel");
+	if (!cfg.eqEnabled) {
+    	fEQContainer->Hide();
+	}
+
+	fSpectrum = new SpectrumView(BRect(0, 0, 400, 50), "spectrum"); 
+	fSpectrum->SetExplicitMinSize(BSize(400, 50));
+	fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 50)); 
+
+	const char* freqLabels[] = { "50Hz", "100Hz", "156Hz", "220Hz", "311Hz", "440Hz", "622Hz", "880Hz", "1k2", "1k7" };
+
+
+	for (int i = 0; i < 10; i++) {
+    	BGroupView* bandGroup = new BGroupView(B_VERTICAL, 2);
+        fEQSliders[i] = new WheelSlider(freqLabels[i], "", new BMessage(MSG_EQ_CHANGED), -15, 15, B_VERTICAL);
+    	fEQSliders[i]->SetModificationMessage(new BMessage(MSG_EQ_CHANGED));
+    	fEQSliders[i]->SetValue(0);
     
-       
+    	BStringView* lbl = new BStringView(NULL, freqLabels[i]);
+    	lbl->SetFontSize(9);
+    
+    	bandGroup->AddChild(fEQSliders[i]);
+    	bandGroup->AddChild(lbl);
+    	fEQContainer->AddChild(bandGroup);
+	}
+
+
+	// Limiter Section
+    BGroupView* limitGroup = new BGroupView(B_VERTICAL, 5);
+    BStringView* lTitle = new BStringView(NULL, "Limiter");
+    lTitle->SetFont(be_bold_font);
+    limitGroup->AddChild(lTitle);
+
+    fLimitInput = new WheelSlider("limit_in", "In", new BMessage(MSG_EQ_CHANGED), -20, 20, B_HORIZONTAL);
+    fLimitInput->SetModificationMessage(new BMessage(MSG_EQ_CHANGED));
+
+    fLimitLimit = new WheelSlider("limit_thr", "Lmt", new BMessage(MSG_EQ_CHANGED), -20, 0, B_HORIZONTAL);
+    fLimitLimit->SetModificationMessage(new BMessage(MSG_EQ_CHANGED));
+
+    fLimitRelease = new WheelSlider("limit_rel", "Rel", new BMessage(MSG_EQ_CHANGED), 10, 1000, B_HORIZONTAL);
+    fLimitRelease->SetModificationMessage(new BMessage(MSG_EQ_CHANGED));
+
+    limitGroup->AddChild(fLimitInput);
+    limitGroup->AddChild(fLimitLimit);
+    limitGroup->AddChild(fLimitRelease);
+    fEQContainer->AddChild(limitGroup);
+	
+
+	for (int i = 0; i < 10; i++) {
+    	fEQSliders[i]->SetValue((int32)cfg.eqBands[i]);
+	}
+
+	fLimitInput->SetValue((int32)cfg.limitIn);
+	fLimitLimit->SetValue((int32)cfg.limitLmt);
+	fLimitRelease->SetValue((int32)cfg.limitRel);
+	UpdateMPVFilters();
+
+
+         
 
     // --- Layout ---
-BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 10)
-    .SetInsets(20)
+BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15) 
+    .SetInsets(23)
     .AddGroup(B_HORIZONTAL, 5) 
         .Add(qualityLabel)    
         .Add(qualityField)    
         .AddGlue()
     .End()
     .Add(chkNotify)
-	.Add(fSizeContainer) 
+    .Add(fSizeContainer) 
     .Add(chkShuffle)
     .Add(fShuffleFavsCheckbox)
     .Add(chkTheme)
+    .Add(fEQToggle)
+    .Add(fEQContainer) 
+    //.Add(fSpectrum) 
      #ifdef USE_PROJECTM
     .Add(fPresetToggle)
     .Add(fPresetScroll) 
     .Add(fVisualsCheckbox)
     .Add(chkPresetTimer)
      #endif
-    .AddGlue() 
+    .AddGlue()
 .End();
+
 
 
     // ==========================================
@@ -1794,6 +1977,9 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 10)
     
     BStringView* txtEmail = new BStringView("abt_mail", "jb@epluribusunix.net");
     txtEmail->SetAlignment(B_ALIGN_CENTER);
+    
+    BStringView* txtAI = new BStringView("abtAI", "AI Assisted");
+    txtAI->SetAlignment(B_ALIGN_CENTER);
 
     // 3. Credits List
     BStringView* txtCredit = new BStringView("abt_cred", "Powered By:");
@@ -1806,8 +1992,9 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 10)
     BStringView* c4 = new BStringView("c4", "Haiku Interface Kit (The GUI)");
     BStringView* c5 = new BStringView("c5", "libsdl / projectM / OpenGL (The Visuals)");
     BStringView* c6 = new BStringView("c6", "SVGear (Scalable Vector Graphics)");
-    BStringView* c7 = new BStringView("c7", "libcurl (Network/Streaming)");   
-    BStringView* c8 = new BStringView("c8", "Some AI Assistance");   
+    BStringView* c7 = new BStringView("c7", "libcurl (Network/Streaming)");
+    BStringView* c8 = new BStringView("c8", "ladspa (EQ/Limiter Effects)");
+    BStringView* c9 = new BStringView("c9", "Some AI Assistance");   
     
     // Center the credits 
     c1->SetAlignment(B_ALIGN_CENTER);
@@ -1818,7 +2005,9 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 10)
     c6->SetAlignment(B_ALIGN_CENTER);
     c7->SetAlignment(B_ALIGN_CENTER);
     c8->SetAlignment(B_ALIGN_CENTER);
-
+	c9->SetAlignment(B_ALIGN_CENTER);
+	
+	
     // 4. Layout
     BLayoutBuilder::Group<>(aboutGroup, B_VERTICAL, 5)
         .SetInsets(20)
@@ -1827,8 +2016,9 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 10)
         .Add(txtVer)
         .Add(txturl)
         .AddStrut(10)
-        .Add(txtCopy)
+        .Add(txtCopy)        
         .Add(txtEmail)
+        .Add(txtAI)
         .AddStrut(30) // Spacer
         .Add(txtCredit)
         .AddStrut(5)
@@ -1951,6 +2141,43 @@ void SuperMusicWindow::UpdateUI() {
 }
 
 
+void SuperMusicWindow::UpdateMPVFilters() {
+    if (!fEQToggle || fEQToggle->Value() == B_CONTROL_OFF) {
+        mpv_set_property_string(mpv, "af", "");
+        return;
+    }
+
+    BString filterChain;
+    filterChain = "@bouncy:lavfi=[";
+
+    BString eqPart;
+    eqPart << "ladspa=file='/boot/system/lib/ladspa/mbeq_1197.so':p=mbeq:c=";
+    
+    for (int i = 0; i < 10; i++) {
+        BString val;
+        val.SetToFormat("%.2f", (float)fEQSliders[i]->Value());
+        eqPart << val << (i == 9 ? "" : "|");
+    }
+    eqPart << "|0|0|0|0|0,";
+    filterChain << eqPart;
+
+    BString limiterPart;
+    limiterPart.SetToFormat("ladspa=file='/boot/system/lib/ladspa/fast_lookahead_limiter_1913.so':p=fastLookaheadLimiter:c=%.2f|%.2f|%.2f,",
+        (float)fLimitInput->Value(), 
+        (float)fLimitLimit->Value(), 
+        (float)fLimitRelease->Value() / 1000.0f);
+    filterChain << limiterPart;
+
+	filterChain << "astats=metadata=1:reset=1]"; 
+
+    int error = mpv_set_property_string(mpv, "af", filterChain.String());
+    if (error < 0) {
+        fprintf(stderr, ">> MPV Filter Failed: %s\n", mpv_error_string(error));
+    }
+}
+
+
+
 void SuperMusicWindow::MessageReceived(BMessage* message)
 {
     switch (message->what) {
@@ -2059,7 +2286,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         	break;
     	}
 
-    case MSG_CFG_NOTIFY: {
+    	case MSG_CFG_NOTIFY: {
         BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_notify"));
         if (chk) {
             cfg.showNotifications = (chk->Value() == B_CONTROL_ON);            
@@ -2069,10 +2296,27 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                 fSizeContainer->Hide();
             InvalidateLayout();
 
-            save_config();
-        }
-        break;
-    }
+            	save_config();
+        	}
+        	break;
+    	}
+    	
+    	case MSG_TOGGLE_EQ: {
+    		BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("eq_toggle"));
+    		if (chk) {
+        		cfg.eqEnabled = (chk->Value() == B_CONTROL_ON);            
+        		if (cfg.eqEnabled)
+            		fEQContainer->Show();
+        		else
+            		fEQContainer->Hide();
+        
+        		InvalidateLayout();
+        		save_config();
+        		UpdateMPVFilters(); 
+    		}
+    		break;
+		}
+
 
     	
 		case MSG_PLAY_STATION: {
@@ -2199,7 +2443,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             }
             break;
         }
-        
+  
+  
+//--------------------------------- Proectm         
         #ifdef USE_PROJECTM
         case MSG_TOGGLE_VISUALS:
         {
@@ -2215,7 +2461,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             break;
         }       
         
-        
+//--------------------------------- Proectm           
 		case MSG_REFRESH_PRESETS: {
     		const char* home = getenv("HOME");
     		if (home && fPresetList) {
@@ -2226,7 +2472,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		}
 		
 		
-		
+//--------------------------------- Proectm   		
 		case MSG_PRESET_SELECTED: {
     		int32 index = fPresetList->CurrentSelection();
     		if (index >= 0) {
@@ -2239,7 +2485,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		break;
 		}
 		
-
+//--------------------------------- Proectm   
 		case MSG_TOGGLE_PRESETS: {
     		bool show = (fPresetToggle->Value() == B_CONTROL_ON);    
     		if (show) {
@@ -2251,6 +2497,33 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		break;
 		}
 		#endif
+//--------------------------------- Proectm     
+		
+		case MSG_EQ_CHANGED: {
+    		cfg.eqEnabled = (fEQToggle->Value() == B_CONTROL_ON);
+    		for(int i=0; i<10; i++) cfg.eqBands[i] = fEQSliders[i]->Value();
+    		cfg.limitIn = fLimitInput->Value();
+    		cfg.limitLmt = fLimitLimit->Value();
+    		cfg.limitRel = fLimitRelease->Value();
+    
+    		UpdateMPVFilters();
+    		save_config(); 
+    		break;
+		}
+
+          
+		case MSG_UPDATE_BOUNCE: {
+    		double level;
+    		if (message->FindDouble("level", &level) == B_OK) {
+        		fSpectrum->UpdateLevel(level);
+    		}
+    		break;
+		}		
+
+        case MSG_AUDIO_READY:
+            UpdateMPVFilters(); 
+            break;
+
 
         case B_QUIT_REQUESTED:
             be_app->PostMessage(B_QUIT_REQUESTED);
@@ -2549,7 +2822,6 @@ int32 mpv_loop_thread(void* data) {
             currentSong = pendingSong;
             pendingSong = "";
             notifyTimer = 0; 
-
             if (win) {
                 BMessage msg(MSG_UPDATE_SONG);
                 msg.AddString("song", currentSong.c_str());
@@ -2557,34 +2829,55 @@ int32 mpv_loop_thread(void* data) {
             }
         }
 
-        mpv_event *event = mpv_wait_event(mpv, 0.05);        
+        mpv_event *event = mpv_wait_event(mpv, 0.02); 
         if (event->event_id == MPV_EVENT_NONE) continue;
         if (event->event_id == MPV_EVENT_SHUTDOWN) break;
         
         if (event->event_id == MPV_EVENT_PROPERTY_CHANGE) {
             mpv_event_property *prop = (mpv_event_property *)event->data;
-            if (prop && prop->data && prop->name) {
-                std::string propName = prop->name;
-
-                if (propName == "media-title") {
-                    char* title_ptr = *(char **)prop->data;
-                    if (title_ptr) {
-                        std::string newTitle = title_ptr;
-                        if (newTitle.find("http") != 0 && newTitle != currentSong) {
-                            pendingSong = newTitle;
-                            notifyTimer = std::time(nullptr) + 2;
-                        }
+            if (!prop || !prop->name || !prop->data) continue;
+            
+            std::string propName = prop->name;
+            if (propName == "media-title") {
+                char* title_ptr = *(char **)prop->data;
+                if (title_ptr) {
+                    std::string newTitle = title_ptr;
+                    if (newTitle.find("http") != 0 && newTitle != currentSong) {
+                        pendingSong = newTitle;
+                        notifyTimer = std::time(nullptr) + 2;
                     }
                 }
-                else if (propName == "audio-bitrate") {
-                    double bps = *(double*)prop->data;
-                    int32 kbps = (int32)(bps / 1000);
-                    
-                    if (kbps > 0 && kbps != lastBitrate && win) {
-                        lastBitrate = kbps;
-                        BMessage msg(MSG_UPDATE_BITRATE);
-                        msg.AddInt32("kbps", kbps);
-                        win->PostMessage(&msg);
+            }
+            else if (propName == "audio-bitrate") {
+                double bps = *(double*)prop->data;
+                int32 kbps = (int32)(bps / 1000);
+                if (kbps > 0 && kbps != lastBitrate && win) {
+                    lastBitrate = kbps;
+                    BMessage msg(MSG_UPDATE_BITRATE);
+                    msg.AddInt32("kbps", kbps);
+                    win->PostMessage(&msg);
+                }
+            }
+            else if (propName == "audio-params") {
+                if (prop->format == MPV_FORMAT_NODE && win) {
+                    win->PostMessage(MSG_AUDIO_READY);
+                }
+            }
+            else if (propName == "af-metadata/bouncy") {
+                if (prop->format == MPV_FORMAT_NODE) {
+                    mpv_node* node = (mpv_node*)prop->data;
+                    if (node->format == MPV_FORMAT_NODE_MAP) {
+            			for (int i = 0; i < node->u.list->num; i++) {
+                			if (strstr(node->u.list->keys[i], "Peak_level")) {
+                    			double peak = atof(node->u.list->values[i].u.string);
+                                if (win) {
+                                    BMessage bounce(MSG_UPDATE_BOUNCE);
+                                    bounce.AddDouble("level", peak);
+                                    win->PostMessage(&bounce);
+                                }
+                                break;
+                            }
+                        }
                     }
                 }
             }
@@ -2592,6 +2885,7 @@ int32 mpv_loop_thread(void* data) {
     }
     return 0;
 }
+
 
 
 

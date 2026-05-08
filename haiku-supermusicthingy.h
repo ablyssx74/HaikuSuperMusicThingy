@@ -47,61 +47,64 @@ struct Channel {
 };
 
 class SongLabel; 
-
+class SpectrumView;
 
 class SuperMusicWindow : public BWindow {
 public:
     SuperMusicWindow();
-    virtual ~SuperMusicWindow(); 
+    
+    virtual 	 ~SuperMusicWindow(); 
     virtual void MessageReceived(BMessage* message);
-    void UpdateStatus(const char* station, const char* song);
-    void RefreshFavorites();
-    void UpdateFavButtons(); 
-    void SendNotification(const char* songTitle); 
-    void ApplyTheme(); 
-    void StartVisuals();
-    void StopVisuals();
+    void 		 UpdateStatus(const char* station, const char* song);
+    void 		 RefreshFavorites();
+    void 		 UpdateFavButtons(); 
+    void 		 SendNotification(const char* songTitle); 
+    void 		 ApplyTheme(); 
+    void 		 StartVisuals();
+    void 		 StopVisuals();
     virtual bool QuitRequested();
-    void PlayStation(const Channel& chan);
-    void PopulateStationList(); 
-    void DownloadStationIcons(); 
-    bool shuffleFavsOnly;    
+    void 		 PlayStation(const Channel& chan);
+    void 		 PopulateStationList(); 
+    void 		 DownloadStationIcons(); 
+    bool 		 shuffleFavsOnly;    
     BBitmap*     fAlbumArt;
     BView*       fArtView;
     std::map<std::string, BBitmap*> fArtCache; 
+    void UpdateMPVFilters(); 	
 
 private:
-    BTabView*    fTabView;
-    BListView*   fFavList;
-    
-    BListView*   fPresetList;
-    BScrollView* fPresetScroll;
-    BCheckBox*   fPresetToggle;  
-    BGroupView*  fSizeContainer; 
-    BCheckBox*   chkShuffle; 
-    
-#ifdef USE_PROJECTM
-    projectm_handle fProjectM; 
-#else
-    void*           fProjectM; 
-#endif
 
-    BButton*     fBtnAddFav;
-    BButton*     fBtnDelFav;
-    BStringView* fStationView;
-    BStringView* fListenersView;
-    BStringView* fquality; 
-    BTextView*   fSongView;
-    BSlider*     fVolumeSlider;
-    BButton*     fShuffleBtn;
-    BCheckBox*   fVisualsCheckbox; 
-    BCheckBox*   fShuffleFavsCheckbox; 
-    BListView*   fStationList; 
-    SongLabel*   fDescView;
-    void 		 UpdateUI(); 
+    BTabView*     fTabView;
+    BListView*    fFavList;    
+    BListView*    fPresetList;
+    BScrollView*  fPresetScroll;
+    BCheckBox*    fPresetToggle;  
+    BGroupView*   fSizeContainer; 
+    BCheckBox*    chkShuffle; 
+    BButton*      fBtnAddFav;
+    BButton*      fBtnDelFav;
+    BStringView*  fStationView;
+    BStringView*  fListenersView;
+    BStringView*  fquality; 
+    BTextView*    fSongView;
+    BSlider*      fVolumeSlider;
+    BButton*      fShuffleBtn;
+    BCheckBox*    fVisualsCheckbox; 
+    BCheckBox*    fShuffleFavsCheckbox; 
+    BListView*    fStationList; 
+    SongLabel*    fDescView;
+    void 		  UpdateUI(); 
+	BSlider* 	  fEQSliders[10]; 
+    BSlider 	 *fLimitInput, *fLimitLimit, *fLimitRelease;
+    BCheckBox* 	  fEQToggle;
+    BGroupView*   fEQContainer;
+    SpectrumView* fSpectrum;
     std::map<std::string, BBitmap*> fIconCache;
-
-    
+    #ifdef USE_PROJECTM
+    projectm_handle fProjectM; 
+	#else
+    void*          fProjectM; 
+	#endif 
 };
 
 
