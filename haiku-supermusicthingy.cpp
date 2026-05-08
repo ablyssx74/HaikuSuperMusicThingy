@@ -685,6 +685,7 @@ struct Config {
     bool showVisuals = false;
     bool autoShuffle = false;
     bool autoShuffleVisuals = false;
+    bool showSpectrumVisuals = false;
     bool autoVsync = false;
     bool shuffleFavsOnly = false;
     int notifyIconSize = 64; 
@@ -708,6 +709,7 @@ void save_config() {
     j["showNotifications"] = cfg.showNotifications;
     j["autoShuffle"] = cfg.autoShuffle;
     j["autoShuffleVisuals"] = cfg.autoShuffleVisuals;
+    j["showSpectrumVisuals"] = cfg.showSpectrumVisuals;
     j["shuffleFavsOnly"] = cfg.shuffleFavsOnly;
     j["autoVsync"] = cfg.autoVsync;
     j["showVisuals"] = cfg.showVisuals;
@@ -755,6 +757,7 @@ void load_config() {
                 cfg.autoShuffleVisuals = j.value("autoShuffleVisuals", false);
                 cfg.autoVsync = j.value("autoVsync", false);
                 cfg.showVisuals = j.value("showVisuals", false);   
+                cfg.showSpectrumVisuals = j.value("showSpectrumVisuals", false);   
                 cfg.shuffleFavsOnly = j.value("shuffleFavsOnly", false); 
                 cfg.eqEnabled = j.value("eqEnabled", false);                
                 if (j.contains("eqBands") && j["eqBands"].is_array()) {
@@ -857,7 +860,7 @@ void init_mpv() {
         mpv_observe_property(mpv, 0, "paused-for-cache", MPV_FORMAT_FLAG);
         mpv_observe_property(mpv, 0, "audio-bitrate", MPV_FORMAT_DOUBLE);  
    		mpv_observe_property(mpv, 0, "audio-params", MPV_FORMAT_NODE);
-		//mpv_observe_property(mpv, 0, "af-metadata/bouncy", MPV_FORMAT_NODE);
+		mpv_observe_property(mpv, 0, "af-metadata/bouncy", MPV_FORMAT_NODE);
 
 }
 
@@ -1932,8 +1935,9 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
     .Add(fShuffleFavsCheckbox)
     .Add(chkTheme)
     .Add(fEQToggle)
-    .Add(fEQContainer) 
-    //.Add(fSpectrum) 
+    .Add(fEQContainer)
+    //.Add(fSpectrum)
+
      #ifdef USE_PROJECTM
     .Add(fPresetToggle)
     .Add(fPresetScroll) 
@@ -2168,7 +2172,14 @@ void SuperMusicWindow::UpdateMPVFilters() {
         (float)fLimitRelease->Value() / 1000.0f);
     filterChain << limiterPart;
 
-	filterChain << "astats=metadata=1:reset=1]"; 
+	//filterChain << "astats=metadata=1:reset=1]"; 
+
+	if (cfg.showSpectrumVisuals) {
+    	filterChain << "astats=metadata=1:reset=1]"; 
+		} else {
+    	filterChain << "]";
+	}
+
 
     int error = mpv_set_property_string(mpv, "af", filterChain.String());
     if (error < 0) {
