@@ -2554,6 +2554,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             		fEQContainer->Hide();
         
         		InvalidateLayout();
+        		ResizeToPreferred();
         		save_config();
         		UpdateMPVFilters(); 
     		}
@@ -2736,6 +2737,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		fPresetScroll->Hide();    	
         	}    
     		InvalidateLayout();
+    		ResizeToPreferred();
     		break;
 		}
 		#endif
