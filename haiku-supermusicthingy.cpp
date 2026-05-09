@@ -862,6 +862,34 @@ void SuperMusicWindow::DownloadStationIcons() {
 }
 
 
+class ColorItem : public BStringItem {
+public:
+    ColorItem(const char* text) : BStringItem(text) {}
+
+    virtual void DrawItem(BView* owner, BRect frame, bool complete = false) {
+        if (cfg.updateTheme == "Dark") {
+            if (IsSelected()) {
+                owner->SetHighColor(ui_color(B_LIST_SELECTED_ITEM_TEXT_COLOR));
+            } else {
+                owner->SetHighColor(255, 255, 255); // White for Dark Mode
+            }
+        } else {
+            if (IsSelected()) {
+                owner->SetHighColor(ui_color(B_LIST_SELECTED_ITEM_TEXT_COLOR));
+            } else {
+                // FIXED: Wrapped in ui_color()
+                owner->SetHighColor(ui_color(B_LIST_ITEM_TEXT_COLOR)); 
+            }
+        }
+        
+        // Always call the base class to actually draw the text
+        BStringItem::DrawItem(owner, frame, complete);
+    }
+};
+
+
+
+
 void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
     if (!view) return;
     
@@ -880,7 +908,7 @@ void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
             textView->SetFontAndColor(NULL, B_FONT_ALL, &txt);
         }
 
-        if (BListView* listView = dynamic_cast<BListView*>(view)) {
+       if (BListView* listView = dynamic_cast<BListView*>(view)) {
             // This is what fixed your MilkDrop dark text!
             for (int32 i = 0; i < listView->CountItems(); i++) {
                 listView->InvalidateItem(i);
@@ -893,6 +921,7 @@ void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
     // Always recurse through children, even if the parent didn't need a color change
     for (int32 i = 0; i < view->CountChildren(); i++) {
         RecursiveColorApply(view->ChildAt(i), bg, txt);
+        
     }
 }
 
@@ -901,13 +930,16 @@ void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
 
 void SuperMusicWindow::ApplyTheme() {
     rgb_color bgVal;
+    rgb_color bg2Val;
     rgb_color txtVal;
 
     if (cfg.updateTheme == "Dark") {
         bgVal = {40, 40, 40, 255};      // Dark Grey
+        bg2Val = {0, 0, 0, 255};      // Dark Grey
         txtVal = {255, 255, 255, 255};  // Pure White
     } else {
         bgVal = ui_color(B_PANEL_BACKGROUND_COLOR);
+        bg2Val = ui_color(B_PANEL_BACKGROUND_COLOR);
         txtVal = ui_color(B_PANEL_TEXT_COLOR);
     }
 
@@ -927,13 +959,15 @@ void SuperMusicWindow::ApplyTheme() {
         }
         
         if (fPresetList) {
-            fPresetList->SetViewColor(bgVal);
+			
+            fPresetList->SetViewColor(bg2Val);
             fPresetList->SetLowColor(bgVal);
             fPresetList->SetHighColor(txtVal); 
             fPresetList->Invalidate();
         }
 
         if (fPresetScroll) {
+  
             fPresetScroll->SetViewColor(bgVal);
             // This fixes the white scrollbar tray in the MilkDrop list
             if (BScrollBar* sb = fPresetScroll->ScrollBar(B_VERTICAL)) {
@@ -1326,11 +1360,12 @@ void PopulatePresetList(BListView* list, const char* folderPath) {
         if (entry.is_regular_file()) {
             std::string ext = entry.path().extension().string();
             if (ext == ".milk" || ext == ".milk2") {
-                list->AddItem(new BStringItem(entry.path().filename().string().c_str()));
+                list->AddItem(new ColorItem(entry.path().filename().string().c_str()));
             }
         }
     }
 }
+
 
 
 
@@ -2011,7 +2046,7 @@ SuperMusicWindow::SuperMusicWindow()
     BCheckBox* chkShuffle = new BCheckBox("chk_shuffle", "Auto Shuffle On Start", new BMessage(MSG_CFG_AUTO_SHUFFLE));
     chkShuffle->SetValue(cfg.autoShuffle ? B_CONTROL_ON : B_CONTROL_OFF);    
     
-    BCheckBox* chkTheme = new BCheckBox("chk_theme", "Dark Theme", new BMessage(MSG_CFG_THEME));
+    BCheckBox* chkTheme = new BCheckBox("chk_theme", "Dark Theme (Experimental)", new BMessage(MSG_CFG_THEME));
     chkTheme->SetValue(cfg.updateTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);
 
 	fPresetToggle = new BCheckBox("preset_toggle", "MilkDrop Presets:", new BMessage(MSG_TOGGLE_PRESETS));
@@ -2021,13 +2056,13 @@ SuperMusicWindow::SuperMusicWindow()
 	fPresetList = new PresetListView("preset_list");
 	fPresetList->SetSelectionMessage(new BMessage(MSG_PRESET_SELECTED));
 	
-	fPresetScroll = new BScrollView("preset_scroll", fPresetList, 0, true, true, B_FANCY_BORDER);
+	fPresetScroll = new BScrollView("preset_scroll", fPresetList, 0, true, true, B_NO_BORDER);
 	fPresetScroll->Hide(); 
 	fPresetScroll->SetExplicitMinSize(BSize(B_SIZE_UNSET, 150));
 	fPresetScroll->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 300));
    
     fVisualsCheckbox = new BCheckBox(BRect(10, 10, 200, 30), "visuals_toggle", 
-    "Enable Visualizer", new BMessage(MSG_TOGGLE_VISUALS));
+    "Enable Visualizer (Experimental)", new BMessage(MSG_TOGGLE_VISUALS));
     fVisualsCheckbox->SetValue(cfg.showVisuals ? B_CONTROL_ON : B_CONTROL_OFF);    
     
 	fShuffleFavsCheckbox = new BCheckBox("shuffle_favs", "Shuffle Only Favorites", 
