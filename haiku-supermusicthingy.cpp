@@ -1572,7 +1572,7 @@ int32 VisualsThread(void* data) {
 
             else if (e.type == SDL_MOUSEWHEEL) {
                 set_volume(e.wheel.y > 0 ? '+' : '-');
-            }
+            }                       
 
 
             else if (e.type == SDL_MOUSEBUTTONDOWN) {
@@ -2457,7 +2457,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             			currentStation = stationToDelete;
             			delete_favorite(); 
             			currentStation = savedCurrent;
-            			RefreshFavorites(); 
+            			RefreshFavorites();
+            			UpdateFavButtons();
         			}
     			}
     			break;
