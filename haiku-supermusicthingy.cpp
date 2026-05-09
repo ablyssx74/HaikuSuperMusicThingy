@@ -24,6 +24,7 @@
 #include <StringView.h>
 
 
+
 // --- Haiku Storage Kit ---
 #include <Path.h>
 #include <Entry.h>
@@ -320,6 +321,51 @@ const unsigned char kIconPlay[] = {
 };
 
 const size_t kIconPlaySize = 126;
+
+
+const unsigned char kIconAbout[] = {
+	0x6e, 0x63, 0x69, 0x66, 0x08, 0x05, 0x00, 0x02, 0x00, 0x12, 0x02, 0x00, 0x00, 0x00, 0x3d, 0x40,
+	0x00, 0xbd, 0xa0, 0x00, 0x00, 0x00, 0x00, 0x4b, 0x20, 0x00, 0x4a, 0x10, 0x00, 0x00, 0x01, 0x66,
+	0xff, 0x01, 0x85, 0x02, 0x00, 0x06, 0x02, 0x3b, 0x9f, 0xd5, 0xbb, 0x5f, 0x70, 0x3e, 0xb9, 0x98,
+	0x3e, 0xed, 0x9f, 0x45, 0xbf, 0xbf, 0x47, 0x19, 0x8c, 0x00, 0xc5, 0x84, 0x30, 0xff, 0xdd, 0x7a,
+	0x29, 0x02, 0x00, 0x06, 0x02, 0x3b, 0x9f, 0xd5, 0xbb, 0x5f, 0x70, 0x3e, 0xb9, 0x98, 0x3e, 0xed,
+	0x9f, 0x45, 0x8f, 0xbf, 0x46, 0xf9, 0x8c, 0x00, 0xff, 0xd7, 0x60, 0xff, 0xed, 0x9d, 0x46, 0x02,
+	0x01, 0x06, 0x02, 0x3a, 0x92, 0xa8, 0x3c, 0xb2, 0x8f, 0xbe, 0x9e, 0xad, 0x3c, 0x7f, 0xb1, 0x4a,
+	0xd6, 0x23, 0x45, 0xf4, 0x80, 0x00, 0xda, 0x4c, 0x05, 0xfe, 0xff, 0xb6, 0x43, 0x02, 0x01, 0x06,
+	0x02, 0x38, 0xa0, 0x81, 0x3c, 0xe4, 0x69, 0xc0, 0x05, 0xf5, 0x3b, 0xac, 0xe9, 0x4a, 0x36, 0x3c,
+	0x4a, 0x20, 0x00, 0x00, 0xfd, 0xb3, 0x3d, 0xff, 0xda, 0x4c, 0x05, 0x02, 0x01, 0x06, 0x02, 0xbd,
+	0x28, 0x86, 0x3d, 0x5c, 0x6c, 0xbc, 0x93, 0x89, 0xbc, 0x6b, 0xc1, 0x4a, 0x2c, 0xa1, 0x4a, 0x72,
+	0x01, 0x00, 0xfd, 0xd1, 0x5b, 0xff, 0xda, 0x4c, 0x05, 0x02, 0x00, 0x06, 0x02, 0x34, 0xb4, 0xd1,
+	0x37, 0x3c, 0x1e, 0xbc, 0x49, 0x56, 0x39, 0xd3, 0x68, 0x48, 0xda, 0x03, 0x4a, 0xe2, 0x5a, 0x00,
+	0xff, 0xd7, 0x5f, 0xff, 0xa4, 0x37, 0x0b, 0x07, 0x06, 0x0d, 0xae, 0xff, 0xcf, 0x02, 0x24, 0x5a,
+	0x29, 0x5a, 0x29, 0x5a, 0x2f, 0x56, 0x34, 0x51, 0x3e, 0x5c, 0x41, 0x54, 0x40, 0x5b, 0x49, 0x58,
+	0x5a, 0x54, 0x57, 0x57, 0x5a, 0x4c, 0x4d, 0x4b, 0x4d, 0x4b, 0x55, 0x4a, 0x60, 0x3f, 0x5f, 0x43,
+	0x60, 0x3a, 0x52, 0x3a, 0x52, 0x3a, 0x58, 0x36, 0x5a, 0x2b, 0x5c, 0x2f, 0xc9, 0x69, 0xb6, 0xe2,
+	0x54, 0x25, 0x4e, 0x25, 0x4e, 0x28, 0x50, 0x2e, 0x50, 0x06, 0x0a, 0xee, 0xbe, 0x0b, 0x33, 0x4c,
+	0x3e, 0x43, 0x39, 0x48, 0xc1, 0xf5, 0xbd, 0xf0, 0x4d, 0x31, 0xbf, 0xe8, 0xc0, 0x75, 0x47, 0x3b,
+	0x48, 0x43, 0x52, 0x40, 0xbf, 0x63, 0xc1, 0x06, 0x47, 0x44, 0xbe, 0x4d, 0xc2, 0x30, 0xbd, 0x68,
+	0xc3, 0x0a, 0xbe, 0x25, 0xc2, 0x56, 0x40, 0x4c, 0x4a, 0x4f, 0xbc, 0xf9, 0xc3, 0x8b, 0xc0, 0x32,
+	0xc4, 0xfa, 0xbc, 0x3d, 0xc4, 0x39, 0x35, 0x4d, 0x06, 0x0f, 0xee, 0xbb, 0xfb, 0x2e, 0xba, 0xb8,
+	0xc4, 0xbb, 0xbc, 0x44, 0x49, 0xbb, 0x84, 0xc4, 0x01, 0x33, 0x46, 0x2e, 0x40, 0xbc, 0xca, 0xc2,
+	0xde, 0x35, 0x46, 0xbd, 0x85, 0xc2, 0x35, 0xbe, 0xd6, 0xc0, 0xfd, 0xbd, 0xae, 0xc2, 0x1d, 0x3d,
+	0x3b, 0x3a, 0x33, 0xbf, 0x80, 0xc0, 0x59, 0x3f, 0x3c, 0xc1, 0xe4, 0xbd, 0xf5, 0xc5, 0x14, 0xb9,
+	0xf9, 0xc0, 0x0e, 0xc0, 0xa8, 0x47, 0x3c, 0xc3, 0x16, 0xc1, 0x25, 0x52, 0x40, 0xbf, 0x89, 0xc1,
+	0x39, 0xc2, 0xb0, 0xc1, 0x8b, 0xbe, 0x73, 0xc2, 0x63, 0xbd, 0x8e, 0xc3, 0x3d, 0xbe, 0x4b, 0xc2,
+	0x89, 0xbf, 0xe6, 0xc4, 0xbb, 0x4a, 0x4f, 0x3a, 0x4a, 0xc0, 0x6f, 0xc5, 0x5d, 0xbc, 0xa0, 0xc4,
+	0x6a, 0x35, 0x4f, 0x06, 0x04, 0xae, 0x4e, 0x3a, 0x52, 0x26, 0x58, 0x2e, 0xc3, 0x89, 0xb5, 0xfd,
+	0x43, 0x35, 0x3f, 0x42, 0x06, 0x08, 0xef, 0xba, 0x26, 0x36, 0x30, 0x35, 0x25, 0x3f, 0x2c, 0x48,
+	0x2c, 0x48, 0x28, 0x48, 0x25, 0x4b, 0x33, 0x4c, 0x29, 0x4d, 0x33, 0x4c, 0x3f, 0x42, 0x43, 0x35,
+	0x38, 0x2a, 0x41, 0x2d, 0x31, 0x32, 0x35, 0x3e, 0x06, 0x08, 0xfb, 0xae, 0x35, 0x4d, 0x35, 0x4d,
+	0x35, 0x56, 0x3b, 0x59, 0x3e, 0x51, 0x3f, 0x54, 0x3e, 0x51, 0x55, 0x52, 0x4b, 0x57, 0x56, 0x4c,
+	0x48, 0x49, 0x5c, 0x3b, 0x59, 0x46, 0x5b, 0x37, 0x4e, 0x3a, 0x3f, 0x42, 0x06, 0x04, 0xeb, 0x33,
+	0x4c, 0x33, 0x4c, 0x2d, 0x51, 0x23, 0x55, 0x27, 0x56, 0x35, 0x4d, 0x30, 0x51, 0x35, 0x4d, 0x08,
+	0x0a, 0x01, 0x01, 0x00, 0x00, 0x0a, 0x00, 0x04, 0x03, 0x04, 0x05, 0x06, 0x10, 0x01, 0x17, 0x84,
+	0x00, 0x04, 0x0a, 0x05, 0x01, 0x04, 0x00, 0x0a, 0x06, 0x01, 0x05, 0x00, 0x0a, 0x04, 0x01, 0x03,
+	0x00, 0x0a, 0x02, 0x01, 0x02, 0x00, 0x0a, 0x07, 0x01, 0x06, 0x00, 0x0a, 0x03, 0x01, 0x01, 0x08,
+	0x15, 0xff
+};
+
+const size_t kIconAboutSize = 610;
 
 mpv_handle *mpv = nullptr;
 std::vector<Channel> channels;
@@ -814,6 +860,133 @@ void SuperMusicWindow::DownloadStationIcons() {
         }
     }).detach();
 }
+
+
+void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
+    if (!view) return;
+    
+    // Check if we actually need to update this view
+    if (view->ViewColor().red != bg.red || view->HighColor().red != txt.red) {
+        view->SetViewColor(bg);
+        view->SetLowColor(bg);
+        view->SetHighColor(txt);
+        
+        // Handle specific types that need extra love
+        if (BSlider* slider = dynamic_cast<BSlider*>(view)) {
+            slider->UseFillColor(true, &txt);
+        }
+
+        if (BTextView* textView = dynamic_cast<BTextView*>(view)) {
+            textView->SetFontAndColor(NULL, B_FONT_ALL, &txt);
+        }
+
+        if (BListView* listView = dynamic_cast<BListView*>(view)) {
+            // This is what fixed your MilkDrop dark text!
+            for (int32 i = 0; i < listView->CountItems(); i++) {
+                listView->InvalidateItem(i);
+            }
+        }
+
+        view->Invalidate();
+    }
+    
+    // Always recurse through children, even if the parent didn't need a color change
+    for (int32 i = 0; i < view->CountChildren(); i++) {
+        RecursiveColorApply(view->ChildAt(i), bg, txt);
+    }
+}
+
+
+
+
+void SuperMusicWindow::ApplyTheme() {
+    rgb_color bgVal;
+    rgb_color txtVal;
+
+    if (cfg.updateTheme == "Dark") {
+        bgVal = {40, 40, 40, 255};      // Dark Grey
+        txtVal = {255, 255, 255, 255};  // Pure White
+    } else {
+        bgVal = ui_color(B_PANEL_BACKGROUND_COLOR);
+        txtVal = ui_color(B_PANEL_TEXT_COLOR);
+    }
+
+    float scale = be_bold_font->Size() / 12.0f; 
+
+    BFont boldFont(be_bold_font);
+    boldFont.SetSize(12.0 * scale);
+
+    if (Lock()) {
+        if (fTabView) {
+            fTabView->SetViewColor(bgVal);
+            
+            for (int32 i = 0; i < fTabView->CountTabs(); i++) {
+                BView* tabView = fTabView->ViewForTab(i);
+                RecursiveColorApply(tabView, bgVal, txtVal);
+            }
+        }
+        
+        if (fPresetList) {
+            fPresetList->SetViewColor(bgVal);
+            fPresetList->SetLowColor(bgVal);
+            fPresetList->SetHighColor(txtVal); 
+            fPresetList->Invalidate();
+        }
+
+        if (fPresetScroll) {
+            fPresetScroll->SetViewColor(bgVal);
+            // This fixes the white scrollbar tray in the MilkDrop list
+            if (BScrollBar* sb = fPresetScroll->ScrollBar(B_VERTICAL)) {
+                sb->SetViewColor(bgVal);
+                sb->Invalidate();
+            }
+            fPresetScroll->Invalidate();
+        }
+
+        
+	    if (fDescView) {
+    		fDescView->SetViewColor(bgVal);
+    		fDescView->SetFontAndColor(&boldFont, B_FONT_ALL, &txtVal);
+    		fDescView->Invalidate();
+		}
+		
+		if (fSongView) {
+			fSongView->SetViewColor(bgVal);
+        	fSongView->SetFontAndColor(&boldFont, B_FONT_ALL, &txtVal);
+        	fSongView->Invalidate();
+    	}
+  
+        
+        if (fStationList) {    
+   			 fStationList->SetFlags(fStationList->Flags() | B_FRAME_EVENTS);
+   			 
+       		 if (fStationList->Parent()) {
+            	fStationList->SetViewColor(bgVal); 
+            	fStationList->SetLowColor(bgVal);
+            	fStationList->SetHighColor(txtVal); 
+            	fStationList->Invalidate();
+        	}
+        }
+        
+        if (fFavList) {
+            fFavList->SetViewColor(bgVal);
+            fFavList->SetLowColor(bgVal);
+            fFavList->SetHighColor(txtVal); 
+            fFavList->Invalidate(); 
+        }    
+        if (fBtnAddFav) {
+    		fBtnAddFav->SetViewColor(bgVal);
+    		fBtnAddFav->SetHighColor(txtVal); 
+    		fBtnAddFav->Invalidate();
+		}    
+
+        if (fTabView) fTabView->Invalidate();
+        Unlock();
+    }
+}
+
+
+
 
 
 void init_mpv() {
@@ -1564,6 +1737,38 @@ private:
 
 
 
+class AboutIconView : public BView {
+public:
+    AboutIconView(BBitmap* bitmap)
+        : BView("about_icon_view", B_WILL_DRAW),
+          fBitmap(bitmap) {
+        // Essential: Tell the layout kit we want a fixed size
+        SetExplicitMinSize(BSize(64, 64));
+        SetExplicitMaxSize(BSize(64, 64));
+        SetExplicitPreferredSize(BSize(64, 64));
+    }
+
+virtual ~AboutIconView() {
+    delete fBitmap;
+}
+
+    virtual void Draw(BRect updateRect) {
+        if (!fBitmap) return;
+        
+        SetDrawingMode(B_OP_ALPHA);
+        // Center the icon within the view bounds
+        float x = (Bounds().Width() - fBitmap->Bounds().Width()) / 2.0f;
+        float y = (Bounds().Height() - fBitmap->Bounds().Height()) / 2.0f;
+        DrawBitmap(fBitmap, BPoint(x, y));
+    }
+
+private:
+    BBitmap* fBitmap;
+};
+
+
+
+
 
 void SuperMusicWindow::UpdateStatus(const char* station, const char* song) {
     if (Lock()) {
@@ -1578,6 +1783,8 @@ SuperMusicWindow::SuperMusicWindow()
     : BWindow(BRect(100, 100, 550, 380), "SuperMusicThingy", B_TITLED_WINDOW, 
               B_ASYNCHRONOUS_CONTROLS | B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE)
 {
+	
+	SetFlags(Flags() | B_AUTO_UPDATE_SIZE_LIMITS);
     fAlbumArt = nullptr;
     #ifdef USE_PROJECTM
     fProjectM = pm; 
@@ -1593,7 +1800,7 @@ SuperMusicWindow::SuperMusicWindow()
 	smallFont.SetSize(12.0f * scale);
 	
     fTabView = new BTabView("tab_container");
-    fTabView->SetExplicitMinSize(BSize(380 * scale, 700 * scale));
+    //fTabView->SetExplicitMinSize(BSize(380 * scale, 700 * scale));
 
     fTabView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
 
@@ -1686,7 +1893,8 @@ SuperMusicWindow::SuperMusicWindow()
             .Add(pauseBtn)
             .Add(playBtn)
             .Add(fShuffleBtn)
-        .End();
+        .End()
+        .AddGlue();
 
 
     // ==========================================
@@ -1694,28 +1902,55 @@ SuperMusicWindow::SuperMusicWindow()
     // ==========================================
     BGroupView* stationGroup = new BGroupView(B_VERTICAL, 0);
     stationGroup->SetName("Stations"); 
+    // Set container color to prevent bleed-through
+    stationGroup->SetViewColor(ui_color(B_LIST_BACKGROUND_COLOR));
 
     fStationList = new BListView("station_list");
     fStationList->SetInvocationMessage(new BMessage(MSG_PLAY_STATION)); 
     
+    // 1. Change to B_NO_BORDER to kill the light ghost lines
+    BScrollView* stationScroll = new BScrollView("station_scroll", fStationList, 
+        0, false, true, B_NO_BORDER); 
+    
+    stationScroll->SetViewColor(ui_color(B_LIST_BACKGROUND_COLOR));
+
+    if (BScrollBar* sb = stationScroll->ScrollBar(B_VERTICAL)) {
+        // Force the tray to be dark
+        sb->SetViewColor(ui_color(B_LIST_BACKGROUND_COLOR));
+    }
+
     BLayoutBuilder::Group<>(stationGroup, B_VERTICAL, 0)
         .SetInsets(10)
-        .Add(new BScrollView("station_scroll", fStationList, 0, false, true))
+        .Add(stationScroll) 
     .End();
+
 
     // ==========================================
     // TAB 3. FAVORITES VIEW (The List)
     // ==========================================
     BGroupView* favGroup = new BGroupView(B_VERTICAL, 10);
     favGroup->SetName("Fav"); 
+    favGroup->SetViewColor(ui_color(B_LIST_BACKGROUND_COLOR));
 
     fFavList = new FavListView("favorites_list");
-	fFavList->SetInvocationMessage(new BMessage(MSG_PLAY_FAV)); 
+    fFavList->SetInvocationMessage(new BMessage(MSG_PLAY_FAV)); 
     
+    // 1. Change to B_NO_BORDER here as well
+    BScrollView* favScroll = new BScrollView("fav_scroll", fFavList, 
+        0, false, true, B_NO_BORDER);
+    
+    favScroll->SetViewColor(ui_color(B_LIST_BACKGROUND_COLOR));
+
+    if (BScrollBar* sb = favScroll->ScrollBar(B_VERTICAL)) {
+        sb->SetViewColor(ui_color(B_LIST_BACKGROUND_COLOR));
+    }
+
     BLayoutBuilder::Group<>(favGroup, B_VERTICAL, 0)
         .SetInsets(10)
-        .Add(new BScrollView("fav_scroll", fFavList, 0, false, true))
+        .Add(favScroll)
     .End();
+
+
 
     // ==========================================
     // TAB 4: CONFIG VIEW (Placeholder)
@@ -1919,7 +2154,12 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
     BFont boldFont(be_bold_font);
     boldFont.SetSize(14.0);
 
-    // 2. Text Components
+    // 2. Icon and Text Components
+    // Get the vector icon - I bumped the size to 64 for a nice clear logo
+    BBitmap* aboutIcon = GetVectorIcon(kIconAbout, kIconAboutSize, 64);
+    AboutIconView* appLogo = new AboutIconView(aboutIcon);
+    appLogo->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_TOP));
+
     BStringView* titleApp = new BStringView("abt_title", "SuperMusicThingy");
     titleApp->SetFont(&titleFont);
     titleApp->SetAlignment(B_ALIGN_CENTER);
@@ -1927,10 +2167,10 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
     BStringView* txtVer = new BStringView("abt_ver", "Version 1.0.0 (Haiku)");
     txtVer->SetAlignment(B_ALIGN_CENTER);
     
-  	ClickableURL* txturl = new ClickableURL("abt_url", 
-    	"Source Available Online (click me!)", 
-    	"https://github.com/ablyssx74/HaikuSuperMusicThingy");
-	txturl->SetAlignment(B_ALIGN_CENTER);  
+    ClickableURL* txturl = new ClickableURL("abt_url", 
+        "Source Available Online (click me!)", 
+        "https://github.com");
+    txturl->SetAlignment(B_ALIGN_CENTER);  
 
     BStringView* txtCopy = new BStringView("abt_copy", "Copyright " B_UTF8_COPYRIGHT " 2026 Kris Beazley");
     txtCopy->SetAlignment(B_ALIGN_CENTER);
@@ -1956,7 +2196,6 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
     BStringView* c8 = new BStringView("c8", "ladspa (EQ/Limiter Effects)");
     BStringView* c9 = new BStringView("c9", "Some AI Assistance");   
     
-    // Center the credits 
     c1->SetAlignment(B_ALIGN_CENTER);
     c2->SetAlignment(B_ALIGN_CENTER);
     c3->SetAlignment(B_ALIGN_CENTER);
@@ -1965,13 +2204,13 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
     c6->SetAlignment(B_ALIGN_CENTER);
     c7->SetAlignment(B_ALIGN_CENTER);
     c8->SetAlignment(B_ALIGN_CENTER);
-	c9->SetAlignment(B_ALIGN_CENTER);
-	
-	
+    c9->SetAlignment(B_ALIGN_CENTER);
+    
     // 4. Layout
     BLayoutBuilder::Group<>(aboutGroup, B_VERTICAL, 5)
         .SetInsets(20)
-        .AddGlue() // Pushes content to the middle
+        .AddGlue() 
+        .Add(appLogo) 
         .Add(titleApp)
         .Add(txtVer)
         .Add(txturl)
@@ -1979,7 +2218,7 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
         .Add(txtCopy)        
         .Add(txtEmail)
         .Add(txtAI)
-        .AddStrut(30) // Spacer
+        .AddStrut(30) 
         .Add(txtCredit)
         .AddStrut(5)
         .Add(c1)
@@ -1990,8 +2229,10 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
         .Add(c6)
         .Add(c7)
         .Add(c8)
+        .Add(c9)
         .AddGlue()
     .End();
+
 
     // 3. Attach Tabs
     fTabView->AddTab(playerGroup);
@@ -2098,6 +2339,7 @@ void SuperMusicWindow::UpdateUI() {
     if (fListenersView) fListenersView->SetText(lStr.String());
 
     UpdateFavButtons();
+
 }
 
 
@@ -2520,51 +2762,6 @@ case MSG_EQ_RESET:
     }
 }
 
-void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
-    if (!view) return;
-
-    view->SetViewColor(bg);
-    view->SetLowColor(bg);
-    view->SetHighColor(txt);
-    
-    BSlider* slider = dynamic_cast<BSlider*>(view);
-    if (slider) {
-        slider->UseFillColor(true, &txt);
-    }
-
-    BStringView* stringView = dynamic_cast<BStringView*>(view);
-    if (stringView) {
-        stringView->SetHighColor(txt);
-    }
-
-    BTextView* textView = dynamic_cast<BTextView*>(view);
-    if (textView) {
-        textView->SetFontAndColor(NULL, B_FONT_ALL, &txt);
-    }
-
-    BListView* listView = dynamic_cast<BListView*>(view);
-    if (listView) {
-        listView->SetViewColor(bg);
-        listView->SetLowColor(bg);
-        listView->SetHighColor(txt);        
- 
-        for (int32 i = 0; i < listView->CountItems(); i++) {
-            listView->InvalidateItem(i);
-        }
-         listView->Invalidate();
-    }
-
-    BCheckBox* checkBox = dynamic_cast<BCheckBox*>(view);
-    if (checkBox) {
-        checkBox->SetHighColor(txt);
-    }
-
-    view->Invalidate();
-
-    for (int32 i = 0; i < view->CountChildren(); i++) {
-        RecursiveColorApply(view->ChildAt(i), bg, txt);
-    }
-}
 
 
 class FavItem : public BStringItem {
@@ -2601,73 +2798,6 @@ public:
 };
 
 
-void SuperMusicWindow::ApplyTheme() {
-    rgb_color bgVal;
-    rgb_color txtVal;
-
-    if (cfg.updateTheme == "Dark") {
-        bgVal = {40, 40, 40, 255};      // Dark Grey
-        txtVal = {255, 255, 255, 255};  // Pure White
-    } else {
-        bgVal = ui_color(B_PANEL_BACKGROUND_COLOR);
-        txtVal = ui_color(B_PANEL_TEXT_COLOR);
-    }
-
-    float scale = be_bold_font->Size() / 12.0f; 
-
-    BFont boldFont(be_bold_font);
-    boldFont.SetSize(12.0 * scale);
-
-    if (Lock()) {
-        if (fTabView) {
-            fTabView->SetViewColor(bgVal);
-            
-            for (int32 i = 0; i < fTabView->CountTabs(); i++) {
-                BView* tabView = fTabView->ViewForTab(i);
-                RecursiveColorApply(tabView, bgVal, txtVal);
-            }
-        }
-        
-	    if (fDescView) {
-    		fDescView->SetViewColor(bgVal);
-    		fDescView->SetFontAndColor(&boldFont, B_FONT_ALL, &txtVal);
-    		fDescView->Invalidate();
-		}
-		
-		if (fSongView) {
-			fSongView->SetViewColor(bgVal);
-        	fSongView->SetFontAndColor(&boldFont, B_FONT_ALL, &txtVal);
-        	fSongView->Invalidate();
-    	}
-  
-        
-        if (fStationList) {    
-   			 fStationList->SetFlags(fStationList->Flags() | B_FRAME_EVENTS);
-   			 
-       		 if (fStationList->Parent()) {
-            	fStationList->SetViewColor(bgVal); 
-            	fStationList->SetLowColor(bgVal);
-            	fStationList->SetHighColor(txtVal); 
-            	fStationList->Invalidate();
-        	}
-        }
-        
-        if (fFavList) {
-            fFavList->SetViewColor(bgVal);
-            fFavList->SetLowColor(bgVal);
-            fFavList->SetHighColor(txtVal); 
-            fFavList->Invalidate(); 
-        }    
-        if (fBtnAddFav) {
-    		fBtnAddFav->SetViewColor(bgVal);
-    		fBtnAddFav->SetHighColor(txtVal); 
-    		fBtnAddFav->Invalidate();
-		}    
-
-        if (fTabView) fTabView->Invalidate();
-        Unlock();
-    }
-}
 
 
 void SuperMusicWindow::RefreshFavorites() {
