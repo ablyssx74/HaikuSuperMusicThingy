@@ -81,9 +81,11 @@ enum {
 	MSG_AUDIO_READY = 'AudR',
 	MSG_UPDATE_BOUNCE = 'bnce',
 	MSG_EQ_RESET 	  = 'eqrs',
-    MSG_SHUFFLE_FAVS_CHANGED = 'sfch'
+    MSG_SHUFFLE_FAVS_CHANGED = 'sfch',   
  
 };
+
+
 
 
 class SuperMusicWindow : public BWindow {

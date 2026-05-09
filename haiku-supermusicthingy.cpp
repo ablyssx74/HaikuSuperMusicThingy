@@ -1529,8 +1529,8 @@ public:
 
     virtual void Draw(BRect updateRect) {
         BRect b = Bounds();        
-        SetHighColor(0, 0, 0);
-        FillRect(b);        
+        //SetHighColor(0, 0, 0);
+        //FillRect(b);        
         float floor = -60.0f;
         float peak = (float)fCurrentLevel;
         if (peak < floor) peak = floor;
@@ -1583,7 +1583,7 @@ SuperMusicWindow::SuperMusicWindow()
     fProjectM = pm; 
 	#endif
     
-    setenv("LADSPA_PATH", "/boot/system/lib/ladspa", 1);     
+    setenv("LADSPA_PATH", "/boot/system/lib/ladspa_HaikuSuperMusicThingy", 1);     
  
     BFont largeFont(be_bold_font);
     BFont smallFont(be_bold_font);
@@ -1628,6 +1628,10 @@ SuperMusicWindow::SuperMusicWindow()
 	fArtView->SetExplicitSize(BSize(325 * scale, 325 * scale)); 
     fArtView->SetExplicitMinSize(BSize(325 * scale, 325 * scale));
 	fArtView->SetExplicitMaxSize(BSize(325 * scale, 325 * scale));
+	
+	fSpectrum = new SpectrumView(BRect(0, 0, 300, 50), "spectrum"); 
+	fSpectrum->SetExplicitMinSize(BSize(300, 50));
+	fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 50)); 
     
     BBitmap* heartIcon = GetVectorIcon(kIconFav, kIconFavSize, 40);
 	fBtnAddFav = new IconButton("btn_add_fav", heartIcon, new BMessage(MSG_ADD_FAV));
@@ -1662,6 +1666,7 @@ SuperMusicWindow::SuperMusicWindow()
         //.Add(fStationView) 
         .Add(fDescView) 
         .Add(fSongView)
+        //.Add(fSpectrum)
 		.AddGlue()
         .AddGroup(B_HORIZONTAL, 0) 
             .AddGroup(B_VERTICAL, 0) 
@@ -1759,10 +1764,10 @@ SuperMusicWindow::SuperMusicWindow()
     BStringView* sizeLabel = new BStringView("lbl_size", "Notify Icon Size:"); 
     BMenuField* sizeField = new BMenuField("size_field", NULL, sizeMenu);
 
-fSizeContainer = new BGroupView(B_HORIZONTAL, 5); // Use Horizontal for label next to field
-fSizeContainer->AddChild(sizeLabel);
-fSizeContainer->AddChild(sizeField);
-if (!cfg.showNotifications) fSizeContainer->Hide();
+	fSizeContainer = new BGroupView(B_HORIZONTAL, 5); // Use Horizontal for label next to field
+	fSizeContainer->AddChild(sizeLabel);
+	fSizeContainer->AddChild(sizeField);
+	if (!cfg.showNotifications) fSizeContainer->Hide();
 
 
 
@@ -1800,78 +1805,76 @@ if (!cfg.showNotifications) fSizeContainer->Hide();
 
  
 
-// --- EQ & Mastering Section ---
+	// --- EQ & Mastering Section ---
 
-// Create a group for the buttons--------------------------
-BGroupView* buttonRow = new BGroupView(B_HORIZONTAL, 10);
-buttonRow->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_TOP));
+	// Create a group for the buttons--------------------------
+	BGroupView* buttonRow = new BGroupView(B_HORIZONTAL, 10);
+	buttonRow->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_TOP));
 
-fApplyEQBtn = new BButton("apply_eq", "Apply Settings", new BMessage(MSG_EQ_CHANGED));
-fResetEQBtn = new BButton("reset_eq", "Reset to Zero", new BMessage(MSG_EQ_RESET));
+	fApplyEQBtn = new BButton("apply_eq", "Apply Settings", new BMessage(MSG_EQ_CHANGED));
+	fResetEQBtn = new BButton("reset_eq", "Reset to Zero", new BMessage(MSG_EQ_RESET));
 
-buttonRow->AddChild(fResetEQBtn);
-buttonRow->AddChild(fApplyEQBtn);
-// Create a group for the buttons--------------------------
+	buttonRow->AddChild(fResetEQBtn);
+	buttonRow->AddChild(fApplyEQBtn);
+	// Create a group for the buttons--------------------------
 
-// 1. Create Toggle Checkbox
-fEQToggle = new BCheckBox("eq_toggle", "Enable 10-Band EQ", new BMessage(MSG_TOGGLE_EQ));
-fEQToggle->SetValue(cfg.eqEnabled ? B_CONTROL_ON : B_CONTROL_OFF);
+	// 1. Create Toggle Checkbox
+	fEQToggle = new BCheckBox("eq_toggle", "Enable 10-Band EQ", new BMessage(MSG_TOGGLE_EQ));
+	fEQToggle->SetValue(cfg.eqEnabled ? B_CONTROL_ON : B_CONTROL_OFF);
 
-// 2. Create main Container (Vertical so button is below sliders)
-fEQContainer = new BGroupView(B_VERTICAL, 5); 
-fEQContainer->SetName("EQPanel");
+	// 2. Create main Container (Vertical so button is below sliders)
+	fEQContainer = new BGroupView(B_VERTICAL, 5); 
+	fEQContainer->SetName("EQPanel");
 
-// 3. Create Row for Sliders (Horizontal)
-BGroupView* eqSliderRow = new BGroupView(B_HORIZONTAL, 3);
-
-const char* freqLabels[] = { "50Hz", "100Hz", "156Hz", "220Hz", "311Hz", "440Hz", "622Hz", "880Hz", "1k2", "1k7" };
-
-for (int i = 0; i < 10; i++) {
-    BGroupView* bandGroup = new BGroupView(B_VERTICAL, 2);
-    fEQSliders[i] = new WheelSlider(freqLabels[i], "", NULL, -15, 15, B_VERTICAL, 1);
-    fEQSliders[i]->SetValue((int32)cfg.eqBands[i]);
-    
-    BStringView* lbl = new BStringView(NULL, freqLabels[i]);
-    lbl->SetFontSize(9);
-    
-    bandGroup->AddChild(fEQSliders[i]);
-    bandGroup->AddChild(lbl);
-    eqSliderRow->AddChild(bandGroup); // Add to eqSliderRow
-}
-
-// 4. Limiter Section
-BGroupView* limitGroup = new BGroupView(B_VERTICAL, 5);
-BStringView* lTitle = new BStringView(NULL, "Limiter");
-lTitle->SetFont(be_bold_font);
-limitGroup->AddChild(lTitle);
-
-fLimitInput = new WheelSlider("limit_in", "In", NULL, -20, 20, B_HORIZONTAL);
-fLimitInput->SetValue((int32)cfg.limitIn);
-fLimitLimit = new WheelSlider("limit_thr", "Lmt", NULL, -20, 0, B_HORIZONTAL);
-fLimitLimit->SetValue((int32)cfg.limitLmt);
-fLimitRelease = new WheelSlider("limit_rel", "Rel", NULL, 10, 1000, B_HORIZONTAL);
-fLimitRelease->SetValue((int32)cfg.limitRel);
-
-limitGroup->AddChild(fLimitInput);
-limitGroup->AddChild(fLimitLimit);
-limitGroup->AddChild(fLimitRelease);
-
-eqSliderRow->AddChild(limitGroup); // Add limiter to eqSliderRow
-
-// 5. Assemble fEQContainer
-fEQContainer->AddChild(eqSliderRow); // Add the row of sliders
-
-fApplyEQBtn = new BButton("apply_eq", "Apply EQ Settings", new BMessage(MSG_EQ_CHANGED));
-fApplyEQBtn->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_TOP));
-//fEQContainer->AddChild(fApplyEQBtn); // Add the button below the sliders
-fEQContainer->AddChild(buttonRow);
-
-if (!cfg.eqEnabled) {
-    fEQContainer->Hide();
-}
-
+	// 3. Create Row for Sliders (Horizontal)
+	BGroupView* eqSliderRow = new BGroupView(B_HORIZONTAL, 3);
 	
-	//UpdateMPVFilters();
+
+
+	const char* freqLabels[] = { "50Hz", "100Hz", "156Hz", "220Hz", "311Hz", "440Hz", "622Hz", "880Hz", "1k2", "1k7" };
+
+	for (int i = 0; i < 10; i++) {
+    	BGroupView* bandGroup = new BGroupView(B_VERTICAL, 2);
+    	fEQSliders[i] = new WheelSlider(freqLabels[i], "", NULL, -15, 15, B_VERTICAL, 1);
+    	fEQSliders[i]->SetValue((int32)cfg.eqBands[i]);
+    
+    	BStringView* lbl = new BStringView(NULL, freqLabels[i]);
+    	lbl->SetFontSize(9);
+    
+    	bandGroup->AddChild(fEQSliders[i]);
+    	bandGroup->AddChild(lbl);
+    	eqSliderRow->AddChild(bandGroup); 
+	}
+
+	// 4. Limiter Section
+	BGroupView* limitGroup = new BGroupView(B_VERTICAL, 5);
+	BStringView* lTitle = new BStringView(NULL, "Limiter");
+	lTitle->SetFont(be_bold_font);
+	limitGroup->AddChild(lTitle);
+
+	fLimitInput = new WheelSlider("limit_in", "In", NULL, -20, 20, B_HORIZONTAL);
+	fLimitInput->SetValue((int32)cfg.limitIn);
+	fLimitLimit = new WheelSlider("limit_thr", "Lmt", NULL, -20, 0, B_HORIZONTAL);
+	fLimitLimit->SetValue((int32)cfg.limitLmt);
+	fLimitRelease = new WheelSlider("limit_rel", "Rel", NULL, 10, 1000, B_HORIZONTAL);
+	fLimitRelease->SetValue((int32)cfg.limitRel);
+
+	limitGroup->AddChild(fLimitInput);
+	limitGroup->AddChild(fLimitLimit);
+	limitGroup->AddChild(fLimitRelease);
+
+	eqSliderRow->AddChild(limitGroup); 
+	// 5. Assemble fEQContainer
+	fEQContainer->AddChild(eqSliderRow); 
+
+	fApplyEQBtn = new BButton("apply_eq", "Apply EQ Settings", new BMessage(MSG_EQ_CHANGED));
+	fApplyEQBtn->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_TOP));
+	fEQContainer->AddChild(buttonRow);
+	//fEQContainer->AddChild(fSpectrum);
+	if (!cfg.eqEnabled) {
+    	fEQContainer->Hide();
+	}
+
 
 
          
@@ -1889,11 +1892,8 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
     .Add(chkShuffle)
     .Add(fShuffleFavsCheckbox)
     .Add(chkTheme)
-    .Add(fEQToggle)
-    .Add(fEQContainer)
-    //.Add(fApplyEQBtn)
-    //.Add(fSpectrum)
-
+   .Add(fEQToggle)
+   .Add(fEQContainer)
      #ifdef USE_PROJECTM
     .Add(fPresetToggle)
     .Add(fPresetScroll) 
@@ -2111,7 +2111,7 @@ void SuperMusicWindow::UpdateMPVFilters() {
     filterChain = "@bouncy:lavfi=[";
 
     BString eqPart;
-    eqPart << "ladspa=file='/boot/system/lib/ladspa/mbeq_1197.so':p=mbeq:c=";
+    eqPart << "ladspa=file='/boot/system/lib/ladspa_HaikuSuperMusicThingy/mbeq_1197.so':p=mbeq:c=";
     
     for (int i = 0; i < 10; i++) {
         BString val;
@@ -2122,7 +2122,7 @@ void SuperMusicWindow::UpdateMPVFilters() {
     filterChain << eqPart;
 
     BString limiterPart;
-    limiterPart.SetToFormat("ladspa=file='/boot/system/lib/ladspa/fast_lookahead_limiter_1913.so':p=fastLookaheadLimiter:c=%.2f|%.2f|%.2f,",
+    limiterPart.SetToFormat("ladspa=file='/boot/system/lib/ladspa_HaikuSuperMusicThingy/fast_lookahead_limiter_1913.so':p=fastLookaheadLimiter:c=%.2f|%.2f|%.2f,",
         (float)fLimitInput->Value(), 
         (float)fLimitLimit->Value(), 
         (float)fLimitRelease->Value() / 1000.0f);

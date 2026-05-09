@@ -106,8 +106,8 @@ ifeq ($(ENABLE_PROJECTM), ON)
  endif
 endif
 ifeq ($(ARCH), x86_64)
-	mkdir -p $(PACKAGE_DIR)/lib/ladspa
-	cp lib/ladspa/* $(PACKAGE_DIR)/lib/ladspa		
+	mkdir -p $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy
+	cp lib/ladspa_HaikuSuperMusicThingy/* $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy		
 endif
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
 	rc -o $(NAME).rsrc $(NAME).rdef 

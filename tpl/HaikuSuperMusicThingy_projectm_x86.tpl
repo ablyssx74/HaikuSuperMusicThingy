@@ -16,6 +16,7 @@ provides {
 }
 requires {
 	haiku >= r1~beta5_hrev59183-1
+	haiku_datatranslators
 	libglvnd >= 1.7.0-1
 	nebula
 	nlohmann_json

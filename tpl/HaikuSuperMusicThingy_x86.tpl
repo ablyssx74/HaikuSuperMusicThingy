@@ -16,6 +16,7 @@ provides {
 }
 requires {
 	haiku
+	haiku_datatranslators
 	nlohmann_json
 	mpv_x86
 	openal_x86
