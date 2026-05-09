@@ -2370,8 +2370,6 @@ void SuperMusicWindow::UpdateMPVFilters() {
         (float)fLimitRelease->Value() / 1000.0f);
     filterChain << limiterPart;
 
-	//filterChain << "astats=metadata=1:reset=1]"; 
-
 	if (cfg.showSpectrumVisuals) {
     	filterChain << "astats=metadata=1:reset=1]"; 
 		} else {
@@ -2525,7 +2523,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		}
     		break;
 		}
-
 
     	
 		case MSG_PLAY_STATION: {
@@ -2708,36 +2705,28 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		#endif
 //--------------------------------- Proectm     
 
-case MSG_EQ_RESET:
-{
-    // Reset the 10 EQ bands
-    for (int i = 0; i < 10; i++) {
-        fEQSliders[i]->SetValue(0);
-    }
-    
-    // Reset Limiter (usually 0 for In/Lmt and a default for Release)
-    fLimitInput->SetValue(0);
-    fLimitLimit->SetValue(0);
-    fLimitRelease->SetValue(500); // Or your preferred default release
-
-    // Optional: Auto-apply the reset
-    // UpdateMPVFilters();
-    break;
-}
-
+		case MSG_EQ_RESET:
+		{
+    		for (int i = 0; i < 10; i++) {
+        		fEQSliders[i]->SetValue(0);
+    		}    
+    		fLimitInput->SetValue(0);
+    		fLimitLimit->SetValue(0);
+    		fLimitRelease->SetValue(100); 
+    		// UpdateMPVFilters();
+    		break;
+		}
 		
 		case MSG_EQ_CHANGED: {
     		cfg.eqEnabled = (fEQToggle->Value() == B_CONTROL_ON);
     		for(int i=0; i<10; i++) cfg.eqBands[i] = fEQSliders[i]->Value();
     		cfg.limitIn = fLimitInput->Value();
     		cfg.limitLmt = fLimitLimit->Value();
-    		cfg.limitRel = fLimitRelease->Value();
-    
+    		cfg.limitRel = fLimitRelease->Value();    
     		UpdateMPVFilters();
     		save_config(); 
     		break;
 		}
-
           
 		case MSG_UPDATE_BOUNCE: {
     		double level;
