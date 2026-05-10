@@ -89,7 +89,7 @@ setup_dummy:
 
 build: setup_dummy
 	@echo "--------- Building $(NAME) $(ARCH) ---------"
-	$(CXX) $(CXXFLAGS) $(DEFINES) $(INCLUDES) haiku-supermusicthingy.cpp -o $(NAME) \
+	$(CXX) $(CXXFLAGS) $(DEFINES) $(INCLUDES) haiku-supermusicthingy.cpp icons.cpp -o $(NAME) \
 		$(LIB_PATH) $(EXTRA_LIBS) $(HAIKU_LIBS)
 
 package: all
