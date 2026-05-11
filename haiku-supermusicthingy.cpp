@@ -51,7 +51,7 @@
 #include <algorithm>  // for std::find
 #include <cstring>
 #include <random>
-
+#include <cmath>
 
 #ifdef USE_SDL2
 #include <SDL2/SDL.h>
@@ -132,6 +132,26 @@ void ensure_config_dir() {
 }
 
 
+bool IsFFmpegLadspaAvailable() {
+    FILE* fp = popen("ffmpeg -filters 2>/dev/null", "r");
+    if (fp == NULL) return false;
+
+    char buffer[256];
+    bool found = false;
+    while (fgets(buffer, sizeof(buffer), fp) != NULL) {
+        // Look for the specific 'ladspa' filter line
+        if (strstr(buffer, " ladspa ")) {
+            found = true;
+            break;
+        }
+    }
+    pclose(fp);
+    return found;
+}
+
+
+
+
 
 BBitmap* GetVectorIcon(const unsigned char* data, size_t size, float dimensions) {
     BBitmap* icon = new BBitmap(BRect(0, 0, dimensions - 1, dimensions - 1), B_RGBA32);
@@ -199,7 +219,11 @@ private:
 
 
 
-
+// Example preset values
+const float kPresetRock[] = {4.0, 3.0, 2.0, 1.0, -1.0, -1.0, 1.0, 2.0, 3.0, 4.0};
+const float kPresetJazz[] = {3.0, 2.0, 1.0, 2.0, -1.0, -1.0, 0.0, 1.0, 2.0, 3.0};
+const float kPresetBass[] = {6.0, 5.0, 4.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+const float kPresetFlat[] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
 
 mpv_handle *mpv = nullptr;
@@ -535,6 +559,7 @@ struct Config {
     bool autoShuffleVisuals = false;
     bool showSpectrumVisuals = false;
     bool autoVsync = false;
+    bool ladspaEnabled = false;
     bool shuffleFavsOnly = false;
     int notifyIconSize = 64; 
     std::string updateTheme = "Default";
@@ -556,6 +581,7 @@ void save_config() {
     j["updateTheme"] = cfg.updateTheme;
     j["showNotifications"] = cfg.showNotifications;
     j["autoShuffle"] = cfg.autoShuffle;
+    j["ladspaEnabled"] = cfg.ladspaEnabled;
     j["autoShuffleVisuals"] = cfg.autoShuffleVisuals;
     j["showSpectrumVisuals"] = cfg.showSpectrumVisuals;
     j["shuffleFavsOnly"] = cfg.shuffleFavsOnly;
@@ -604,6 +630,7 @@ void load_config() {
                 cfg.autoShuffle = j.value("autoShuffle", false);
                 cfg.autoShuffleVisuals = j.value("autoShuffleVisuals", false);
                 cfg.autoVsync = j.value("autoVsync", false);
+                cfg.ladspaEnabled = j.value("ladspaEnabled", false);
                 cfg.showVisuals = j.value("showVisuals", false);   
                 cfg.showSpectrumVisuals = j.value("showSpectrumVisuals", false);   
                 cfg.shuffleFavsOnly = j.value("shuffleFavsOnly", false); 
@@ -1885,12 +1912,9 @@ SuperMusicWindow::SuperMusicWindow()
     BMenuField* qualityField = new BMenuField("quality_field", NULL, qualityMenu);
     
 
-
-    // 1. Create the Checkbox
     BCheckBox* chkNotify = new BCheckBox("chk_notify", "Notifications", new BMessage(MSG_CFG_NOTIFY));
     chkNotify->SetValue(cfg.showNotifications ? B_CONTROL_ON : B_CONTROL_OFF);
     
-    // 2. Create the Menu (unchanged logic)
     BPopUpMenu* sizeMenu = new BPopUpMenu("Select");
     int sizes[] = {128, 96, 64, 40, 32};
     for (int s : sizes) {
@@ -1917,9 +1941,9 @@ SuperMusicWindow::SuperMusicWindow()
 
 
 
-
+    // ==========================================
     // --- Checkboxes ---
-    
+    // ==========================================    
     BCheckBox* chkShuffle = new BCheckBox("chk_shuffle", "Auto Shuffle On Start", new BMessage(MSG_CFG_AUTO_SHUFFLE));
     chkShuffle->SetValue(cfg.autoShuffle ? B_CONTROL_ON : B_CONTROL_OFF);    
     
@@ -1951,49 +1975,41 @@ SuperMusicWindow::SuperMusicWindow()
 
 
  
-
+    // ==========================================
 	// --- EQ & Mastering Section ---
+    // ==========================================
+	BPopUpMenu* presetMenu = new BPopUpMenu("Select Preset");
+	presetMenu->AddItem(new BMenuItem("Flat", new BMessage(MSG_SET_PRESET_FLAT)));
+	presetMenu->AddItem(new BMenuItem("Rock", new BMessage(MSG_SET_PRESET_ROCK)));
+	presetMenu->AddItem(new BMenuItem("Jazz", new BMessage(MSG_SET_PRESET_JAZZ)));
+	presetMenu->AddItem(new BMenuItem("Bass Boost", new BMessage(MSG_SET_PRESET_BASS)));
 
-	// Create a group for the buttons--------------------------
-	BGroupView* buttonRow = new BGroupView(B_HORIZONTAL, 10);
-	buttonRow->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_TOP));
+	fPresetField = new BMenuField("presets", "Presets:", presetMenu);
 
 	fApplyEQBtn = new BButton("apply_eq", "Apply Settings", new BMessage(MSG_EQ_CHANGED));
-	fResetEQBtn = new BButton("reset_eq", "Reset to Zero", new BMessage(MSG_EQ_RESET));
 
-	buttonRow->AddChild(fResetEQBtn);
+	BGroupView* buttonRow = new BGroupView(B_HORIZONTAL, 10);
+	buttonRow->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_TOP));
+	buttonRow->AddChild(fPresetField); 
 	buttonRow->AddChild(fApplyEQBtn);
-	// Create a group for the buttons--------------------------
 
-	// 1. Create Toggle Checkbox
 	fEQToggle = new BCheckBox("eq_toggle", "10-Band EQ", new BMessage(MSG_TOGGLE_EQ));
 	fEQToggle->SetValue(cfg.eqEnabled ? B_CONTROL_ON : B_CONTROL_OFF);
 
-	// 2. Create main Container (Vertical so button is below sliders)
+	bool ladspaSupported = IsFFmpegLadspaAvailable();
+	fEnableladspa = new BCheckBox("enable_ladspa", "Use Ladspa", new BMessage(MSG_TOGGLE_LADSPA)); 
+
+	if (!ladspaSupported) {
+    	fEnableladspa->SetEnabled(false);
+    	fEnableladspa->SetLabel("Ladspa (Not compiled in FFmpeg)");
+		} else {
+    	fEnableladspa->SetValue(cfg.ladspaEnabled ? B_CONTROL_ON : B_CONTROL_OFF);
+	}
+
+
 	fEQContainer = new BGroupView(B_VERTICAL, 5); 
 	fEQContainer->SetName("EQPanel");
 
-	// 3. Create Row for Sliders (Horizontal)
-	BGroupView* eqSliderRow = new BGroupView(B_HORIZONTAL, 3);
-	
-
-
-	const char* freqLabels[] = { "50Hz", "100Hz", "156Hz", "220Hz", "311Hz", "440Hz", "622Hz", "880Hz", "1k2", "1k7" };
-
-	for (int i = 0; i < 10; i++) {
-    	BGroupView* bandGroup = new BGroupView(B_VERTICAL, 2);
-    	fEQSliders[i] = new WheelSlider(freqLabels[i], "", NULL, -15, 15, B_VERTICAL, 1);
-    	fEQSliders[i]->SetValue((int32)cfg.eqBands[i]);
-    
-    	BStringView* lbl = new BStringView(NULL, freqLabels[i]);
-    	lbl->SetFontSize(9);
-    
-    	bandGroup->AddChild(fEQSliders[i]);
-    	bandGroup->AddChild(lbl);
-    	eqSliderRow->AddChild(bandGroup); 
-	}
-
-	// 4. Limiter Section
 	BGroupView* limitGroup = new BGroupView(B_VERTICAL, 5);
 	BStringView* lTitle = new BStringView(NULL, "Limiter");
 	lTitle->SetFont(be_bold_font);
@@ -2010,22 +2026,39 @@ SuperMusicWindow::SuperMusicWindow()
 	limitGroup->AddChild(fLimitLimit);
 	limitGroup->AddChild(fLimitRelease);
 
-	eqSliderRow->AddChild(limitGroup); 
-	// 5. Assemble fEQContainer
-	fEQContainer->AddChild(eqSliderRow); 
-
-	fApplyEQBtn = new BButton("apply_eq", "Apply EQ Settings", new BMessage(MSG_EQ_CHANGED));
-	fApplyEQBtn->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_TOP));
-	fEQContainer->AddChild(buttonRow);
-	//fEQContainer->AddChild(fSpectrum);
+	BGroupView* eqSliderRow = new BGroupView(B_HORIZONTAL, 3);
 	
-	if (!cfg.eqEnabled) fEQContainer->Hide();
-	if (!cfg.showNotifications) fSizeContainer->Hide();
 
+	const char* freqLabels[] = { "50Hz", "100Hz", "156Hz", "220Hz", "311Hz", "440Hz", "622Hz", "880Hz", "1k2", "1k7" };
+
+	for (int i = 0; i < 10; i++) {
+    	BGroupView* bandGroup = new BGroupView(B_VERTICAL, 2);
+    	fEQSliders[i] = new WheelSlider(freqLabels[i], "", NULL, -15, 15, B_VERTICAL, 1);
+    	fEQSliders[i]->SetValue((int32)cfg.eqBands[i]);
+    
+    	BStringView* lbl = new BStringView(NULL, freqLabels[i]);
+    	lbl->SetFontSize(9);
+    
+    	bandGroup->AddChild(fEQSliders[i]);
+    	bandGroup->AddChild(lbl);
+    	eqSliderRow->AddChild(bandGroup); 
+	}
+	eqSliderRow->AddChild(limitGroup); 
+	fEQContainer->AddChild(eqSliderRow); 
+	fEQContainer->AddChild(buttonRow); 
+
+	if (!cfg.eqEnabled) {
+    	fEQContainer->Hide();
+    	fEnableladspa->Hide();
+	}
+	
+	
+    if (!cfg.showNotifications) fSizeContainer->Hide();	
 
          
-
-    // --- Layout ---
+// ==========================================
+// --- Layout ---
+// ==========================================
 BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15) 
 	.Add(configLogo)
     .SetInsets(15)
@@ -2044,6 +2077,7 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
     .Add(fShuffleFavsCheckbox)
     .Add(chkTheme)
    	.Add(fEQToggle)
+   	.Add(fEnableladspa)
    	.Add(fEQContainer)
      #ifdef USE_PROJECTM
     .Add(fPresetToggle)
@@ -2132,11 +2166,7 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
     	.Add(appLogo) 
         .SetInsets(20)
         .AddGlue()        
-        .Add(titleApp)
-       
-        
- 
-        
+        .Add(titleApp)    
         .AddGroup(B_HORIZONTAL) 
         .AddGlue()
         .Add(txturl)
@@ -2246,6 +2276,9 @@ void SuperMusicWindow::SendNotification(const char* songTitle) {
     notify.Send();
 }
 
+
+
+
 void SuperMusicWindow::UpdateUI() {
     //if (fStationView) fStationView->SetText(currentStation.c_str());
     
@@ -2274,6 +2307,9 @@ void SuperMusicWindow::UpdateUI() {
 }
 
 
+
+
+
 void SuperMusicWindow::UpdateMPVFilters() {
     if (!fEQToggle || fEQToggle->Value() == B_CONTROL_OFF) {
         mpv_set_property_string(mpv, "af", "");
@@ -2281,6 +2317,34 @@ void SuperMusicWindow::UpdateMPVFilters() {
     }
 
     BString filterChain;
+
+    if (!cfg.ladspaEnabled) {
+        // --- NATIVE FILTERS (Inside Lavfi) ---
+        filterChain << "@bouncy:lavfi=[";
+        
+        float frequencies[] = {31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
+        for (int i = 0; i < 10; i++) {
+            BString band;
+            band.SetToFormat("equalizer=f=%f:width_type=o:w=1:g=%.2f,", 
+                             frequencies[i], (float)fEQSliders[i]->Value());
+            filterChain << band;
+        }
+
+        float inputGain = 1.0f + (float)fLimitInput->Value(); 
+        float limitVal = 1.0f + (float)fLimitLimit->Value();
+        if (limitVal <= 0.01f) limitVal = 0.01f;
+        if (inputGain <= 0.01f) inputGain = 0.01f;
+
+        filterChain.SetToFormat("%salimiter=level_in=%.2f:limit=%.2f:release=%.2f",
+            filterChain.String(), inputGain, limitVal, (float)fLimitRelease->Value());
+
+        if (cfg.showSpectrumVisuals) 
+            filterChain << ",astats=metadata=1:reset=1]"; 
+        else 
+            filterChain << "]";
+
+    } else {
+        // --- LADSPA FILTERS (Standard mpv syntax) ---
     filterChain = "@bouncy:lavfi=[";
 
     BString eqPart;
@@ -2305,14 +2369,12 @@ void SuperMusicWindow::UpdateMPVFilters() {
     	filterChain << "astats=metadata=1:reset=1]"; 
 		} else {
     	filterChain << "]";
-	}
-
-
-    int error = mpv_set_property_string(mpv, "af", filterChain.String());
-    if (error < 0) {
-        fprintf(stderr, ">> MPV Filter Failed: %s\n", mpv_error_string(error));
+		}
     }
+
+    mpv_set_property_string(mpv, "af", filterChain.String());
 }
+
 
 
 
@@ -2440,14 +2502,26 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         	break;
     	}
     	
-    	case MSG_TOGGLE_EQ: {
+    	case MSG_TOGGLE_LADSPA: {
+    		cfg.ladspaEnabled = (fEnableladspa->Value() == B_CONTROL_ON);
+    		save_config();
+    		UpdateMPVFilters(); 
+    		break;
+		}	
+
+    	
+		case MSG_TOGGLE_EQ: {
     		BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("eq_toggle"));
     		if (chk) {
         		cfg.eqEnabled = (chk->Value() == B_CONTROL_ON);            
-        		if (cfg.eqEnabled)
+        
+        		if (cfg.eqEnabled) {
+            		fEnableladspa->Show(); 
             		fEQContainer->Show();
-        		else
+        		} else {
+            		fEnableladspa->Hide();  
             		fEQContainer->Hide();
+        		}
         
         		InvalidateLayout();
         		ResizeToPreferred();
@@ -2456,6 +2530,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		}
     		break;
 		}
+
 
     	
 		case MSG_PLAY_STATION: {
@@ -2673,6 +2748,19 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         case MSG_AUDIO_READY:
             UpdateMPVFilters(); 
             break;
+            
+        case MSG_SET_PRESET_ROCK:
+    		ApplyPreset(kPresetRock);
+    		break;    		
+		case MSG_SET_PRESET_BASS:
+    		ApplyPreset(kPresetBass);
+    		break;
+		case MSG_SET_PRESET_JAZZ:
+    		ApplyPreset(kPresetJazz);
+    		break;
+    	case MSG_SET_PRESET_FLAT:
+    		ApplyPreset(kPresetFlat);
+    		break;
 
 
         case B_QUIT_REQUESTED:
@@ -2769,7 +2857,6 @@ void SuperMusicWindow::UpdateFavButtons() {
 }
 
 
-
 SuperMusicWindow::~SuperMusicWindow()
 {
     for (auto& [id, bitmap] : fIconCache) {
@@ -2851,6 +2938,7 @@ virtual bool QuitRequested() {
 };
 
 
+
 int32 mpv_loop_thread(void* data) {
     SuperMusicWindow* win = (SuperMusicWindow*)data;
     int32 lastBitrate = 0;
@@ -2926,7 +3014,6 @@ int32 mpv_loop_thread(void* data) {
 
 
 
-
 bool SuperMusicWindow::QuitRequested() {
     if (mpv) {
         mpv_command_string(mpv, "quit");
@@ -2938,6 +3025,13 @@ bool SuperMusicWindow::QuitRequested() {
     return true; 
 }
 
+void SuperMusicWindow::ApplyPreset(const float* values) {
+    for (int i = 0; i < 10; i++) {
+        fEQSliders[i]->SetValue((int32)values[i]);
+    }
+  
+    UpdateMPVFilters();
+}
 
 int main() {
 	std::srand(std::time(nullptr)); 

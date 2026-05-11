@@ -84,7 +84,12 @@ enum {
 	MSG_AUDIO_READY = 'AudR',
 	MSG_UPDATE_BOUNCE = 'bnce',
 	MSG_EQ_RESET 	  = 'eqrs',
-    MSG_SHUFFLE_FAVS_CHANGED = 'sfch',   
+	MSG_TOGGLE_LADSPA = 'tlad',	
+	MSG_SET_PRESET_ROCK = 'prsr',
+	MSG_SET_PRESET_BASS = 'prsb',	
+	MSG_SET_PRESET_JAZZ = 'prsj',	
+	MSG_SET_PRESET_FLAT = 'prsf',		
+    MSG_SHUFFLE_FAVS_CHANGED = 'sfch' 
  
 };
 
@@ -113,9 +118,10 @@ public:
     BView*       fArtView;
     std::map<std::string, BBitmap*> fArtCache; 
     void UpdateMPVFilters(); 	
+    void ApplyPreset(const float* values); 
 
 private:
-
+	BMenuField* fPresetField; 
     BTabView*     fTabView;
     BListView*    fFavList;    
     BListView*    fPresetList;
@@ -125,7 +131,6 @@ private:
     BCheckBox*    chkShuffle; 
     BButton*      fBtnAddFav;
     BButton*      fBtnDelFav;
-    BButton*	  fResetEQBtn;
     BStringView*  fStationView;
     BStringView*  fListenersView;
     BStringView*  fquality; 
@@ -141,6 +146,7 @@ private:
 	BSlider* 	  fEQSliders[10]; 
     BSlider 	 *fLimitInput, *fLimitLimit, *fLimitRelease;
     BCheckBox* 	  fEQToggle;
+    BCheckBox* 	  fEnableladspa;
     BGroupView*   fEQContainer;
     SpectrumView* fSpectrum;
     std::map<std::string, BBitmap*> fIconCache;
