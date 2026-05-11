@@ -2051,7 +2051,7 @@ SuperMusicWindow::SuperMusicWindow()
 	buttonRow->AddChild(fPresetField); 
 	buttonRow->AddChild(fApplyEQBtn);
 
-	fEQToggle = new BCheckBox("eq_toggle", "10-Band EQ", new BMessage(MSG_TOGGLE_EQ));
+	fEQToggle = new BCheckBox("eq_toggle", "15-Band EQ", new BMessage(MSG_TOGGLE_EQ));
 	fEQToggle->SetValue(cfg.eqEnabled ? B_CONTROL_ON : B_CONTROL_OFF);
 
 	bool ladspaSupported = IsFFmpegLadspaAvailable();
