@@ -2185,7 +2185,7 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
     IconView* appLogo = new IconView(aboutIcon);
     appLogo->SetExplicitAlignment(BAlignment(B_ALIGN_LEFT, B_ALIGN_TOP));
     
-    BBitmap* URLIcon = GetVectorIcon(kIconURL, kIconURLSize, 32);
+    BBitmap* URLIcon = GetVectorIcon(kIconURL, kIconURLSize, 48);
     IconView* appURL = new IconView(URLIcon);
     appURL->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_TOP));
 
@@ -2223,8 +2223,8 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
     BStringView* c5 = new BStringView("c5", "libsdl / projectM / OpenGL (The Visuals)");
     BStringView* c6 = new BStringView("c6", "SVGear (Scalable Vector Graphics)");
     BStringView* c7 = new BStringView("c7", "libcurl (Network/Streaming)");
-    BStringView* c8 = new BStringView("c8", "ladspa (EQ/Limiter Effects)");
-    BStringView* c9 = new BStringView("c9", "Some AI Assistance");   
+
+ 
     
     c1->SetAlignment(B_ALIGN_CENTER);
     c2->SetAlignment(B_ALIGN_CENTER);
@@ -2233,24 +2233,23 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
     c5->SetAlignment(B_ALIGN_CENTER);
     c6->SetAlignment(B_ALIGN_CENTER);
     c7->SetAlignment(B_ALIGN_CENTER);
-    c8->SetAlignment(B_ALIGN_CENTER);
-    c9->SetAlignment(B_ALIGN_CENTER);
+
+
     
     // 4. Layout
     BLayoutBuilder::Group<>(aboutGroup, B_VERTICAL, 5)
     	.Add(appLogo) 
         .SetInsets(20)
         .AddGlue()        
-        .Add(titleApp)    
-        .AddGroup(B_HORIZONTAL) 
-        .AddGlue()
+        .Add(titleApp)
+        .Add(txtVer)
         .Add(txturl)
+        .AddGroup(B_HORIZONTAL, 100) 
+        .AddGlue()        
     	.Add(iconLink)	
         .AddGlue()
-    	.End() 
-        .Add(txtVer)
-
-        .AddStrut(10)
+    	.End()      
+        .AddStrut(1)
         .Add(txtCopy)        
         .Add(txtEmail)
         .Add(txtAI)
@@ -2264,8 +2263,6 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
         .Add(c5)
         .Add(c6)
         .Add(c7)
-        .Add(c8)
-        .Add(c9)
         .AddGlue()
     .End();
 
