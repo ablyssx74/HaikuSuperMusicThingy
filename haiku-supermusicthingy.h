@@ -122,7 +122,7 @@ public:
     std::map<std::string, BBitmap*> fArtCache; 
     void UpdateMPVFilters(); 	
     void ApplyPreset(const float* values); 
-	void UpdateTrayState(bool enabled); 
+	void UpdateTrayState(bool enabled, bool hideWindow = true);
 
 	  
 private:

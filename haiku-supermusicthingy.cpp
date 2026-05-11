@@ -1733,7 +1733,8 @@ void SuperMusicWindow::UpdateStatus(const char* station, const char* song) {
 
 
 
-void SuperMusicWindow::UpdateTrayState(bool enabled) {
+
+void SuperMusicWindow::UpdateTrayState(bool enabled, bool hideWindow) {
     BDeskbar deskbar;
     const char* trayItemName = "SuperMusicTrayIcon"; 
 
@@ -1743,22 +1744,21 @@ void SuperMusicWindow::UpdateTrayState(bool enabled) {
             be_app->GetAppInfo(&info);             
             status_t err = deskbar.AddItem(&info.ref);
             
-            if (err == B_OK) {
+            if (err == B_OK && hideWindow) {
                 Hide();
-            } else {
-                fprintf(stderr, "DEBUG ERROR: Deskbar AddItem failed: %s (0x%x)\n", 
-                        strerror(err), (int)err);
             }
-        } else {
+        } else if (hideWindow) {
             Hide();
         }
     } else {
         if (deskbar.HasItem(trayItemName)) {
             deskbar.RemoveItem(trayItemName);
         }
-        Show();
+        if (IsHidden()) Show();
     }
 }
+
+
 
 
 
@@ -2289,7 +2289,7 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
     UpdateFavButtons();
     ApplyTheme(); 
     PopulateStationList();
-    DownloadStationIcons();
+    DownloadStationIcons();    
     RefreshFavorites();
     if (cfg.showVisuals) {
         StartVisuals();
@@ -2378,6 +2378,7 @@ void SuperMusicWindow::UpdateUI() {
     if (fListenersView) fListenersView->SetText(lStr.String());
 
     UpdateFavButtons();
+
 
 }
 
@@ -3028,6 +3029,11 @@ public:
 
         gGuiWindow = new SuperMusicWindow();      
         gGuiWindow->Show();
+        
+		if (cfg.sysTray && gGuiWindow->Lock()) {
+    		gGuiWindow->UpdateTrayState(true, false); 
+    		gGuiWindow->Unlock();
+		}
         
         thread_id mpvThread = spawn_thread(mpv_loop_thread, "mpv_event_loop", 
     	B_NORMAL_PRIORITY, gGuiWindow);
