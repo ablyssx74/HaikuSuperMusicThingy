@@ -88,7 +88,10 @@ enum {
 	MSG_SET_PRESET_ROCK = 'prsr',
 	MSG_SET_PRESET_BASS = 'prsb',	
 	MSG_SET_PRESET_JAZZ = 'prsj',	
-	MSG_SET_PRESET_FLAT = 'prsf',		
+	MSG_SET_PRESET_FLAT = 'prsf',	
+	MSG_CFG_SYS_TRAY = 'stry',	
+	MSG_ACTIVATE_APP = 'atry',
+	MSG_OPEN_SETTINGS = 'mtse',
     MSG_SHUFFLE_FAVS_CHANGED = 'sfch' 
  
 };
@@ -100,7 +103,7 @@ class SuperMusicWindow : public BWindow {
 public:
     SuperMusicWindow();
     
-    virtual 	 ~SuperMusicWindow(); 
+    virtual 	 ~SuperMusicWindow();     
     virtual void MessageReceived(BMessage* message);
     void 		 UpdateStatus(const char* station, const char* song);
     void 		 RefreshFavorites();
@@ -119,7 +122,9 @@ public:
     std::map<std::string, BBitmap*> fArtCache; 
     void UpdateMPVFilters(); 	
     void ApplyPreset(const float* values); 
+	void UpdateTrayState(bool enabled); 
 
+	  
 private:
 	BMenuField* fPresetField; 
     BTabView*     fTabView;
@@ -129,6 +134,7 @@ private:
     BCheckBox*    fPresetToggle;  
     BGroupView*   fSizeContainer; 
     BCheckBox*    chkShuffle; 
+    BCheckBox* 	  chksysTray;
     BButton*      fBtnAddFav;
     BButton*      fBtnDelFav;
     BStringView*  fStationView;
@@ -156,6 +162,7 @@ private:
     void*          fProjectM; 
 	#endif 
 };
+
 
 
 

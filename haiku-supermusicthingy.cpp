@@ -22,7 +22,10 @@
 #include <IconUtils.h>
 #include <Roster.h>
 #include <StringView.h>
-
+#include <ControlLook.h>
+#include <NodeInfo.h>
+#include <Deskbar.h>
+#include <Dragger.h>
 
 
 // --- Haiku Storage Kit ---
@@ -107,7 +110,7 @@ SDL_GLContext glContext = nullptr;
 #endif
 
 
-
+volatile bool fIsQuitting; 
 std::string statusMsg = "";
 std::time_t statusExpiry = 0;
 bool mpvthread_running = true;
@@ -148,8 +151,6 @@ bool IsFFmpegLadspaAvailable() {
     pclose(fp);
     return found;
 }
-
-
 
 
 
@@ -219,7 +220,6 @@ private:
 
 
 
-// Example preset values
 const float kPresetRock[] = {4.0, 3.0, 2.0, 1.0, -1.0, -1.0, 1.0, 2.0, 3.0, 4.0};
 const float kPresetJazz[] = {3.0, 2.0, 1.0, 2.0, -1.0, -1.0, 0.0, 1.0, 2.0, 3.0};
 const float kPresetBass[] = {6.0, 5.0, 4.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
@@ -245,6 +245,7 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* use
 
 
 void download_art(const std::string& url) {
+	if (fIsQuitting) return; 
     if (url.empty()) return;
     
     CURL* curl = curl_easy_init();
@@ -556,6 +557,7 @@ struct Config {
     bool showNotifications = false;
     bool showVisuals = false;
     bool autoShuffle = false;
+    bool sysTray = false;
     bool autoShuffleVisuals = false;
     bool showSpectrumVisuals = false;
     bool autoVsync = false;
@@ -581,6 +583,7 @@ void save_config() {
     j["updateTheme"] = cfg.updateTheme;
     j["showNotifications"] = cfg.showNotifications;
     j["autoShuffle"] = cfg.autoShuffle;
+    j["sysTray"] = cfg.sysTray;
     j["ladspaEnabled"] = cfg.ladspaEnabled;
     j["autoShuffleVisuals"] = cfg.autoShuffleVisuals;
     j["showSpectrumVisuals"] = cfg.showSpectrumVisuals;
@@ -628,6 +631,7 @@ void load_config() {
                 cfg.updateTheme = j.value("updateTheme", "Default");
                 cfg.showNotifications = j.value("showNotifications", false);
                 cfg.autoShuffle = j.value("autoShuffle", false);
+                cfg.sysTray = j.value("sysTray", false);
                 cfg.autoShuffleVisuals = j.value("autoShuffleVisuals", false);
                 cfg.autoVsync = j.value("autoVsync", false);
                 cfg.ladspaEnabled = j.value("ladspaEnabled", false);
@@ -652,6 +656,9 @@ void load_config() {
 
 
 void SuperMusicWindow::DownloadStationIcons() {
+	
+	if (fIsQuitting) return; 
+	
     std::thread([this]() {
         snooze(100000); 
 
@@ -1706,6 +1713,37 @@ void SuperMusicWindow::UpdateStatus(const char* station, const char* song) {
 }
 
 
+
+
+void SuperMusicWindow::UpdateTrayState(bool enabled) {
+    BDeskbar deskbar;
+    const char* trayItemName = "SuperMusicTrayIcon"; 
+
+    if (enabled) {
+        if (!deskbar.HasItem(trayItemName)) {
+            app_info info;
+            be_app->GetAppInfo(&info);             
+            status_t err = deskbar.AddItem(&info.ref);
+            
+            if (err == B_OK) {
+                Hide();
+            } else {
+                fprintf(stderr, "DEBUG ERROR: Deskbar AddItem failed: %s (0x%x)\n", 
+                        strerror(err), (int)err);
+            }
+        } else {
+            Hide();
+        }
+    } else {
+        if (deskbar.HasItem(trayItemName)) {
+            deskbar.RemoveItem(trayItemName);
+        }
+        Show();
+    }
+}
+
+
+
 SuperMusicWindow::SuperMusicWindow()
     : BWindow(BRect(100, 100, 550, 380), "SuperMusicThingy", B_TITLED_WINDOW, 
               B_ASYNCHRONOUS_CONTROLS | B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE)
@@ -1914,8 +1952,7 @@ SuperMusicWindow::SuperMusicWindow()
 
     BCheckBox* chkNotify = new BCheckBox("chk_notify", "Notifications", new BMessage(MSG_CFG_NOTIFY));
     chkNotify->SetValue(cfg.showNotifications ? B_CONTROL_ON : B_CONTROL_OFF);
-    
-    BPopUpMenu* sizeMenu = new BPopUpMenu("Select");
+    BPopUpMenu* sizeMenu = new BPopUpMenu("Icon Size");
     int sizes[] = {128, 96, 64, 40, 32};
     for (int s : sizes) {
         BString label;
@@ -1945,7 +1982,10 @@ SuperMusicWindow::SuperMusicWindow()
     // --- Checkboxes ---
     // ==========================================    
     BCheckBox* chkShuffle = new BCheckBox("chk_shuffle", "Auto Shuffle On Start", new BMessage(MSG_CFG_AUTO_SHUFFLE));
-    chkShuffle->SetValue(cfg.autoShuffle ? B_CONTROL_ON : B_CONTROL_OFF);    
+    chkShuffle->SetValue(cfg.autoShuffle ? B_CONTROL_ON : B_CONTROL_OFF);
+    
+    BCheckBox* chksysTray = new BCheckBox("chk_sysTray", "Hide in Sysem tray", new BMessage(MSG_CFG_SYS_TRAY));
+    chksysTray->SetValue(cfg.sysTray ? B_CONTROL_ON : B_CONTROL_OFF);    
     
     BCheckBox* chkTheme = new BCheckBox("chk_theme", "Dark Theme (Experimental)", new BMessage(MSG_CFG_THEME));
     chkTheme->SetValue(cfg.updateTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);
@@ -2074,6 +2114,7 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
         .AddGlue()
     .End()  	
     .Add(chkShuffle)
+    .Add(chksysTray)
     .Add(fShuffleFavsCheckbox)
     .Add(chkTheme)
    	.Add(fEQToggle)
@@ -2476,7 +2517,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             	save_config(); 
         	}
         	break;
-    	}              
+    	}
+    	
     	
     	case MSG_CFG_AUTO_PresetTimer: {
         BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_PresetTimer"));
@@ -2760,7 +2802,35 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		break;
     	case MSG_SET_PRESET_FLAT:
     		ApplyPreset(kPresetFlat);
+    		break;    		
+
+
+		case MSG_ACTIVATE_APP:
+    		if (IsHidden()) {
+        		Show();
+    		}
+    		if (IsMinimized()) {
+        		Minimize(false);
+    		}
+    		Activate(true);
     		break;
+
+        
+		case MSG_CFG_SYS_TRAY: {
+    		BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_sysTray"));
+    
+    		if (chk) {
+        		cfg.sysTray = (chk->Value() == B_CONTROL_ON);
+        
+        		save_config(); 
+        		UpdateTrayState(cfg.sysTray);
+    		}
+
+    		break;
+		}
+
+
+           
 
 
         case B_QUIT_REQUESTED:
@@ -2902,7 +2972,7 @@ SuperMusicWindow::~SuperMusicWindow()
 class SuperMusicApp : public BApplication {
 public:
     SuperMusicApp() : BApplication("application/x-vnd.HaikuSuperMusicThingy") {}
-
+	virtual void MessageReceived(BMessage* message);
     virtual void ReadyToRun() {
         load_config();
         fetch_channels();
@@ -2927,7 +2997,12 @@ public:
 }
      
     
-virtual bool QuitRequested() {           	   	
+virtual bool QuitRequested() { 
+
+    	BDeskbar deskbar;
+   		 if (deskbar.HasItem("SuperMusicTrayIcon")) {
+        deskbar.RemoveItem("SuperMusicTrayIcon");
+   		 }          	   	
     	mpvthread_running = false;
         if (mpv) {
             mpv_terminate_destroy(mpv);
@@ -3015,15 +3090,26 @@ int32 mpv_loop_thread(void* data) {
 
 
 bool SuperMusicWindow::QuitRequested() {
+    if (cfg.sysTray) {
+        UpdateTrayState(true);
+        return false; 
+    }
+
+    fIsQuitting = true; 
+
     if (mpv) {
         mpv_command_string(mpv, "quit");
     }
     StopVisuals();
-    snooze(100000); 
-    be_app->PostMessage(B_QUIT_REQUESTED);
+
+    snooze(500000); 
+
+
     
+    be_app->PostMessage(B_QUIT_REQUESTED);
     return true; 
 }
+
 
 void SuperMusicWindow::ApplyPreset(const float* values) {
     for (int i = 0; i < 10; i++) {
@@ -3032,6 +3118,140 @@ void SuperMusicWindow::ApplyPreset(const float* values) {
   
     UpdateMPVFilters();
 }
+
+class MyIcon : public BView {
+public:
+    MyIcon(BRect frame) 
+        : BView(frame, "SuperMusicTrayIcon", B_FOLLOW_NONE, B_WILL_DRAW | B_FRAME_EVENTS | B_FULL_UPDATE_ON_RESIZE) {
+        fIcon = NULL;
+        _LoadIcon();
+    }
+
+    MyIcon(BMessage* archive) : BView(archive) {
+        fIcon = NULL;
+        _LoadIcon();
+    }
+
+    virtual ~MyIcon() { delete fIcon; }
+ 	static _EXPORT BArchivable* Instantiate(BMessage* archive);
+
+virtual void AttachedToWindow() {
+    BView::AttachedToWindow();
+    
+    if (Parent())
+        SetViewColor(Parent()->ViewColor());
+    else
+        SetViewColor(B_TRANSPARENT_COLOR);
+
+}
+
+    virtual status_t Archive(BMessage* archive, bool deep = true) const {
+        status_t err = BView::Archive(archive, deep);
+        if (err != B_OK) return err;
+        archive->AddString("add_on", "application/x-vnd.HaikuSuperMusicThingy"); 
+        archive->AddString("class", "MyIcon");
+        
+        return B_OK;
+    }
+
+    virtual void Draw(BRect updateRect) {
+        if (fIcon) {
+            SetDrawingMode(B_OP_ALPHA);
+            SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+            DrawBitmap(fIcon, BPoint(0, 0));
+        } else {
+            SetHighColor(0, 120, 215);
+            FillRect(Bounds());
+            SetHighColor(255, 255, 255);
+            StrokeRect(Bounds());
+        }
+    }
+
+
+
+virtual void MouseDown(BPoint point) {
+    int32 buttons;
+    if (Window()->CurrentMessage()->FindInt32("buttons", &buttons) != B_OK)
+        return;
+
+    BMessenger appMessenger("application/x-vnd.HaikuSuperMusicThingy");
+
+    if (buttons & B_PRIMARY_MOUSE_BUTTON) {
+        appMessenger.SendMessage(MSG_ACTIVATE_APP);
+    } else if (buttons & B_SECONDARY_MOUSE_BUTTON) {
+        BPopUpMenu *popup = new BPopUpMenu("tray_popup", false, false);
+        
+        popup->AddItem(new BMenuItem("Show Player", new BMessage(MSG_ACTIVATE_APP)));
+        popup->AddItem(new BMenuItem("Shuffle", new BMessage(MSG_SHUFFLE)));
+        popup->AddSeparatorItem();
+        popup->AddItem(new BMenuItem("Quit", new BMessage(B_QUIT_REQUESTED)));        
+        
+        popup->SetTargetForItems(appMessenger);
+        
+        BPoint screenPoint = ConvertToScreen(point);
+        
+        popup->Go(screenPoint, true, true, true);
+    }
+}
+
+
+
+
+
+private:
+    void _LoadIcon() {
+        delete fIcon;
+        float size = be_control_look->ComposeIconSize(B_MINI_ICON).Width();
+        fIcon = new BBitmap(BRect(0, 0, size, size), B_RGBA32);
+
+        entry_ref ref;
+        if (be_roster->FindApp("application/x-vnd.HaikuSuperMusicThingy", &ref) == B_OK) {
+            if (BNodeInfo::GetTrackerIcon(&ref, fIcon, (icon_size)-1) != B_OK) {
+                BMimeType type("application/x-vnd.HaikuSuperMusicThingy");
+                type.GetIcon(fIcon, (icon_size)(size + 1));
+            }
+        }
+    }
+    BBitmap* fIcon;
+};
+
+
+
+
+
+_EXPORT BArchivable* MyIcon::Instantiate(BMessage* data) {
+    if (!validate_instantiation(data, "MyIcon"))
+        return NULL;
+    return new MyIcon(data);
+}
+
+
+extern "C" _EXPORT BView* instantiate_deskbar_item() {
+    return new MyIcon(BRect(0, 0, 15, 15));
+}
+
+
+extern "C" _EXPORT BArchivable* instantiate_tray_icon(BMessage* data) {
+    return MyIcon::Instantiate(data);
+}
+
+void SuperMusicApp::MessageReceived(BMessage* message) { 
+    switch (message->what) {
+        case MSG_ACTIVATE_APP:
+        case MSG_SHUFFLE: { 
+            BWindow* win = WindowAt(0);
+            if (win) {
+                win->PostMessage(message->what);
+            }
+            break;
+        }
+        default:
+            BApplication::MessageReceived(message);
+            break;
+    }
+}
+
+
 
 int main() {
 	std::srand(std::time(nullptr)); 
