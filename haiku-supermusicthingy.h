@@ -149,7 +149,7 @@ private:
     BListView*    fStationList; 
     SongLabel*    fDescView;
     void 		  UpdateUI(); 
-	BSlider* 	  fEQSliders[10]; 
+	BSlider* 	  fEQSliders[15];
     BSlider 	 *fLimitInput, *fLimitLimit, *fLimitRelease;
     BCheckBox* 	  fEQToggle;
     BCheckBox* 	  fEnableladspa;

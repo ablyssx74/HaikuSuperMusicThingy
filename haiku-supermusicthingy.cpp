@@ -220,10 +220,28 @@ private:
 
 
 
-const float kPresetRock[] = {4.0, 3.0, 2.0, 1.0, -1.0, -1.0, 1.0, 2.0, 3.0, 4.0};
-const float kPresetJazz[] = {3.0, 2.0, 1.0, 2.0, -1.0, -1.0, 0.0, 1.0, 2.0, 3.0};
-const float kPresetBass[] = {6.0, 5.0, 4.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-const float kPresetFlat[] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+
+const float kPresetRock[] = {
+    4.0, 3.5, 3.0, 2.5, 2.0, 1.0, -1.0, -1.0, 
+    0.0, 1.0, 1.5, 2.0, 2.5, 3.5, 4.0
+};
+
+const float kPresetJazz[] = {
+    3.0, 2.5, 2.0, 1.5, 1.0, 2.0, -1.0, -1.0, 
+    -0.5, 0.0, 0.5, 1.0, 1.5, 2.5, 3.0
+};
+
+const float kPresetBass[] = {
+    6.0, 5.5, 5.0, 4.0, 2.0, 1.0, 0.0, 0.0, 
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+};
+
+const float kPresetFlat[] = {
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+};
+
 
 
 mpv_handle *mpv = nullptr;
@@ -557,7 +575,7 @@ struct Config {
     bool showNotifications = false;
     bool showVisuals = false;
     bool autoShuffle = false;
-    bool sysTray = false;
+    bool sysTray = true;
     bool autoShuffleVisuals = false;
     bool showSpectrumVisuals = false;
     bool autoVsync = false;
@@ -567,7 +585,7 @@ struct Config {
     std::string updateTheme = "Default";
     std::string quality = "128k";
     bool eqEnabled = false;
-    float eqBands[10] = {0.0f}; 
+    float eqBands[15] = {0.0f}; 
     float limitIn = 0.0f;
     float limitLmt = 0.0f;
     float limitRel = 100.0f; 
@@ -592,7 +610,7 @@ void save_config() {
     j["showVisuals"] = cfg.showVisuals;
     j["eqEnabled"] = cfg.eqEnabled;
     json eqArray = json::array();
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 15; i++) {
         eqArray.push_back(cfg.eqBands[i]);
     }
     j["eqBands"] = eqArray;
@@ -631,7 +649,7 @@ void load_config() {
                 cfg.updateTheme = j.value("updateTheme", "Default");
                 cfg.showNotifications = j.value("showNotifications", false);
                 cfg.autoShuffle = j.value("autoShuffle", false);
-                cfg.sysTray = j.value("sysTray", false);
+                cfg.sysTray = j.value("sysTray", true);
                 cfg.autoShuffleVisuals = j.value("autoShuffleVisuals", false);
                 cfg.autoVsync = j.value("autoVsync", false);
                 cfg.ladspaEnabled = j.value("ladspaEnabled", false);
@@ -640,7 +658,7 @@ void load_config() {
                 cfg.shuffleFavsOnly = j.value("shuffleFavsOnly", false); 
                 cfg.eqEnabled = j.value("eqEnabled", false);                
                 if (j.contains("eqBands") && j["eqBands"].is_array()) {
-                     for (size_t i = 0; i < 10 && i < j["eqBands"].size(); i++) {
+                     for (size_t i = 0; i < 15 && i < j["eqBands"].size(); i++) {
                         cfg.eqBands[i] = j["eqBands"][i].get<float>();
                     }
                 }
@@ -2041,7 +2059,7 @@ SuperMusicWindow::SuperMusicWindow()
 
 	if (!ladspaSupported) {
     	fEnableladspa->SetEnabled(false);
-    	fEnableladspa->SetLabel("Ladspa (Not compiled in FFmpeg)");
+    	fEnableladspa->SetLabel("Use Ladspa (Not compiled in FFmpeg)");
 		} else {
     	fEnableladspa->SetValue(cfg.ladspaEnabled ? B_CONTROL_ON : B_CONTROL_OFF);
 	}
@@ -2066,26 +2084,42 @@ SuperMusicWindow::SuperMusicWindow()
 	limitGroup->AddChild(fLimitLimit);
 	limitGroup->AddChild(fLimitRelease);
 
-	BGroupView* eqSliderRow = new BGroupView(B_HORIZONTAL, 3);
 	
 
-	const char* freqLabels[] = { "50Hz", "100Hz", "156Hz", "220Hz", "311Hz", "440Hz", "622Hz", "880Hz", "1k2", "1k7" };
+// 1. Expand the labels to include all 15 mbeq frequencies
+const char* freqLabels[] = { 
+    "50", "100", "156", "220", "311", "440", "622", "880", 
+    "1k2", "1k7", "2k5", "3k5", "5k", "10k", "20k" 
+};
 
-	for (int i = 0; i < 10; i++) {
-    	BGroupView* bandGroup = new BGroupView(B_VERTICAL, 2);
-    	fEQSliders[i] = new WheelSlider(freqLabels[i], "", NULL, -15, 15, B_VERTICAL, 1);
-    	fEQSliders[i]->SetValue((int32)cfg.eqBands[i]);
+// 2. Reduce the horizontal spacing from 3 to 2 to fit the extra sliders
+BGroupView* eqSliderRow = new BGroupView(B_HORIZONTAL, 2);
+
+// 3. Update the loop to 15
+for (int i = 0; i < 15; i++) {
+    BGroupView* bandGroup = new BGroupView(B_VERTICAL, 2);
     
-    	BStringView* lbl = new BStringView(NULL, freqLabels[i]);
-    	lbl->SetFontSize(9);
+    // Create the slider
+    fEQSliders[i] = new WheelSlider(freqLabels[i], "", NULL, -15, 15, B_VERTICAL, 1);
     
-    	bandGroup->AddChild(fEQSliders[i]);
-    	bandGroup->AddChild(lbl);
-    	eqSliderRow->AddChild(bandGroup); 
-	}
-	eqSliderRow->AddChild(limitGroup); 
-	fEQContainer->AddChild(eqSliderRow); 
-	fEQContainer->AddChild(buttonRow); 
+    // Safety check: ensure your config struct also has 15 slots now!
+    fEQSliders[i]->SetValue((int32)cfg.eqBands[i]);
+    
+    // Smaller font for the labels to keep the UI tight
+    BStringView* lbl = new BStringView(NULL, freqLabels[i]);
+    lbl->SetFontSize(8); 
+    lbl->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_VERTICAL_UNSET));
+    
+    bandGroup->AddChild(fEQSliders[i]);
+    bandGroup->AddChild(lbl);
+    eqSliderRow->AddChild(bandGroup); 
+}
+
+// Add the limiter and finalize the layout
+eqSliderRow->AddChild(limitGroup); 
+fEQContainer->AddChild(eqSliderRow); 
+fEQContainer->AddChild(buttonRow);
+
 
 	if (!cfg.eqEnabled) {
     	fEQContainer->Hide();
@@ -2113,8 +2147,8 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
     	.Add(fSizeContainer)    	
         .AddGlue()
     .End()  	
-    .Add(chkShuffle)
     .Add(chksysTray)
+    .Add(chkShuffle)
     .Add(fShuffleFavsCheckbox)
     .Add(chkTheme)
    	.Add(fEQToggle)
@@ -2358,14 +2392,21 @@ void SuperMusicWindow::UpdateMPVFilters() {
     }
 
     BString filterChain;
+    const int numBands = 15; // Matches mbeq_1197 standard
+    
+    // Standard mbeq_1197 frequency centers
+    float frequencies[] = {
+        50, 100, 156, 220, 311, 440, 622, 880, 
+        1250, 1750, 2500, 3500, 5000, 10000, 20000
+    };
 
     if (!cfg.ladspaEnabled) {
         // --- NATIVE FILTERS (Inside Lavfi) ---
         filterChain << "@bouncy:lavfi=[";
         
-        float frequencies[] = {31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < numBands; i++) {
             BString band;
+            // Native equalizer uses a loop for all 15 bands
             band.SetToFormat("equalizer=f=%f:width_type=o:w=1:g=%.2f,", 
                              frequencies[i], (float)fEQSliders[i]->Value());
             filterChain << band;
@@ -2385,36 +2426,37 @@ void SuperMusicWindow::UpdateMPVFilters() {
             filterChain << "]";
 
     } else {
-        // --- LADSPA FILTERS (Standard mpv syntax) ---
-    filterChain = "@bouncy:lavfi=[";
+        // --- LADSPA FILTERS (mbeq_1197) ---
+        filterChain = "@bouncy:lavfi=[";
 
-    BString eqPart;
-    eqPart << "ladspa=file='/boot/system/lib/ladspa_HaikuSuperMusicThingy/mbeq_1197.so':p=mbeq:c=";
-    
-    for (int i = 0; i < 10; i++) {
-        BString val;
-        val.SetToFormat("%.2f", (float)fEQSliders[i]->Value());
-        eqPart << val << (i == 9 ? "" : "|");
-    }
-    eqPart << "|0|0|0|0|0,";
-    filterChain << eqPart;
+        BString eqPart;
+        eqPart << "ladspa=file='/boot/system/lib/ladspa_HaikuSuperMusicThingy/mbeq_1197.so':p=mbeq:c=";
+        
+        for (int i = 0; i < numBands; i++) {
+            BString val;
+            val.SetToFormat("%.2f", (float)fEQSliders[i]->Value());
+            // No more hardcoded "|0|0|0" padding; we fill all 15 slots
+            eqPart << val << (i == (numBands - 1) ? "" : "|");
+        }
+        eqPart << ",";
+        filterChain << eqPart;
 
-    BString limiterPart;
-    limiterPart.SetToFormat("ladspa=file='/boot/system/lib/ladspa_HaikuSuperMusicThingy/fast_lookahead_limiter_1913.so':p=fastLookaheadLimiter:c=%.2f|%.2f|%.2f,",
-        (float)fLimitInput->Value(), 
-        (float)fLimitLimit->Value(), 
-        (float)fLimitRelease->Value() / 1000.0f);
-    filterChain << limiterPart;
+        BString limiterPart;
+        limiterPart.SetToFormat("ladspa=file='/boot/system/lib/ladspa_HaikuSuperMusicThingy/fast_lookahead_limiter_1913.so':p=fastLookaheadLimiter:c=%.2f|%.2f|%.2f,",
+            (float)fLimitInput->Value(), 
+            (float)fLimitLimit->Value(), 
+            (float)fLimitRelease->Value() / 1000.0f);
+        filterChain << limiterPart;
 
-	if (cfg.showSpectrumVisuals) {
-    	filterChain << "astats=metadata=1:reset=1]"; 
-		} else {
-    	filterChain << "]";
-		}
+        if (cfg.showSpectrumVisuals) 
+            filterChain << "astats=metadata=1:reset=1]"; 
+        else 
+            filterChain << "]";
     }
 
     mpv_set_property_string(mpv, "af", filterChain.String());
 }
+
 
 
 
@@ -2770,7 +2812,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		
 		case MSG_EQ_CHANGED: {
     		cfg.eqEnabled = (fEQToggle->Value() == B_CONTROL_ON);
-    		for(int i=0; i<10; i++) cfg.eqBands[i] = fEQSliders[i]->Value();
+    		for(int i=0; i<15; i++) cfg.eqBands[i] = fEQSliders[i]->Value();
     		cfg.limitIn = fLimitInput->Value();
     		cfg.limitLmt = fLimitLimit->Value();
     		cfg.limitRel = fLimitRelease->Value();    
@@ -3112,7 +3154,7 @@ bool SuperMusicWindow::QuitRequested() {
 
 
 void SuperMusicWindow::ApplyPreset(const float* values) {
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 15; i++) {
         fEQSliders[i]->SetValue((int32)values[i]);
     }
   
