@@ -575,7 +575,11 @@ struct Config {
     bool showNotifications = false;
     bool showVisuals = false;
     bool autoShuffle = false;
+    #ifdef USE_SYSTRAY
     bool sysTray = true;
+    #else
+    bool sysTray = false;
+    #endif
     bool autoShuffleVisuals = false;
     bool showSpectrumVisuals = false;
     bool autoVsync = false;
@@ -649,7 +653,11 @@ void load_config() {
                 cfg.updateTheme = j.value("updateTheme", "Default");
                 cfg.showNotifications = j.value("showNotifications", false);
                 cfg.autoShuffle = j.value("autoShuffle", false);
+                #ifdef USE_SYSTRAY
                 cfg.sysTray = j.value("sysTray", true);
+				#else
+                cfg.sysTray = j.value("sysTray", false);
+                #endif
                 cfg.autoShuffleVisuals = j.value("autoShuffleVisuals", false);
                 cfg.autoVsync = j.value("autoVsync", false);
                 cfg.ladspaEnabled = j.value("ladspaEnabled", false);
@@ -3026,6 +3034,7 @@ public:
 
         gGuiWindow = new SuperMusicWindow();      
         gGuiWindow->Show();
+        
         
 		if (cfg.sysTray && gGuiWindow->Lock()) {
     		gGuiWindow->UpdateTrayState(true, false); 

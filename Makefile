@@ -29,12 +29,12 @@ else
     CXX = g++
     ARCH = x86_64
     LIB_ARCH_DIR = 
+    DEFINES += -DUSE_SYSTRAY
 ifeq ($(ENABLE_PROJECTM), ON)
     TPL_FILE := $(NAME)_projectm.tpl
 else
     TPL_FILE := $(NAME).tpl
-endif    
-
+endif  
 endif
 
 # Set up Pkg-Config Environment
@@ -42,7 +42,7 @@ export PKG_CONFIG_PATH := $(DUMMY_PC_PATH):/boot/home/config/non-packaged/lib$(L
 
 # --- 3. Compiler & Linker Flags ---
 CXXFLAGS = -std=c++17 -O3 -Wall -rdynamic  
-DEFINES = 
+DEFINES := $(DEFINES)
 INCLUDES = -I/boot/home/config/non-packaged/include -I/boot/system/develop/headers
 LIB_PATH = -L/boot/system/lib$(LIB_ARCH_DIR) -L/boot/system/develop/lib$(LIB_ARCH_DIR) -L/boot/home/config/non-packaged/lib$(LIB_ARCH_DIR)
 
@@ -105,13 +105,18 @@ ifeq ($(ENABLE_PROJECTM), ON)
 	cp lib/lib* $(PACKAGE_DIR)/lib
  endif
 endif
-ifeq ($(ARCH), x86_64)
+ifeq ($(UNAME_M), x86_64)
 	mkdir -p $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy
 	cp lib/ladspa_HaikuSuperMusicThingy/* $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy		
 endif
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
-	rc -o $(NAME).rsrc $(NAME).rdef 
-	xres -o $(NAME) $(NAME).rsrc  
+ifeq ($(UNAME_M), x86_64)
+	rc -o $(NAME).rsrc $(NAME).rdef
+endif
+ifeq ($(UNAME_M), x86)	
+	rc -o $(NAME).rsrc $(NAME)_x86.rdef
+endif  
+	xres -o $(NAME) $(NAME).rsrc
 	mimeset -f $(NAME)
 	cp $(NAME) $(PACKAGE_DIR)/apps/
 	ln -s /system/apps/$(NAME) $(PACKAGE_DIR)/bin/$(NAME)
