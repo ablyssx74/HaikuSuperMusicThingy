@@ -772,12 +772,10 @@ public:
             if (IsSelected()) {
                 owner->SetHighColor(ui_color(B_LIST_SELECTED_ITEM_TEXT_COLOR));
             } else {
-                // FIXED: Wrapped in ui_color()
                 owner->SetHighColor(ui_color(B_LIST_ITEM_TEXT_COLOR)); 
             }
         }
         
-        // Always call the base class to actually draw the text
         BStringItem::DrawItem(owner, frame, complete);
     }
 };
@@ -788,7 +786,6 @@ public:
 void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
     if (!view) return;
     
-    // Check if we actually need to update this view
     if (view->ViewColor().red != bg.red || view->HighColor().red != txt.red) {
         view->SetViewColor(bg);
         view->SetLowColor(bg);
@@ -804,7 +801,6 @@ void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
         }
 
        if (BListView* listView = dynamic_cast<BListView*>(view)) {
-            // This is what fixed your MilkDrop dark text!
             for (int32 i = 0; i < listView->CountItems(); i++) {
                 listView->InvalidateItem(i);
             }
@@ -813,7 +809,6 @@ void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
         view->Invalidate();
     }
     
-    // Always recurse through children, even if the parent didn't need a color change
     for (int32 i = 0; i < view->CountChildren(); i++) {
         RecursiveColorApply(view->ChildAt(i), bg, txt);
         
@@ -864,7 +859,6 @@ void SuperMusicWindow::ApplyTheme() {
         if (fPresetScroll) {
   
             fPresetScroll->SetViewColor(bgVal);
-            // This fixes the white scrollbar tray in the MilkDrop list
             if (BScrollBar* sb = fPresetScroll->ScrollBar(B_VERTICAL)) {
                 sb->SetViewColor(bgVal);
                 sb->Invalidate();
@@ -1374,7 +1368,7 @@ int32 VisualsThread(void* data) {
     }
 
     // 3. RENDER LOOP
-    while (visualsRunning && pm) { // added '&& pm' safety check
+    while (visualsRunning && pm) { 
     
     
     if (!gPendingPresetPath.empty()) {
@@ -1662,8 +1656,6 @@ public:
 
     virtual void Draw(BRect updateRect) {
         BRect b = Bounds();        
-        //SetHighColor(0, 0, 0);
-        //FillRect(b);        
         float floor = -60.0f;
         float peak = (float)fCurrentLevel;
         if (peak < floor) peak = floor;
@@ -1774,8 +1766,6 @@ SuperMusicWindow::SuperMusicWindow()
     : BWindow(BRect(100, 100, 550, 380), "SuperMusicThingy", B_TITLED_WINDOW, 
               B_ASYNCHRONOUS_CONTROLS | B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE)
 {
-	
-	SetFlags(Flags() | B_AUTO_UPDATE_SIZE_LIMITS);
     fAlbumArt = nullptr;
     #ifdef USE_PROJECTM
     fProjectM = pm; 
@@ -1993,15 +1983,12 @@ SuperMusicWindow::SuperMusicWindow()
     
     BStringView* sizeLabel = new BStringView("lbl_size", ""); 
     BMenuField* sizeField = new BMenuField("size_field", NULL, sizeMenu);
-    sizeField->SetExplicitMaxSize(BSize(95, B_SIZE_UNLIMITED)); 
-    
-    
+    sizeField->SetExplicitMaxSize(BSize(95, B_SIZE_UNLIMITED));     
     
 
 	fSizeContainer = new BGroupView(B_HORIZONTAL, 5); // Use Horizontal for label next to field
 	fSizeContainer->AddChild(sizeLabel);
 	fSizeContainer->AddChild(sizeField);
-
 
 
     // ==========================================
@@ -2093,40 +2080,32 @@ SuperMusicWindow::SuperMusicWindow()
 	limitGroup->AddChild(fLimitRelease);
 
 	
+	const char* freqLabels[] = { 
+    	"50", "100", "156", "220", "311", "440", "622", "880", 
+    	"1k2", "1k7", "2k5", "3k5", "5k", "10k", "20k" 
+	};
 
-// 1. Expand the labels to include all 15 mbeq frequencies
-const char* freqLabels[] = { 
-    "50", "100", "156", "220", "311", "440", "622", "880", 
-    "1k2", "1k7", "2k5", "3k5", "5k", "10k", "20k" 
-};
+	BGroupView* eqSliderRow = new BGroupView(B_HORIZONTAL, 2);
 
-// 2. Reduce the horizontal spacing from 3 to 2 to fit the extra sliders
-BGroupView* eqSliderRow = new BGroupView(B_HORIZONTAL, 2);
+	for (int i = 0; i < 15; i++) {
+    	BGroupView* bandGroup = new BGroupView(B_VERTICAL, 2);
+    
+    	fEQSliders[i] = new WheelSlider(freqLabels[i], "", NULL, -15, 15, B_VERTICAL, 1);
+    
+    	fEQSliders[i]->SetValue((int32)cfg.eqBands[i]);
+    
+    	BStringView* lbl = new BStringView(NULL, freqLabels[i]);
+    	lbl->SetFontSize(8); 
+    	lbl->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_VERTICAL_UNSET));
+    
+    	bandGroup->AddChild(fEQSliders[i]);
+    	bandGroup->AddChild(lbl);
+    	eqSliderRow->AddChild(bandGroup); 
+	}
 
-// 3. Update the loop to 15
-for (int i = 0; i < 15; i++) {
-    BGroupView* bandGroup = new BGroupView(B_VERTICAL, 2);
-    
-    // Create the slider
-    fEQSliders[i] = new WheelSlider(freqLabels[i], "", NULL, -15, 15, B_VERTICAL, 1);
-    
-    // Safety check: ensure your config struct also has 15 slots now!
-    fEQSliders[i]->SetValue((int32)cfg.eqBands[i]);
-    
-    // Smaller font for the labels to keep the UI tight
-    BStringView* lbl = new BStringView(NULL, freqLabels[i]);
-    lbl->SetFontSize(8); 
-    lbl->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_VERTICAL_UNSET));
-    
-    bandGroup->AddChild(fEQSliders[i]);
-    bandGroup->AddChild(lbl);
-    eqSliderRow->AddChild(bandGroup); 
-}
-
-// Add the limiter and finalize the layout
-eqSliderRow->AddChild(limitGroup); 
-fEQContainer->AddChild(eqSliderRow); 
-fEQContainer->AddChild(buttonRow);
+	eqSliderRow->AddChild(limitGroup); 
+	fEQContainer->AddChild(eqSliderRow); 
+	fEQContainer->AddChild(buttonRow);
 
 
 	if (!cfg.eqEnabled) {
@@ -2384,10 +2363,7 @@ void SuperMusicWindow::UpdateUI() {
 
     UpdateFavButtons();
 
-
 }
-
-
 
 
 
@@ -2441,7 +2417,6 @@ void SuperMusicWindow::UpdateMPVFilters() {
         for (int i = 0; i < numBands; i++) {
             BString val;
             val.SetToFormat("%.2f", (float)fEQSliders[i]->Value());
-            // No more hardcoded "|0|0|0" padding; we fill all 15 slots
             eqPart << val << (i == (numBands - 1) ? "" : "|");
         }
         eqPart << ",";
@@ -2469,8 +2444,7 @@ void SuperMusicWindow::UpdateMPVFilters() {
 
 void SuperMusicWindow::MessageReceived(BMessage* message)
 {
-    switch (message->what) {
-        
+    switch (message->what) {        
         
         case MSG_UPDATE_BITRATE: {
     		int32 kbps;
@@ -2620,7 +2594,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		}
     		break;
 		}
-
 
     	
 		case MSG_PLAY_STATION: {
@@ -2876,9 +2849,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
     		break;
 		}
-
-
-           
 
 
         case B_QUIT_REQUESTED:
@@ -3157,8 +3127,6 @@ bool SuperMusicWindow::QuitRequested() {
     StopVisuals();
 
     snooze(500000); 
-
-
     
     be_app->PostMessage(B_QUIT_REQUESTED);
     return true; 
@@ -3233,23 +3201,16 @@ virtual void MouseDown(BPoint point) {
     if (buttons & B_PRIMARY_MOUSE_BUTTON) {
         appMessenger.SendMessage(MSG_ACTIVATE_APP);
     } else if (buttons & B_SECONDARY_MOUSE_BUTTON) {
-        BPopUpMenu *popup = new BPopUpMenu("tray_popup", false, false);
-        
+        BPopUpMenu *popup = new BPopUpMenu("tray_popup", false, false);        
         popup->AddItem(new BMenuItem("Show Player", new BMessage(MSG_ACTIVATE_APP)));
         popup->AddItem(new BMenuItem("Shuffle", new BMessage(MSG_SHUFFLE)));
         popup->AddSeparatorItem();
-        popup->AddItem(new BMenuItem("Quit", new BMessage(B_QUIT_REQUESTED)));        
-        
-        popup->SetTargetForItems(appMessenger);
-        
-        BPoint screenPoint = ConvertToScreen(point);
-        
+        popup->AddItem(new BMenuItem("Quit", new BMessage(B_QUIT_REQUESTED)));          
+        popup->SetTargetForItems(appMessenger);        
+        BPoint screenPoint = ConvertToScreen(point);        
         popup->Go(screenPoint, true, true, true);
     }
 }
-
-
-
 
 
 private:
