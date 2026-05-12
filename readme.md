@@ -11,6 +11,7 @@
 - optional notifications.
 - fade in/out on song change. 
 - config manager.
+- 15 Band EQ
 - Visualizer window for supported platforms.
 
 ### Tested Haiku OS x86_64 and x86
@@ -45,7 +46,7 @@ make release ENABLE_PROJECTM=ON
 <img align="left" width="122" height="250" alt="Image" src="https://github.com/user-attachments/assets/5c6fe947-38c4-4feb-92bd-677eeea1da9e" />
 
   <img align="left"  width="228" height="228" alt="Image" src="https://github.com/user-attachments/assets/5f037f02-ef14-449a-8454-1801205917d5" />
-  <img align="left"  width="228" height="228" alt="Image" src="https://github.com/user-attachments/assets/a2e19365-471f-46ff-911a-eba72d88a83a" />
+  <img align="left"  width="228" height="228" alt="Image" src="https://github.com/user-attachments/assets/3fa8b4f2-24dd-4a29-a794-2994e4c85997" />
 
 </p>
 
