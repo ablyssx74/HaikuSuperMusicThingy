@@ -2037,9 +2037,9 @@ SuperMusicWindow::SuperMusicWindow()
 	presetMenu->AddItem(new BMenuItem("Jazz", new BMessage(MSG_SET_PRESET_JAZZ)));
 	presetMenu->AddItem(new BMenuItem("Bass Boost", new BMessage(MSG_SET_PRESET_BASS)));
 
-	fPresetField = new BMenuField("presets", "Presets:", presetMenu);
+	fPresetField = new BMenuField("presets", "", presetMenu);
 
-	fApplyEQBtn = new BButton("apply_eq", "Apply Settings", new BMessage(MSG_EQ_CHANGED));
+	fApplyEQBtn = new BButton("apply_eq", "Apply", new BMessage(MSG_EQ_CHANGED));
 
 	BGroupView* buttonRow = new BGroupView(B_HORIZONTAL, 10);
 	buttonRow->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_TOP));
