@@ -1960,8 +1960,12 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 0)
     fStationGroup->SetViewColor(ui_color(B_LIST_BACKGROUND_COLOR));
     
     fPresetList = new PresetListView("preset_list");
+	fPresetList->SetSelectionMessage(new BMessage(MSG_PRESET_SELECTED));
+    
     fPresetScroll = new BScrollView("preset_scroll", fPresetList, 0, true, true, B_NO_BORDER);
-    fPresetScroll->Hide(); 
+    fPresetScroll->Hide();
+    fPresetScroll->SetExplicitMinSize(BSize(B_SIZE_UNSET, 150));
+	fPresetScroll->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 300));
 
     fStationList = new BListView("station_list");
     fStationList->SetInvocationMessage(new BMessage(MSG_PLAY_STATION)); 
