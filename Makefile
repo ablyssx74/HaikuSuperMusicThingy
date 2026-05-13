@@ -20,7 +20,6 @@ ifeq ($(UNAME_M), x86)
     CXX = g++-x86
     ARCH = x86_gcc2
     LIB_ARCH_DIR = /x86
-    DEFINES += -DUSE_SYSTRAY
 ifeq ($(ENABLE_PROJECTM), ON)
     TPL_FILE := $(NAME)_projectm_x86.tpl
 else
@@ -107,8 +106,12 @@ ifeq ($(ENABLE_PROJECTM), ON)
  endif
 endif
 ifeq ($(UNAME_M), x86_64)
-	mkdir -p $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy
+	mkdir -p $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy/
 	cp lib/ladspa_HaikuSuperMusicThingy/* $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy		
+endif
+ifeq ($(UNAME_M), x86)
+	mkdir -p $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy/
+	cp lib/ladspa_HaikuSuperMusicThingy/ladspa32bit/* $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy		
 endif
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
 ifeq ($(UNAME_M), x86_64)
