@@ -107,11 +107,13 @@ ifeq ($(ENABLE_PROJECTM), ON)
 endif
 ifeq ($(UNAME_M), x86_64)
 	mkdir -p $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy/
-	cp lib/ladspa_HaikuSuperMusicThingy/* $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy		
+	cp lib/ladspa_HaikuSuperMusicThingy/*.so $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy
+	cp lib/ladspa_HaikuSuperMusicThingy/COPYING $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy	
 endif
 ifeq ($(UNAME_M), x86)
 	mkdir -p $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy/
-	cp lib/ladspa_HaikuSuperMusicThingy/ladspa32bit/* $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy		
+	cp lib/ladspa_HaikuSuperMusicThingy/ladspa32bit/*.so $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy
+	cp lib/ladspa_HaikuSuperMusicThingy/ladspa32bit/COPYING $(PACKAGE_DIR)/lib/ladspa_HaikuSuperMusicThingy		
 endif
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
 ifeq ($(UNAME_M), x86_64)
