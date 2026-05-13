@@ -26,6 +26,7 @@
 #include <NodeInfo.h>
 #include <Deskbar.h>
 #include <Dragger.h>
+#include <MessageRunner.h>
 
 
 // --- Haiku Storage Kit ---
@@ -585,6 +586,7 @@ struct Config {
     bool autoVsync = false;
     bool ladspaEnabled = false;
     bool shuffleFavsOnly = false;
+    bool compactMode = false;
     int notifyIconSize = 64; 
     std::string updateTheme = "Default";
     std::string quality = "128k";
@@ -601,6 +603,7 @@ int selectedConfig = 0;
 void save_config() {
     json j;
     j["quality"] = cfg.quality;
+    j["compactMode"] = cfg.compactMode;
     j["notifyIconSize"] = cfg.notifyIconSize;
     j["updateTheme"] = cfg.updateTheme;
     j["showNotifications"] = cfg.showNotifications;
@@ -637,6 +640,33 @@ void save_config() {
 void load_config() {
     BPath path;
 
+    // 1. ALWAYS populate strict, hardcoded memory safe defaults first
+    cfg.quality = "128k";
+    cfg.notifyIconSize = 64;
+    cfg.compactMode = false;
+    cfg.updateTheme = "Default";
+    cfg.showNotifications = false;
+    cfg.autoShuffle = false;
+#ifdef USE_SYSTRAY
+    cfg.sysTray = true;
+#else
+    cfg.sysTray = false;
+#endif
+    cfg.autoShuffleVisuals = false;
+    cfg.autoVsync = false;
+    cfg.ladspaEnabled = false;
+    cfg.showVisuals = false;   
+    cfg.showSpectrumVisuals = false;   
+    cfg.shuffleFavsOnly = false; 
+    cfg.eqEnabled = false;
+    for (int i = 0; i < 15; i++) {
+        cfg.eqBands[i] = 0.0f; // flat EQ defaults
+    }
+    cfg.limitIn = 0.0f;
+    cfg.limitLmt = 0.0f;
+    cfg.limitRel = 100.0f;
+
+    // 2. Attempt parsing over top of those defaults
     if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) == B_OK) {
         path.Append("SuperMusicThingy/config.txt");
         std::ifstream infile(path.Path());        
@@ -650,12 +680,13 @@ void load_config() {
                 } else {
                     cfg.notifyIconSize = 64; 
                 }
+                cfg.compactMode = j.value("compactMode", false);
                 cfg.updateTheme = j.value("updateTheme", "Default");
                 cfg.showNotifications = j.value("showNotifications", false);
                 cfg.autoShuffle = j.value("autoShuffle", false);
                 #ifdef USE_SYSTRAY
                 cfg.sysTray = j.value("sysTray", true);
-				#else
+                #else
                 cfg.sysTray = j.value("sysTray", false);
                 #endif
                 cfg.autoShuffleVisuals = j.value("autoShuffleVisuals", false);
@@ -674,10 +705,15 @@ void load_config() {
                 cfg.limitLmt = j.value("limitLmt", 0.0f);
                 cfg.limitRel = j.value("limitRel", 100.0f);                                    
             } catch(...) {
+                // Parsing failed, but defaults are safely assigned
             }
+        } else {
+
+            save_config(); 
         }
     }
 }
+
 
 
 
@@ -839,14 +875,20 @@ void SuperMusicWindow::ApplyTheme() {
     boldFont.SetSize(12.0 * scale);
 
     if (Lock()) {
-        if (fTabView) {
-            fTabView->SetViewColor(bgVal);
-            
-            for (int32 i = 0; i < fTabView->CountTabs(); i++) {
-                BView* tabView = fTabView->ViewForTab(i);
-                RecursiveColorApply(tabView, bgVal, txtVal);
-            }
-        }
+		if (fTabView) {
+    		fTabView->SetViewColor(bgVal);
+    
+    		for (int32 i = 0; i < fTabView->CountTabs(); i++) {
+        		BTab* tab = fTabView->TabAt(i);
+        		if (tab == nullptr) continue; // Safety check for the tab object
+
+        		BView* tabView = tab->View(); // Get the view associated with the tab
+        		if (tabView != nullptr) {
+            RecursiveColorApply(tabView, bgVal, txtVal);
+        		}
+    		}
+		}
+
         
         if (fPresetList) {
 			
@@ -907,8 +949,6 @@ void SuperMusicWindow::ApplyTheme() {
         Unlock();
     }
 }
-
-
 
 
 
@@ -1240,8 +1280,9 @@ void toggle_mute() {
  }
 
 
-
 void PopulatePresetList(BListView* list, const char* folderPath) {
+	if (list == nullptr)
+    return;
     list->MakeEmpty();
     if (!std::filesystem::exists(folderPath)) return;
 
@@ -1254,8 +1295,6 @@ void PopulatePresetList(BListView* list, const char* folderPath) {
         }
     }
 }
-
-
 
 
 #ifdef USE_PROJECTM
@@ -1740,9 +1779,20 @@ void SuperMusicWindow::UpdateTrayState(bool enabled, bool hideWindow) {
 
     if (enabled) {
         if (!deskbar.HasItem(trayItemName)) {
+            status_t err = B_ERROR;
+
+#if defined(__x86_64__)
+            // 64-bit Native: Keep using the fast internal executable allocation reference
             app_info info;
             be_app->GetAppInfo(&info);             
-            status_t err = deskbar.AddItem(&info.ref);
+            err = deskbar.AddItem(&info.ref);
+#else
+            // 32-bit Hybrid: Dynamically look up the signature of the GCC 2 shared add-on library
+            entry_ref addonRef;
+            if (be_roster->FindApp("application/x-vnd.SuperMusicTrayIconLibrary", &addonRef) == B_OK) {
+                err = deskbar.AddItem(&addonRef);
+            }
+#endif
             
             if (err == B_OK && hideWindow) {
                 Hide();
@@ -1757,7 +1807,6 @@ void SuperMusicWindow::UpdateTrayState(bool enabled, bool hideWindow) {
         if (IsHidden()) Show();
     }
 }
-
 
 
 
@@ -1788,8 +1837,8 @@ SuperMusicWindow::SuperMusicWindow()
     // ==========================================
     // TAB 1: PLAYER VIEW (The "Radio" Interface)
     // ==========================================
-    BGroupView* playerGroup = new BGroupView(B_VERTICAL, 10);
-    playerGroup->SetName("Radio"); 
+    fPlayerGroup = new BGroupView(B_VERTICAL, 10);
+    fPlayerGroup->SetName("Radio"); 
 
     // Text Labels
     fStationView = new BStringView("", "Press Play or Shuffle");
@@ -1810,13 +1859,22 @@ SuperMusicWindow::SuperMusicWindow()
     
     fListenersView = new BStringView("listeners", "");
     fListenersView->SetFont(&smallFont);
+	
+	fCompactModeRadio = new BCheckBox("chk_compact_radio", "Compact", new BMessage(MSG_COMPACTM_CHANGED));
+	fCompactModeRadio->SetFont(&smallFont);
+	
+	fCompactModeConfig = new BCheckBox("chk_compact_config", "Compact Mode", new BMessage(MSG_COMPACTM_CHANGED));
+
+	
+   
     
     // Album Art
+
     fArtView = new AlbumArtView();
 	fArtView->SetExplicitSize(BSize(325 * scale, 325 * scale)); 
     fArtView->SetExplicitMinSize(BSize(325 * scale, 325 * scale));
 	fArtView->SetExplicitMaxSize(BSize(325 * scale, 325 * scale));
-	
+
 	fSpectrum = new SpectrumView(BRect(0, 0, 300, 50), "spectrum"); 
 	fSpectrum->SetExplicitMinSize(BSize(300, 50));
 	fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 50)); 
@@ -1824,18 +1882,20 @@ SuperMusicWindow::SuperMusicWindow()
     BBitmap* heartIcon = GetVectorIcon(kIconFav, kIconFavSize, 40);
 	fBtnAddFav = new IconButton("btn_add_fav", heartIcon, new BMessage(MSG_ADD_FAV));
 	fBtnAddFav->SetExplicitSize(BSize(40, 40));
+
+	
 	
 	BBitmap* pauseIcon = GetVectorIcon(kIconPause, kIconPauseSize, 40);
-    IconButton* pauseBtn = new IconButton("btn_pause", pauseIcon, new BMessage(MSG_PAUSE));
-	pauseBtn->SetExplicitSize(BSize(75, 75)); 
+    fPauseBtn = new IconButton("btn_pause", pauseIcon, new BMessage(MSG_PAUSE));
+	fPauseBtn->SetExplicitSize(BSize(75, 75)); 
 	
 	BBitmap* playIcon = GetVectorIcon(kIconPlay, kIconPlaySize, 40);
-    IconButton* playBtn = new IconButton("btn_play", playIcon, new BMessage(MSG_PLAY));
-	playBtn->SetExplicitSize(BSize(75, 75)); 
+    fPlayBtn = new IconButton("btn_play", playIcon, new BMessage(MSG_PLAY));
+	fPlayBtn->SetExplicitSize(BSize(75, 75)); 
     
     BBitmap* stopIcon = GetVectorIcon(kIconStop, kIconStopSize, 40);
-    IconButton* stopBtn = new IconButton("btn_stop", stopIcon, new BMessage(MSG_STOP));
-	stopBtn->SetExplicitSize(BSize(75, 75)); 
+    fStopBtn = new IconButton("btn_stop", stopIcon, new BMessage(MSG_STOP));
+	fStopBtn->SetExplicitSize(BSize(75, 75)); 
 	
 	BBitmap* shuffleIcon = GetVectorIcon(kIconShuffle, kIconShuffleSize, 40);
    	fShuffleBtn = new IconButton("btn_shuffle", shuffleIcon, new BMessage(MSG_SHUFFLE));
@@ -1848,43 +1908,60 @@ SuperMusicWindow::SuperMusicWindow()
 
 
     // --- LAYOUT BUILDER FOR PLAYER TAB ---
-    BLayoutBuilder::Group<>(playerGroup, B_VERTICAL, 10)
-        .SetInsets(10)
-        .Add(fArtView)      
-        //.Add(fStationView) 
-        .Add(fDescView) 
-        .Add(fSongView)
-        //.Add(fSpectrum)
-		.AddGlue()
-        .AddGroup(B_HORIZONTAL, 0) 
-            .AddGroup(B_VERTICAL, 0) 
-                .Add(fListenersView)
-                .Add(fquality)
-            .End()
-            .AddGlue() 
-            .AddGroup(B_VERTICAL, 5) 
-                .Add(fBtnAddFav)
-            .End()
-        .End()
-        // End Split Row
-        .AddGlue()
-        .Add(fVolumeSlider)
+
+fControlStack = new BGroupView(B_VERTICAL, 5); 
+
+BLayoutBuilder::Group<>(fControlStack, B_VERTICAL, 5)
+
+    .SetInsets(5)  
+    .Add(fVolumeSlider)
         .AddGroup(B_HORIZONTAL, 10)
-            .Add(stopBtn)
-            .Add(pauseBtn)
-            .Add(playBtn)
-            .Add(fShuffleBtn)
+        .AddGlue() 
+        .Add(fStopBtn)
+        .Add(fPauseBtn)
+        .Add(fPlayBtn)
+        .Add(fShuffleBtn)
+      .End();
+
+BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 0)
+    .SetInsets(20)
+    .Add(fArtView) 
+        .AddGroup(B_HORIZONTAL, 10)     	
+        .Add(fDescView) 
         .End()
-        .AddGlue();
+        .AddGroup(B_HORIZONTAL, 10) 
+    .Add(fSongView)
+    .End()
+    .AddGlue()
+    .AddGroup(B_HORIZONTAL, 16) 
+        .AddGroup(B_VERTICAL, 6) 
+        	.AddStrut(5)        	
+            .Add(fListenersView)
+            .Add(fquality)
+            .Add(fCompactModeRadio)               
+        .End()        
+        .Add(fBtnAddFav)        
+    .End()
+    .AddGlue()
+    .Add(fControlStack)    
+    .AddGlue();
+  
+  
+ 
+
 
 
     // ==========================================
     // TAB 2: STATIONS VIEW (The Directory)
     // ==========================================
-    BGroupView* stationGroup = new BGroupView(B_VERTICAL, 0);
-    stationGroup->SetName("Stations"); 
+    fStationGroup = new BGroupView(B_VERTICAL, 0);
+    fStationGroup->SetName("Stations"); 
     // Set container color to prevent bleed-through
-    stationGroup->SetViewColor(ui_color(B_LIST_BACKGROUND_COLOR));
+    fStationGroup->SetViewColor(ui_color(B_LIST_BACKGROUND_COLOR));
+    
+    fPresetList = new PresetListView("preset_list");
+    fPresetScroll = new BScrollView("preset_scroll", fPresetList, 0, true, true, B_NO_BORDER);
+    fPresetScroll->Hide(); 
 
     fStationList = new BListView("station_list");
     fStationList->SetInvocationMessage(new BMessage(MSG_PLAY_STATION)); 
@@ -1900,7 +1977,7 @@ SuperMusicWindow::SuperMusicWindow()
         sb->SetViewColor(ui_color(B_LIST_BACKGROUND_COLOR));
     }
 
-    BLayoutBuilder::Group<>(stationGroup, B_VERTICAL, 0)
+    BLayoutBuilder::Group<>(fStationGroup, B_VERTICAL, 0)
         .SetInsets(10)
         .Add(stationScroll) 
     .End();
@@ -1909,9 +1986,9 @@ SuperMusicWindow::SuperMusicWindow()
     // ==========================================
     // TAB 3. FAVORITES VIEW (The List)
     // ==========================================
-    BGroupView* favGroup = new BGroupView(B_VERTICAL, 10);
-    favGroup->SetName("Fav"); 
-    favGroup->SetViewColor(ui_color(B_LIST_BACKGROUND_COLOR));
+    fFavGroup = new BGroupView(B_VERTICAL, 10);
+    fFavGroup->SetName("Fav"); 
+    fFavGroup->SetViewColor(ui_color(B_LIST_BACKGROUND_COLOR));
 
     fFavList = new FavListView("favorites_list");
     fFavList->SetInvocationMessage(new BMessage(MSG_PLAY_FAV)); 
@@ -1926,7 +2003,7 @@ SuperMusicWindow::SuperMusicWindow()
         sb->SetViewColor(ui_color(B_LIST_BACKGROUND_COLOR));
     }
 
-    BLayoutBuilder::Group<>(favGroup, B_VERTICAL, 0)
+    BLayoutBuilder::Group<>(fFavGroup, B_VERTICAL, 0)
         .SetInsets(10)
         .Add(favScroll)
     .End();
@@ -1936,95 +2013,129 @@ SuperMusicWindow::SuperMusicWindow()
     // ==========================================
     // TAB 4: CONFIG VIEW (Placeholder)
     // ==========================================
-	BGroupView* configGroup = new BGroupView(B_VERTICAL, 10);
-	configGroup->SetName("Config");
+	fConfigGroup = new BGroupView(B_VERTICAL, 10);
+	fConfigGroup->SetName("Config");
 	
-	BBitmap* configIcon = GetVectorIcon(kIconConfig, kIconConfigSize, 64);
-    IconView* configLogo = new IconView(configIcon);
-    configLogo->SetExplicitAlignment(BAlignment(B_ALIGN_LEFT, B_ALIGN_TOP));
+    BBitmap* configIcon = GetVectorIcon(kIconConfig, kIconConfigSize, 64);
+    fConfigLogo = new IconView(configIcon);
+  
+
+
+    // --- Quality Selection (Menu Field) ---
+    fQualityMenu = new BPopUpMenu("Select");
+    
+    // Create the messages
+    BMessage* msg320k = new BMessage(MSG_CFG_QUALITY); msg320k->AddString("val", "320k");
+    BMessage* msg256k = new BMessage(MSG_CFG_QUALITY); msg256k->AddString("val", "256k");
+    BMessage* msg128k = new BMessage(MSG_CFG_QUALITY); msg128k->AddString("val", "128k");
+    BMessage* msg64k  = new BMessage(MSG_CFG_QUALITY); msg64k->AddString("val", "64k"); 
+    BMessage* msg32k  = new BMessage(MSG_CFG_QUALITY); msg32k->AddString("val", "32k");
+
+    // Add items to the class member fQualityMenu
+    fQualityMenu->AddItem(new BMenuItem("320k", msg320k));
+    fQualityMenu->AddItem(new BMenuItem("256k", msg256k));
+    fQualityMenu->AddItem(new BMenuItem("128k", msg128k));
+    fQualityMenu->AddItem(new BMenuItem("64k", msg64k));  
+    fQualityMenu->AddItem(new BMenuItem("32k", msg32k));
+
+    // Mark the saved preference
+    BMenuItem* selectedItem = fQualityMenu->FindItem(cfg.quality.c_str());
+    if (selectedItem) 
+        selectedItem->SetMarked(true);
+
+    fQualityLabel = new BStringView("lbl_qual", "Audio Quality:");
+    
+    // Assign to the member field
+    fQualityField = new BMenuField("quality_field", NULL, fQualityMenu);
+
+
+//-----------------------------
+    // --- Sleep Timer Setup (BMenuField) ---
+    fSleepMenu = new BPopUpMenu("Disabled");
+    fSleepMenu->SetExplicitAlignment(BAlignment(B_ALIGN_LEFT, B_ALIGN_TOP));
+    BMessage* msgSleep0   = new BMessage(MSG_SLEEP_CHANGED); msgSleep0->AddInt32("minutes", 0);
+    BMessage* msgSleep15  = new BMessage(MSG_SLEEP_CHANGED); msgSleep15->AddInt32("minutes", 15);
+    BMessage* msgSleep30  = new BMessage(MSG_SLEEP_CHANGED); msgSleep30->AddInt32("minutes", 30);
+    BMessage* msgSleep1h  = new BMessage(MSG_SLEEP_CHANGED); msgSleep1h->AddInt32("minutes", 60);
+    BMessage* msgSleep3h  = new BMessage(MSG_SLEEP_CHANGED); msgSleep3h->AddInt32("minutes", 180); 
+    BMessage* msgSleep6h  = new BMessage(MSG_SLEEP_CHANGED); msgSleep6h->AddInt32("minutes", 360);  
+    BMessage* msgSleep8h  = new BMessage(MSG_SLEEP_CHANGED); msgSleep8h->AddInt32("minutes", 480);
+
+    fSleepMenu->AddItem(new BMenuItem("Disabled", msgSleep0));
+    fSleepMenu->AddItem(new BMenuItem("15 Minutes", msgSleep15));
+    fSleepMenu->AddItem(new BMenuItem("30 Minutes", msgSleep30));
+    fSleepMenu->AddItem(new BMenuItem("1 Hour", msgSleep1h));
+    fSleepMenu->AddItem(new BMenuItem("3 Hours", msgSleep3h));                                     
+    fSleepMenu->AddItem(new BMenuItem("6 Hours", msgSleep6h));                                      
+    fSleepMenu->AddItem(new BMenuItem("8 Hours", msgSleep8h));
+
+    // Default target initialization
+    fSleepMenu->ItemAt(0)->SetMarked(true);
+    fSleepRunner = NULL;
+
+    fSleepLabel = new BStringView("lbl_sleep", "Sleep Timer:");
+    fSleepField = new BMenuField("sleep_field", NULL, fSleepMenu);
+//-----------------------------
+
     
 
+  
+    fChkNotify = new BCheckBox("chk_notify", "Notifications", new BMessage(MSG_CFG_NOTIFY));
+    fChkNotify->SetValue(cfg.showNotifications ? B_CONTROL_ON : B_CONTROL_OFF);
 
-	// --- Quality Selection (Menu Field) ---
-	BPopUpMenu* qualityMenu = new BPopUpMenu("Select");
-	BMessage* msg320k = new BMessage(MSG_CFG_QUALITY); msg320k->AddString("val", "320k");
-	BMessage* msg256k = new BMessage(MSG_CFG_QUALITY); msg256k->AddString("val", "256k");
-	BMessage* msg128k = new BMessage(MSG_CFG_QUALITY); msg128k->AddString("val", "128k");
-	BMessage* msg64k  = new BMessage(MSG_CFG_QUALITY); msg64k->AddString("val", "64k"); 
-	BMessage* msg32k  = new BMessage(MSG_CFG_QUALITY); msg32k->AddString("val", "32k");
-
-	qualityMenu->AddItem(new BMenuItem("320k", msg320k));
-	qualityMenu->AddItem(new BMenuItem("256k", msg256k));
-	qualityMenu->AddItem(new BMenuItem("128k", msg128k));
-	qualityMenu->AddItem(new BMenuItem("64k", msg64k));  
-	qualityMenu->AddItem(new BMenuItem("32k", msg32k));
-
-	BMenuItem* selectedItem = qualityMenu->FindItem(cfg.quality.c_str());
-	if (selectedItem) selectedItem->SetMarked(true);
-
-    BStringView* qualityLabel = new BStringView("lbl_qual", "Audio Quality:");
-    BMenuField* qualityField = new BMenuField("quality_field", NULL, qualityMenu);
-    
-
-    BCheckBox* chkNotify = new BCheckBox("chk_notify", "Notifications", new BMessage(MSG_CFG_NOTIFY));
-    chkNotify->SetValue(cfg.showNotifications ? B_CONTROL_ON : B_CONTROL_OFF);
-    BPopUpMenu* sizeMenu = new BPopUpMenu("Icon Size");
+    // Icon Size Menu
+    fSizeMenu = new BPopUpMenu("Icon Size");
     int sizes[] = {128, 96, 64, 40, 32};
     for (int s : sizes) {
         BString label;
         label << s << "x" << s;    
-        BMessage* msg = new BMessage(MSG_CFG_ICON_SIZE); msg->AddInt32("val", s);    
+        BMessage* msg = new BMessage(MSG_CFG_ICON_SIZE); 
+        msg->AddInt32("val", s);    
         BMenuItem* item = new BMenuItem(label.String(), msg);    
+        
         if (s == cfg.notifyIconSize) {
             item->SetMarked(true);
         }    
-        sizeMenu->AddItem(item);
+        fSizeMenu->AddItem(item);
     }
     
-    BStringView* sizeLabel = new BStringView("lbl_size", ""); 
-    BMenuField* sizeField = new BMenuField("size_field", NULL, sizeMenu);
-    sizeField->SetExplicitMaxSize(BSize(95, B_SIZE_UNLIMITED));     
+    // Size Field
+    fSizeField = new BMenuField("size_field", NULL, fSizeMenu);
+    fSizeField->SetExplicitMaxSize(BSize(95, B_SIZE_UNLIMITED));
+    fSizeLabel = new BStringView("lbl_size", "Icon Size:");
     
 
 	fSizeContainer = new BGroupView(B_HORIZONTAL, 5); // Use Horizontal for label next to field
-	fSizeContainer->AddChild(sizeLabel);
-	fSizeContainer->AddChild(sizeField);
+	fSizeContainer->AddChild(fSizeLabel);
+	fSizeContainer->AddChild(fSizeField);
 
 
     // ==========================================
     // --- Checkboxes ---
     // ==========================================    
-    BCheckBox* chkShuffle = new BCheckBox("chk_shuffle", "Auto Shuffle On Start", new BMessage(MSG_CFG_AUTO_SHUFFLE));
-    chkShuffle->SetValue(cfg.autoShuffle ? B_CONTROL_ON : B_CONTROL_OFF);
+    fChkShuffle = new BCheckBox("chk_shuffle", "Auto Shuffle On Start", new BMessage(MSG_CFG_AUTO_SHUFFLE));
+    fChkShuffle->SetValue(cfg.autoShuffle ? B_CONTROL_ON : B_CONTROL_OFF);
     
-    BCheckBox* chksysTray = new BCheckBox("chk_sysTray", "Hide in Sysem tray", new BMessage(MSG_CFG_SYS_TRAY));
-    chksysTray->SetValue(cfg.sysTray ? B_CONTROL_ON : B_CONTROL_OFF);    
+    fChkSysTray = new BCheckBox("chk_sysTray", "Use System tray", new BMessage(MSG_CFG_SYS_TRAY));
+    fChkSysTray->SetValue(cfg.sysTray ? B_CONTROL_ON : B_CONTROL_OFF);
+    fChkSysTray->SetEnabled(false);    
     
-    BCheckBox* chkTheme = new BCheckBox("chk_theme", "Dark Theme (Experimental)", new BMessage(MSG_CFG_THEME));
-    chkTheme->SetValue(cfg.updateTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);
+    // Theme and Presets
+    fChkTheme = new BCheckBox("chk_theme", "Dark Theme (Experimental)", new BMessage(MSG_CFG_THEME));
+    fChkTheme->SetValue(cfg.updateTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);
 
-	fPresetToggle = new BCheckBox("preset_toggle", "MilkDrop Presets:", new BMessage(MSG_TOGGLE_PRESETS));
-	
-	fPresetToggle->SetValue(B_CONTROL_OFF); 
+    fPresetToggle = new BCheckBox("preset_toggle", "MilkDrop Presets:", new BMessage(MSG_TOGGLE_PRESETS));
+    fPresetToggle->SetValue(B_CONTROL_OFF); 
 
-	fPresetList = new PresetListView("preset_list");
-	fPresetList->SetSelectionMessage(new BMessage(MSG_PRESET_SELECTED));
-	
-	fPresetScroll = new BScrollView("preset_scroll", fPresetList, 0, true, true, B_NO_BORDER);
-	fPresetScroll->Hide(); 
-	fPresetScroll->SetExplicitMinSize(BSize(B_SIZE_UNSET, 150));
-	fPresetScroll->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 300));
-   
-    fVisualsCheckbox = new BCheckBox(BRect(10, 10, 200, 30), "visuals_toggle", 
-    "Enable Visualizer (Experimental)", new BMessage(MSG_TOGGLE_VISUALS));
-    fVisualsCheckbox->SetValue(cfg.showVisuals ? B_CONTROL_ON : B_CONTROL_OFF);    
+    // Visuals and Favorites
+    fVisualsCheckbox = new BCheckBox("visuals_toggle", "Enable Visualizer (Experimental)", new BMessage(MSG_TOGGLE_VISUALS));
+    fVisualsCheckbox->SetValue(cfg.showVisuals ? B_CONTROL_ON : B_CONTROL_OFF);  
     
-	fShuffleFavsCheckbox = new BCheckBox("shuffle_favs", "Shuffle Only Favorites", 
-    new BMessage(MSG_SHUFFLE_FAVS_CHANGED));
-	fShuffleFavsCheckbox->SetValue(cfg.shuffleFavsOnly ? B_CONTROL_ON : B_CONTROL_OFF);   
+    fShuffleFavsCheckbox = new BCheckBox("shuffle_favs", "Shuffle Only Favorites", new BMessage(MSG_SHUFFLE_FAVS_CHANGED));
+    fShuffleFavsCheckbox->SetValue(cfg.shuffleFavsOnly ? B_CONTROL_ON : B_CONTROL_OFF);  
     
-    BCheckBox* chkPresetTimer = new BCheckBox("chk_PresetTimer", "Auto Shuffle Visual Presets 30/s", new BMessage(MSG_CFG_AUTO_PresetTimer));
-    chkPresetTimer->SetValue(cfg.autoShuffleVisuals ? B_CONTROL_ON : B_CONTROL_OFF);
+    fChkPresetTimer = new BCheckBox("chk_PresetTimer", "Auto Shuffle Visual Presets 30/s", new BMessage(MSG_CFG_AUTO_PresetTimer));
+    fChkPresetTimer->SetValue(cfg.autoShuffleVisuals ? B_CONTROL_ON : B_CONTROL_OFF);
 
 
  
@@ -2039,7 +2150,7 @@ SuperMusicWindow::SuperMusicWindow()
 
 	fPresetField = new BMenuField("presets", "", presetMenu);
 
-	fApplyEQBtn = new BButton("apply_eq", "Apply", new BMessage(MSG_EQ_CHANGED));
+	fApplyEQBtn = new BButton("apply_eq", "Apply EQ", new BMessage(MSG_EQ_CHANGED));
 
 	BGroupView* buttonRow = new BGroupView(B_HORIZONTAL, 10);
 	buttonRow->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_TOP));
@@ -2060,48 +2171,56 @@ SuperMusicWindow::SuperMusicWindow()
 	}
 
 
-	fEQContainer = new BGroupView(B_VERTICAL, 5); 
-	fEQContainer->SetName("EQPanel");
+    fEQContainer = new BGroupView(B_VERTICAL, 5); 
+    fEQContainer->SetName("EQPanel");
 
-	BGroupView* limitGroup = new BGroupView(B_VERTICAL, 5);
-	BStringView* lTitle = new BStringView(NULL, "Limiter");
-	lTitle->SetFont(be_bold_font);
-	limitGroup->AddChild(lTitle);
+    BGroupView* limitGroup = new BGroupView(B_VERTICAL, 5);
+    BStringView* lTitle = new BStringView(NULL, "Limiter");
+    lTitle->SetFont(be_bold_font);
+    limitGroup->AddChild(lTitle);
 
-	fLimitInput = new WheelSlider("limit_in", "In", NULL, -20, 20, B_HORIZONTAL);
+ 	fLimitInput = new WheelSlider("limit_in", "In", NULL, -20, 20, B_HORIZONTAL);
 	fLimitInput->SetValue((int32)cfg.limitIn);
 	fLimitLimit = new WheelSlider("limit_thr", "Lmt", NULL, -20, 0, B_HORIZONTAL);
 	fLimitLimit->SetValue((int32)cfg.limitLmt);
 	fLimitRelease = new WheelSlider("limit_rel", "Rel", NULL, 10, 1000, B_HORIZONTAL);
 	fLimitRelease->SetValue((int32)cfg.limitRel);
 
-	limitGroup->AddChild(fLimitInput);
-	limitGroup->AddChild(fLimitLimit);
-	limitGroup->AddChild(fLimitRelease);
+    limitGroup->AddChild(fLimitInput);
+    limitGroup->AddChild(fLimitLimit);
+    limitGroup->AddChild(fLimitRelease);
+
 
 	
-	const char* freqLabels[] = { 
-    	"50", "100", "156", "220", "311", "440", "622", "880", 
-    	"1k2", "1k7", "2k5", "3k5", "5k", "10k", "20k" 
-	};
+    const char* freqLabels[] = { 
+        "50", "100", "156", "220", "311", "440", "622", "880", 
+        "1k2", "1k7", "2k5", "3k5", "5k", "10k", "20k" 
+    };
 
-	BGroupView* eqSliderRow = new BGroupView(B_HORIZONTAL, 2);
+    BGroupView* eqSliderRow = new BGroupView(B_HORIZONTAL, 2);
 
-	for (int i = 0; i < 15; i++) {
-    	BGroupView* bandGroup = new BGroupView(B_VERTICAL, 2);
+    for (int i = 0; i < 15; i++) {
+        BGroupView* bandGroup = new BGroupView(B_VERTICAL, 2);
     
-    	fEQSliders[i] = new WheelSlider(freqLabels[i], "", NULL, -15, 15, B_VERTICAL, 1);
+        BMessage* eqMsg = new BMessage(MSG_EQ_CHANGED);
+        eqMsg->AddInt32("band", i);
+        
+        fEQSliders[i] = new WheelSlider(freqLabels[i], "", NULL, -15, 15, B_VERTICAL, 1);
+        fEQSliders[i]->SetValue((int32)cfg.eqBands[i]);
+        
+   
+        fEQSliders[i]->SetTarget(this);
+        fEQSliders[i]->SetModificationMessage(NULL); 
     
-    	fEQSliders[i]->SetValue((int32)cfg.eqBands[i]);
+        BStringView* lbl = new BStringView(NULL, freqLabels[i]);
+        lbl->SetFontSize(8); 
+        lbl->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_VERTICAL_UNSET));
     
-    	BStringView* lbl = new BStringView(NULL, freqLabels[i]);
-    	lbl->SetFontSize(8); 
-    	lbl->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_VERTICAL_UNSET));
-    
-    	bandGroup->AddChild(fEQSliders[i]);
-    	bandGroup->AddChild(lbl);
-    	eqSliderRow->AddChild(bandGroup); 
-	}
+        bandGroup->AddChild(fEQSliders[i]);
+        bandGroup->AddChild(lbl);
+        eqSliderRow->AddChild(bandGroup); 
+    }
+
 
 	eqSliderRow->AddChild(limitGroup); 
 	fEQContainer->AddChild(eqSliderRow); 
@@ -2120,24 +2239,36 @@ SuperMusicWindow::SuperMusicWindow()
 // ==========================================
 // --- Layout ---
 // ==========================================
-BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15) 
-	.Add(configLogo)
+BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0) 
     .SetInsets(15)
    
-    .AddGroup(B_HORIZONTAL, 5) 
-        .Add(qualityLabel)    
-        .Add(qualityField)    
-        .AddGlue()
-    .End()
-    .AddGroup(B_HORIZONTAL, 5) 
-    	.Add(chkNotify)
-    	.Add(fSizeContainer)    	
+    .AddGroup(B_HORIZONTAL, 0)
+        .Add(fConfigLogo)
+        .AddGlue() 
+    .End()    
+    .AddStrut(10) 
+    .AddGroup(B_HORIZONTAL, 0) 
+        .AddGroup(B_VERTICAL, 5) 
+            .Add(fQualityLabel)    
+            .Add(fQualityField)    
+            .AddStrut(5)
+            .Add(fSleepLabel)
+            .Add(fSleepField)
+            .AddStrut(5)
+        .End()
+ 
+        .AddGlue() 
+    .End()    
+    .AddGroup(B_HORIZONTAL, 5)    
+        .Add(fChkNotify)
+        .Add(fSizeContainer)    	
         .AddGlue()
     .End()  	
-    //.Add(chksysTray)
-    .Add(chkShuffle)
+    .Add(fChkSysTray)
+    .Add(fChkShuffle)
     .Add(fShuffleFavsCheckbox)
-    .Add(chkTheme)
+    .Add(fCompactModeConfig)
+    .Add(fChkTheme)
    	.Add(fEQToggle)
    	.Add(fEnableladspa)
    	.Add(fEQContainer)
@@ -2145,7 +2276,7 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
     .Add(fPresetToggle)
     .Add(fPresetScroll) 
     .Add(fVisualsCheckbox)
-    .Add(chkPresetTimer)
+    .Add(fChkPresetTimer)
      #endif
     .AddGlue()
 .End();
@@ -2155,9 +2286,9 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
     // ==========================================
     // TAB 4: ABOUT VIEW
     // ==========================================
-    BGroupView* aboutGroup = new BGroupView(B_VERTICAL, 4);
-    aboutGroup->SetName("About");
-    aboutGroup->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+	fAboutGroup = new BGroupView(B_VERTICAL, 4);
+	fAboutGroup->SetName("About");
+    fAboutGroup->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
 
     // 1. Header Styles
     BFont titleFont(be_bold_font);
@@ -2224,7 +2355,7 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
 
     
     // 4. Layout
-    BLayoutBuilder::Group<>(aboutGroup, B_VERTICAL, 5)
+    BLayoutBuilder::Group<>(fAboutGroup, B_VERTICAL, 5)
     	.Add(appLogo) 
         .SetInsets(20)
         .AddGlue()        
@@ -2255,11 +2386,18 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
 
 
     // 3. Attach Tabs
-    fTabView->AddTab(playerGroup);
-    fTabView->AddTab(stationGroup); 
-    fTabView->AddTab(favGroup);
-    fTabView->AddTab(configGroup);
-    fTabView->AddTab(aboutGroup); 
+    fTabView->AddTab(fPlayerGroup);
+	fStationTab = new BTab(fStationGroup);
+	fTabView->AddTab(fStationGroup, fStationTab);
+
+	fFavTab = new BTab(fFavGroup);
+	fTabView->AddTab(fFavGroup, fFavTab);
+
+	fConfigTab = new BTab(fConfigGroup);
+	fTabView->AddTab(fConfigGroup, fConfigTab);    
+    
+	fAboutTab = new BTab(fAboutGroup); 
+	fTabView->AddTab(fAboutGroup, fAboutTab);
 
     // 4. Final Window Layout 
     BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
@@ -2267,17 +2405,20 @@ BLayoutBuilder::Group<>(configGroup, B_VERTICAL, 15)
         .Add(fTabView)
     .End();
     
+    PopulateStationList();
+    
     std::string configPath = std::string(getenv("HOME")) + "/config/settings/SuperMusicThingy/milk_presets/";
 	PopulatePresetList(fPresetList, configPath.c_str());
 
     UpdateFavButtons();
-    ApplyTheme(); 
-    PopulateStationList();
+     
+   
     DownloadStationIcons();    
     RefreshFavorites();
     if (cfg.showVisuals) {
         StartVisuals();
     }
+    ApplyTheme();
 }
 
 void SuperMusicWindow::SendNotification(const char* songTitle) {
@@ -2383,29 +2524,36 @@ void SuperMusicWindow::UpdateMPVFilters() {
     };
 
     if (!cfg.ladspaEnabled) {
-        // --- NATIVE FILTERS (Inside Lavfi) ---
-        filterChain << "@bouncy:lavfi=[";
+        // --- NATIVE FILTERS (Direct Comma Chaining) ---
+        filterChain = ""; 
         
         for (int i = 0; i < numBands; i++) {
             BString band;
-            // Native equalizer uses a loop for all 15 bands
-            band.SetToFormat("equalizer=f=%f:width_type=o:w=1:g=%.2f,", 
+            band.SetToFormat("equalizer=f=%.0f:width_type=o:w=1:g=%.2f,", 
                              frequencies[i], (float)fEQSliders[i]->Value());
             filterChain << band;
         }
 
-        float inputGain = 1.0f + (float)fLimitInput->Value(); 
-        float limitVal = 1.0f + (float)fLimitLimit->Value();
-        if (limitVal <= 0.01f) limitVal = 0.01f;
-        if (inputGain <= 0.01f) inputGain = 0.01f;
+        // CORRECT AMPLITUDE SCALING MATH FORMULA:
+        // Convert dB values (-20 to +20) from the sliders directly into the linear gain metrics mpv expects
+        float inputGain = pow(10.0f, (float)fLimitInput->Value() / 20.0f); 
+        
+        // Convert the negative dB limit threshold value (-20 to 0) to a linear scaling amplitude limit
+        float limitVal = pow(10.0f, (float)fLimitLimit->Value() / 20.0f);
 
-        filterChain.SetToFormat("%salimiter=level_in=%.2f:limit=%.2f:release=%.2f",
-            filterChain.String(), inputGain, limitVal, (float)fLimitRelease->Value());
+        // Standard fallback safety clamps to protect memory allocations
+        if (limitVal <= 0.001f) limitVal = 0.001f;
+        if (inputGain <= 0.001f) inputGain = 0.001f;
 
-        if (cfg.showSpectrumVisuals) 
-            filterChain << ",astats=metadata=1:reset=1]"; 
-        else 
-            filterChain << "]";
+        BString limiterPart;
+        limiterPart.SetToFormat("alimiter=level_in=%.2f:limit=%.2f:release=%.2f",
+                                inputGain, limitVal, (float)fLimitRelease->Value());
+        filterChain << limiterPart;
+
+        if (cfg.showSpectrumVisuals) {
+            filterChain << ",@bouncy:astats=metadata=1:reset=1"; 
+        }
+    
 
     } else {
         // --- LADSPA FILTERS (mbeq_1197) ---
@@ -2434,6 +2582,7 @@ void SuperMusicWindow::UpdateMPVFilters() {
         else 
             filterChain << "]";
     }
+    
 
     mpv_set_property_string(mpv, "af", filterChain.String());
 }
@@ -2506,11 +2655,232 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		break;
 		}
 		
+		case MSG_COMPACTM_CHANGED: {
+    		void* source = nullptr;
+    		message->FindPointer("source", &source);
+    
+    		bool newState;
+    
+    		// Check if this message was sent programmatically during startup
+    		if (source == nullptr) {
+        		newState = cfg.compactMode;
+        
+        		// Sync both UI controls to match the loaded configuration
+        		if (fCompactModeConfig) 
+            		fCompactModeConfig->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
+        		if (fCompactModeRadio) 
+            		fCompactModeRadio->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
+    		} else {
+        		// Handle normal user click interactions
+        		if (source == fCompactModeConfig) {
+            		newState = (fCompactModeConfig->Value() == B_CONTROL_ON);
+            		if (fCompactModeRadio) fCompactModeRadio->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
+        		} else {
+            		newState = (fCompactModeRadio->Value() == B_CONTROL_ON);
+            		if (fCompactModeConfig) fCompactModeConfig->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
+        		}
+
+        		// Only update and save config if changed by explicit user interaction
+        		cfg.compactMode = newState;
+        		save_config();
+    		}
+
+    		// 3. Safety Check: Stop if critical views are missing
+    		if (fPlayerGroup == NULL || fControlStack == NULL)
+        		break;
+
+    		// 4. Setup sizes based on current state
+    		float scale = be_plain_font->Size() / 12.0f; 
+    		float artSize = cfg.compactMode ? (96 * scale) : (325 * scale);
+    		float btnSize = cfg.compactMode ? (40 * scale) : (75 * scale);
+    		float favSize = cfg.compactMode ? (40 * scale) : (40 * scale);
+
+    		// 5. Apply Layout orientations
+    		fPlayerGroup->GroupLayout()->SetOrientation(cfg.compactMode ? B_HORIZONTAL : B_VERTICAL);
+    		fPlayerGroup->GroupLayout()->SetSpacing(cfg.compactMode ? 5 : 10);
+    		fControlStack->GroupLayout()->SetOrientation(B_VERTICAL); 
+    
+    		// 6. Update Widget Sizes
+    		fDescView->SetAlignment(B_ALIGN_LEFT);
+			fSongView->SetAlignment(B_ALIGN_LEFT);
+	
+			if (fBtnAddFav) {
+        		BSize favTargetSize(favSize, favSize);
+        		fBtnAddFav->SetExplicitSize(favTargetSize);
+        		fBtnAddFav->SetExplicitMinSize(favTargetSize);
+        		fBtnAddFav->SetExplicitMaxSize(favTargetSize); 
+    		}
+
+    		fArtView->SetExplicitSize(BSize(artSize, artSize));
+    		fArtView->SetExplicitMinSize(BSize(artSize, artSize));
+    		fArtView->SetExplicitMaxSize(BSize(artSize, artSize));
+    		fBtnAddFav->SetExplicitSize(BSize(favSize, favSize));
+    		fPlayBtn->SetExplicitSize(BSize(btnSize, btnSize));
+    		fStopBtn->SetExplicitSize(BSize(btnSize, btnSize));
+    		fPauseBtn->SetExplicitSize(BSize(btnSize, btnSize));
+    		fShuffleBtn->SetExplicitSize(BSize(btnSize, btnSize));
+
+    		// 7. Toggle Tabs and Extra Info
+    		if (cfg.compactMode) {
+        		fCompactModeRadio->Show();
+        		fDescView->Hide();      
+        		fSongView->Hide();      
+        		fquality->Show();
+        		fListenersView->Show();
+        		//fSpectrum->Hide();
+
+        		for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
+            		BTab* tab = fTabView->TabAt(i);
+            		if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab)
+                		fTabView->RemoveTab(i);
+        		}
+     		} else {
+        		fCompactModeRadio->Hide();
+        		fDescView->Show();
+        		fSongView->Show();
+        		fquality->Show();
+        		fListenersView->Show();
+        		//fSpectrum->Show();
+        
+        		fDescView->SetAlignment(B_ALIGN_CENTER);
+    			fSongView->SetAlignment(B_ALIGN_CENTER);
+    	
+        		if (fVolumeSlider) fVolumeSlider->SetTarget(this);
+    	
+        		for (int i = 0; i < 15; i++) {
+            		if (fEQSliders[i]) fEQSliders[i]->SetTarget(this);
+        		}
+        
+        
+        		BTab* tabsToAdd[] = { fRadioTab, fStationTab, fFavTab, fConfigTab, fAboutTab };
+        		BGroupView* groups[] = { fRadioGroup, fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
+        		const char* labels[] = { "Radio", "Stations", "Fav", "Config", "About" };
+
+        		for (int i = 0; i < 5; i++) { // Clear loop range processing up to 5 elements
+            		if (tabsToAdd[i] == nullptr || groups[i] == nullptr) continue;
+
+            		bool found = false;
+            		for (int32 j = 0; j < fTabView->CountTabs(); j++) {
+                		if (fTabView->TabAt(j) == tabsToAdd[i]) {
+                    		found = true;
+                    		break;
+                		}
+            		}
+
+            		if (!found) {
+                		tabsToAdd[i]->SetLabel(labels[i]);
+                		fTabView->AddTab(groups[i], tabsToAdd[i]);
+            		}
+        		}
+    		}
+
+
+    		fArtView->InvalidateLayout();
+    		fPlayerGroup->InvalidateLayout();
+    		this->Layout(true); 
+    		ApplyTheme(); 
+
+    		BString deferredSelect;
+    		if (message->FindString("deferred_select", &deferredSelect) == B_OK && fTabView) {
+        		fTabView->InvalidateLayout();
+        		fTabView->Layout(true);
+        
+        		const char* matchLabel = "Radio";
+        		int32 fallbackIndex = 0;
+
+        		if (deferredSelect == "stations") {
+            		matchLabel = "Stations";
+            		fallbackIndex = 1;
+        		} else if (deferredSelect == "favorites") {
+            		matchLabel = "Fav";
+            		fallbackIndex = 2;
+        		} else if (deferredSelect == "eq") {
+            		matchLabel = "Config";
+            		fallbackIndex = 3;
+        		}
+
+        		bool found = false;
+        		for (int32 i = 0; i < fTabView->CountTabs(); i++) {
+            		BTab* tab = fTabView->TabAt(i);
+            		if (tab && tab->Label() && strcmp(tab->Label(), matchLabel) == 0) {
+                		fTabView->Select(i);
+                		found = true;
+                		break;
+            		}
+        		}
+        
+        		if (!found && fTabView->CountTabs() > fallbackIndex) {
+            		fTabView->Select(fallbackIndex); 
+        		}
+    		}
+    		break;
+		}
+
+
+
+		case MSG_SLEEP_CHANGED: {
+    		// 1. Clear out any previous countdown instance running
+    		delete fSleepRunner;
+    		fSleepRunner = NULL;
+
+    		int32 minutes = 0;
+    		if (message->FindInt32("minutes", &minutes) == B_OK) {
+        		if (minutes > 0) {
+            		// Convert target configuration back into microsecond delay units
+            		bigtime_t delay = (bigtime_t)minutes * 60 * 1000000;
+            
+            		BMessage tickMessage(MSG_SLEEP_TIMER_TICK);
+            		fSleepRunner = new BMessageRunner(BMessenger(this), &tickMessage, delay, 1);
+            
+            		fprintf(stderr, "[DEBUG] Sleep timer successfully engaged for %" B_PRId32 " minutes.\n", minutes);
+        		} else {
+            		fprintf(stderr, "[DEBUG] Sleep timer disabled.\n");
+        		}
+   			}
+    		break;
+		}
+
+		case MSG_SLEEP_TIMER_TICK: {
+    		fprintf(stderr, "[DEBUG] Sleep timer expired! Forcing complete audio and app shutdown...\n");
+    
+    		delete fSleepRunner;
+    		fSleepRunner = NULL;
+
+    		// Reset dropdown layout selection back to disabled index position 0
+    		if (fSleepMenu && fSleepMenu->ItemAt(0)) {
+        		fSleepMenu->ItemAt(0)->SetMarked(true);
+    		}
+
+    		// 1. Force mpv to shut down immediately
+    		if (mpv) {
+        		// Send a synchronous quit signal to the underlying playback framework
+        		mpv_command_string(mpv, "quit");
+    		}
+    
+    		// Stop accompanying sub-systems
+    		StopVisuals();
+
+    		// 2. Clear out the Deskbar Icon layout manually so it does not leave a zombie Replicant
+    		BDeskbar deskbar;
+    		if (deskbar.HasItem("SuperMusicTrayIcon")) {
+        		deskbar.RemoveItem("SuperMusicTrayIcon");
+    		}
+
+    		// 3. Force your configuration profile parameters to save right now
+    		save_config();
+
+    		// 4. Force the underlying BApplication to exit entirely, bypassing standard window-cancel blocks
+    		be_app->PostMessage(B_QUIT_REQUESTED);
+    		break;
+		}
+
+		
 		case MSG_SHUFFLE_FAVS_CHANGED: {
     		cfg.shuffleFavsOnly = (fShuffleFavsCheckbox->Value() == B_CONTROL_ON);
     		save_config(); 
     		break;
 		}
+		
 
 		case MSG_SHUFFLE: {
     		if (cfg.shuffleFavsOnly) {
@@ -2541,7 +2911,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         	break;
     	}
     	
-    	
     	case MSG_CFG_AUTO_PresetTimer: {
         BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_PresetTimer"));
         	if (chk) {
@@ -2550,6 +2919,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         	}
         	break;
     	}
+    	
 
     	case MSG_CFG_NOTIFY: {
         BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_notify"));
@@ -2826,15 +3196,42 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		break;    		
 
 
-		case MSG_ACTIVATE_APP:
+		case MSG_ACTIVATE_APP: {
     		if (IsHidden()) {
         		Show();
+    		} else {
+        		Activate(true);
     		}
-    		if (IsMinimized()) {
-        		Minimize(false);
+
+    		BString targetTab;
+    		if (message->FindString("target_tab", &targetTab) == B_OK) {
+        		if (cfg.compactMode) {
+            		cfg.compactMode = false;
+            
+            		BMessage compactMsg(MSG_COMPACTM_CHANGED);
+            		compactMsg.AddString("deferred_select", targetTab);
+            		this->PostMessage(&compactMsg);
+            		break; 
+        		}
+        
+        		if (fTabView) {
+            		const char* matchLabel = "Radio";
+            		if (targetTab == "stations")  matchLabel = "Stations"; // Separate target lookup matched
+            		if (targetTab == "favorites") matchLabel = "Fav"; 
+            		if (targetTab == "eq")        matchLabel = "Config";
+
+            		for (int32 i = 0; i < fTabView->CountTabs(); i++) {
+                		BTab* tab = fTabView->TabAt(i);
+                		if (tab && tab->Label() && strcmp(tab->Label(), matchLabel) == 0) {
+                    		fTabView->Select(i);
+                    		break;
+                		}
+            		}
+        		}
     		}
-    		Activate(true);
     		break;
+		}
+
 
         
 		case MSG_CFG_SYS_TRAY: {
@@ -2963,7 +3360,7 @@ SuperMusicWindow::~SuperMusicWindow()
         }
     }
     fArtCache.clear();
-    
+    delete fSleepRunner;
     fAlbumArt = nullptr; 
 
     #if ENABLE_VISUALIZER
@@ -2991,34 +3388,50 @@ class SuperMusicApp : public BApplication {
 public:
     SuperMusicApp() : BApplication("application/x-vnd.HaikuSuperMusicThingy") {}
 	virtual void MessageReceived(BMessage* message);
-    virtual void ReadyToRun() {
-        load_config();
-        fetch_channels();
-        init_mpv();
-        #ifdef USE_PROJECTM
-  		if (visualsRunning) {
-        thread_id visualThread = spawn_thread(VisualsThread, "VisualsLoop", B_NORMAL_PRIORITY, NULL);
-        resume_thread(visualThread);
-   		}
-		#endif
+	virtual void ReadyToRun() {
+    	load_config();
+    	fetch_channels();
+    	init_mpv();
+    
+    	#ifdef USE_PROJECTM
+    	if (visualsRunning) {
+        	thread_id visualThread = spawn_thread(VisualsThread, "VisualsLoop", B_NORMAL_PRIORITY, NULL);
+        	resume_thread(visualThread);
+    	}
+    	#endif
 
-        gGuiWindow = new SuperMusicWindow();      
-        gGuiWindow->Show();
-        
-        
-		if (cfg.sysTray && gGuiWindow->Lock()) {
-    		gGuiWindow->UpdateTrayState(true, false); 
-    		gGuiWindow->Unlock();
-		}
-        
-        thread_id mpvThread = spawn_thread(mpv_loop_thread, "mpv_event_loop", 
-    	B_NORMAL_PRIORITY, gGuiWindow);
+    	// --- COLD BOOT TRAY CLEANUP ENGINE ---
+    	BDeskbar deskbar;
+    	if (deskbar.HasItem("SuperMusicTrayIcon")) {
+        	if (!cfg.sysTray) {
+            	// Remove the zombie icon immediately if the user turned this option off
+            	deskbar.RemoveItem("SuperMusicTrayIcon");
+        	}
+    	}
+    	// -------------------------------------
+
+    	gGuiWindow = new SuperMusicWindow();      
+    	gGuiWindow->Show();
+    
+    	// Clean re-binding loop if sysTray option is checked
+    	if (cfg.sysTray && gGuiWindow->Lock()) {
+        	gGuiWindow->UpdateTrayState(true, false); 
+        	gGuiWindow->Unlock();
+    	}
+    
+    	if (cfg.compactMode) {			
+        	gGuiWindow->PostMessage(MSG_COMPACTM_CHANGED);
+    	}
+
+    	thread_id mpvThread = spawn_thread(mpv_loop_thread, "mpv_event_loop", 
+        	B_NORMAL_PRIORITY, gGuiWindow);
     	resume_thread(mpvThread);
-    	
+    
     	if (cfg.autoShuffle) {
-        gGuiWindow->PostMessage(MSG_SHUFFLE);
-    }    	
+        	gGuiWindow->PostMessage(MSG_SHUFFLE);
+    	}
 }
+
      
     
 virtual bool QuitRequested() { 
@@ -3088,20 +3501,35 @@ int32 mpv_loop_thread(void* data) {
                     win->PostMessage(MSG_AUDIO_READY);
                 }
             }
-            else if (propName == "af-metadata/bouncy") {
-                if (prop->format == MPV_FORMAT_NODE) {
-                    mpv_node* node = (mpv_node*)prop->data;
-                    if (node->format == MPV_FORMAT_NODE_MAP) {
+			else if (propName == "af-metadata/bouncy") {
+    			if (prop->format == MPV_FORMAT_NODE) {
+        			mpv_node* node = (mpv_node*)prop->data;
+        			if (node->format == MPV_FORMAT_NODE_MAP && node->u.list != nullptr) {
+            
             			for (int i = 0; i < node->u.list->num; i++) {
-                			if (strstr(node->u.list->keys[i], "Peak_level")) {
-                    			double peak = atof(node->u.list->values[i].u.string);
-                                if (win) {
-                                    BMessage bounce(MSG_UPDATE_BOUNCE);
-                                    bounce.AddDouble("level", peak);
-                                    win->PostMessage(&bounce);
-                                }
-                                break;
-                            }
+                			if (node->u.list->keys[i] != nullptr && strstr(node->u.list->keys[i], "Peak_level")) {
+                    
+                    			double peak = 0.0;
+                    			mpv_node* valNode = &node->u.list->values[i];
+                    
+                    			// FIXED UNION MEMBER FIELDS: Added matching underscores
+                     			if (valNode->format == MPV_FORMAT_STRING && valNode->u.string != nullptr) {
+                        			peak = atof(valNode->u.string);
+                    			} else if (valNode->format == MPV_FORMAT_DOUBLE) {
+                        			peak = valNode->u.double_; 
+                    			} else if (valNode->format == MPV_FORMAT_INT64) {
+                        			peak = (double)valNode->u.int64; // Removed trailing underscore
+                    			} else {
+                        			continue; 
+                    			}
+
+                    			if (win) {
+                        			BMessage bounce(MSG_UPDATE_BOUNCE);
+                        			bounce.AddDouble("level", peak);
+                        			win->PostMessage(&bounce);
+                    			}
+                    			break; 
+                			}
                         }
                     }
                 }
@@ -3114,6 +3542,12 @@ int32 mpv_loop_thread(void* data) {
 
 
 bool SuperMusicWindow::QuitRequested() {
+	
+	BDeskbar deskbar;
+   	if (deskbar.HasItem("SuperMusicTrayIcon")) {
+        deskbar.RemoveItem("SuperMusicTrayIcon");
+   	}   
+   	
     if (cfg.sysTray) {
         UpdateTrayState(true);
         return false; 
@@ -3155,80 +3589,190 @@ public:
     }
 
     virtual ~MyIcon() { delete fIcon; }
- 	static _EXPORT BArchivable* Instantiate(BMessage* archive);
+    static _EXPORT BArchivable* Instantiate(BMessage* archive);
 
-virtual void AttachedToWindow() {
-    BView::AttachedToWindow();
-    
-    if (Parent())
-        SetViewColor(Parent()->ViewColor());
-    else
-        SetViewColor(B_TRANSPARENT_COLOR);
-
-}
-
-    virtual status_t Archive(BMessage* archive, bool deep = true) const {
-        status_t err = BView::Archive(archive, deep);
-        if (err != B_OK) return err;
-        archive->AddString("add_on", "application/x-vnd.HaikuSuperMusicThingy"); 
-        archive->AddString("class", "MyIcon");
-        
-        return B_OK;
+    virtual void AttachedToWindow() {
+        BView::AttachedToWindow();
+        _UpdateBackgroundColor();
     }
 
+
+    virtual void FrameResized(float newWidth, float newHeight) {
+        BView::FrameResized(newWidth, newHeight);
+        _LoadIcon();
+        Invalidate();
+    }
+
+		virtual status_t Archive(BMessage* archive, bool deep = true) const {
+    		status_t err = BView::Archive(archive, deep);
+    		if (err != B_OK) return err;
+    
+    		// Explicitly target the layout class identification
+    		archive->AddString("class", "MyIcon");
+
+#if defined(__x86_64__)
+    		// 64-bit Native: Everything is unified under a modern compiler toolchain
+    		archive->AddString("add_on", "application/x-vnd.HaikuSuperMusicThingy"); 
+#else
+    		// 32-bit Hybrid: Tell GCC 2 Deskbar to load the separate GCC 2 shared library
+    		archive->AddString("add_on", "application/x-vnd.SuperMusicTrayIconLibrary"); 
+#endif
+    
+    return B_OK;
+}
+
+		virtual void MessageReceived(BMessage* message) {
+    		switch (message->what) {
+        		case B_COLORS_UPDATED:
+            		_UpdateBackgroundColor();
+            		_LoadIcon(); 
+            		Invalidate();
+            		break;
+        		case B_QUIT_REQUESTED: {
+            		// Let the Replicant drop itself directly out of the Deskbar container shelf
+            		BDeskbar deskbar;
+            		if (deskbar.HasItem("SuperMusicTrayIcon")) {
+                		deskbar.RemoveItem("SuperMusicTrayIcon");
+            		}
+            		break;
+        		}
+        		default:
+            		BView::MessageReceived(message);
+            		break;
+    		}
+		}
+
+
     virtual void Draw(BRect updateRect) {
+        // Render system background cleanly
+        if (Parent()) {
+            SetLowColor(Parent()->ViewColor());
+            FillRect(updateRect, B_SOLID_LOW);
+        }
+
         if (fIcon) {
             SetDrawingMode(B_OP_ALPHA);
             SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
-            DrawBitmap(fIcon, BPoint(0, 0));
+            
+            // Center the icon inside the available tray bounds dynamically
+            BRect bounds = Bounds();
+            float iconSize = fIcon->Bounds().Width();
+            float x = (bounds.Width() - iconSize) / 2.0f;
+            float y = (bounds.Height() - iconSize) / 2.0f;
+            
+            DrawBitmap(fIcon, BPoint(x, y));
         } else {
-            SetHighColor(0, 120, 215);
+            // Highlighting fallback vector matching Haiku UI defaults
+            SetHighColor(ui_color(B_NAVIGATION_BASE_COLOR));
             FillRect(Bounds());
-            SetHighColor(255, 255, 255);
-            StrokeRect(Bounds());
         }
     }
-
-
 
 virtual void MouseDown(BPoint point) {
     int32 buttons;
     if (Window()->CurrentMessage()->FindInt32("buttons", &buttons) != B_OK)
         return;
 
+    // Build the messenger targeting the main application running loop
     BMessenger appMessenger("application/x-vnd.HaikuSuperMusicThingy");
 
+    // Fix Zombie State: If the main app isn't running, launch it!
+    if (!appMessenger.IsValid()) {
+        status_t launchErr = be_roster->Launch("application/x-vnd.HaikuSuperMusicThingy");
+        if (launchErr == B_OK || launchErr == B_ALREADY_RUNNING) {
+            // Re-initialize the messenger to catch the freshly spawned instance
+            appMessenger = BMessenger("application/x-vnd.HaikuSuperMusicThingy");
+        }
+    }
+
     if (buttons & B_PRIMARY_MOUSE_BUTTON) {
-        appMessenger.SendMessage(MSG_ACTIVATE_APP);
+        if (appMessenger.IsValid()) {
+            appMessenger.SendMessage(MSG_ACTIVATE_APP);
+        }
     } else if (buttons & B_SECONDARY_MOUSE_BUTTON) {
         BPopUpMenu *popup = new BPopUpMenu("tray_popup", false, false);        
-        popup->AddItem(new BMenuItem("Show Player", new BMessage(MSG_ACTIVATE_APP)));
+        
+        // 1. Show Player (Targets the Radio Tab)
+        BMessage* showMsg = new BMessage(MSG_ACTIVATE_APP);
+        showMsg->AddString("target_tab", "radio");
+        popup->AddItem(new BMenuItem("Show Player", showMsg));
+        
+        popup->AddSeparatorItem();
+
+        // 2. Stations Option (Now targets the distinct Stations Tab)
+        BMessage* stationsMsg = new BMessage(MSG_ACTIVATE_APP);
+        stationsMsg->AddString("target_tab", "stations");
+        popup->AddItem(new BMenuItem("Stations", stationsMsg));
+
+        // 3. Favorites Option
+        BMessage* favsMsg = new BMessage(MSG_ACTIVATE_APP);
+        favsMsg->AddString("target_tab", "favorites");
+        popup->AddItem(new BMenuItem("Favorites", favsMsg));
+        
+        // 4. Equalizer Option
+        BMessage* eqMessage = new BMessage(MSG_ACTIVATE_APP);
+        eqMessage->AddString("target_tab", "eq"); 
+        popup->AddItem(new BMenuItem("Equalizer", eqMessage));
+        
+        popup->AddSeparatorItem();
         popup->AddItem(new BMenuItem("Shuffle", new BMessage(MSG_SHUFFLE)));
         popup->AddSeparatorItem();
         popup->AddItem(new BMenuItem("Quit", new BMessage(B_QUIT_REQUESTED)));          
-        popup->SetTargetForItems(appMessenger);        
+        
+        if (appMessenger.IsValid()) {
+            popup->SetTargetForItems(appMessenger);        
+        } else {
+            popup->SetTargetForItems(this); 
+        }
+        
         BPoint screenPoint = ConvertToScreen(point);        
         popup->Go(screenPoint, true, true, true);
     }
+
+
+
+
+
 }
 
 
 private:
+    void _UpdateBackgroundColor() {
+        if (Parent()) {
+            SetViewColor(Parent()->ViewColor());
+            SetLowColor(Parent()->ViewColor());
+        } else {
+            SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+            SetLowColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+        }
+    }
+
     void _LoadIcon() {
         delete fIcon;
+        fIcon = NULL;
+
+        // Base sizing using modern look metrics matching the deskbar configuration
         float size = be_control_look->ComposeIconSize(B_MINI_ICON).Width();
-        fIcon = new BBitmap(BRect(0, 0, size, size), B_RGBA32);
+        
+        // Ensure bounds scale safely if target tray frame is smaller
+        if (Bounds().Width() > 0 && Bounds().Width() < size) {
+            size = Bounds().Width();
+        }
+
+        fIcon = new BBitmap(BRect(0, 0, size - 1, size - 1), B_RGBA32);
 
         entry_ref ref;
         if (be_roster->FindApp("application/x-vnd.HaikuSuperMusicThingy", &ref) == B_OK) {
-            if (BNodeInfo::GetTrackerIcon(&ref, fIcon, (icon_size)-1) != B_OK) {
+            // Attempt HVIF vector extraction first for perfect auto-scaling
+            if (BNodeInfo::GetTrackerIcon(&ref, fIcon, (icon_size)size) != B_OK) {
                 BMimeType type("application/x-vnd.HaikuSuperMusicThingy");
-                type.GetIcon(fIcon, (icon_size)(size + 1));
+                type.GetIcon(fIcon, (icon_size)size);
             }
         }
     }
     BBitmap* fIcon;
 };
+
 
 
 
@@ -3242,7 +3786,9 @@ _EXPORT BArchivable* MyIcon::Instantiate(BMessage* data) {
 
 
 extern "C" _EXPORT BView* instantiate_deskbar_item() {
-    return new MyIcon(BRect(0, 0, 15, 15));
+    // Dynamically retrieve optimal system mini icon bounds (handles scale/HiDPI)
+    float size = be_control_look->ComposeIconSize(B_MINI_ICON).Width();
+    return new MyIcon(BRect(0, 0, size - 1, size - 1));
 }
 
 
@@ -3256,9 +3802,12 @@ void SuperMusicApp::MessageReceived(BMessage* message) {
         case MSG_SHUFFLE: { 
             BWindow* win = WindowAt(0);
             if (win) {
-                win->PostMessage(message->what);
+                win->PostMessage(message);
             }
             break;
+            
+
+            
         }
         default:
             BApplication::MessageReceived(message);

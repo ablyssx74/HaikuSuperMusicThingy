@@ -37,6 +37,7 @@
 
 
 
+
 struct Channel {
     std::string title;
     std::string id;
@@ -51,6 +52,8 @@ struct Channel {
 
 class SongLabel; 
 class SpectrumView;
+class IconButton; 
+class IconView;
 
 enum {
     MSG_SHUFFLE = 'shuf',
@@ -92,6 +95,9 @@ enum {
 	MSG_CFG_SYS_TRAY = 'stry',	
 	MSG_ACTIVATE_APP = 'atry',
 	MSG_OPEN_SETTINGS = 'mtse',
+	MSG_COMPACTM_CHANGED = 'cmod',
+	MSG_SLEEP_TIMER_TICK = 'slpt',
+    MSG_SLEEP_CHANGED    = 'slpc',
     MSG_SHUFFLE_FAVS_CHANGED = 'sfch' 
  
 };
@@ -126,6 +132,50 @@ public:
 
 	  
 private:
+
+
+    BStringView*    fSleepLabel;
+    BMenuField*     fSleepField;
+    BPopUpMenu*     fSleepMenu;
+    BMessageRunner* fSleepRunner;
+
+    
+    IconButton* fPlayBtn;
+    IconButton* fStopBtn;
+    IconButton* fPauseBtn;
+    BGroupView* fPlayerGroup;
+    
+	BTab* fRadioTab;
+    BTab* fStationTab;
+    BTab* fFavTab;
+    BTab* fConfigTab;
+    BTab* fAboutTab;
+    
+    BGroupView* fRadioGroup;
+    BGroupView* fStationGroup;
+    BGroupView* fFavGroup;
+    BGroupView* fConfigGroup;
+    BGroupView* fAboutGroup;
+    BGroupView* fControlsGroup;
+    BGroupView* fControlStack;
+    
+    BCheckBox*  fChkNotify;
+    BMenuField* fSizeField;
+    BPopUpMenu* fSizeMenu;
+    
+    BPopUpMenu* fQualityMenu;
+    BMenuField* fQualityField;
+    BStringView* fQualityLabel;
+    
+	BStringView* fSizeLabel;
+	
+    IconView* fConfigLogo;
+    
+    BCheckBox* fChkShuffle;
+    BCheckBox* fChkSysTray;
+    BCheckBox* fChkTheme;
+    BCheckBox* fChkPresetTimer;
+    
 	BMenuField* fPresetField; 
     BTabView*     fTabView;
     BListView*    fFavList;    
@@ -146,6 +196,9 @@ private:
     BButton* 	  fApplyEQBtn;
     BCheckBox*    fVisualsCheckbox; 
     BCheckBox*    fShuffleFavsCheckbox; 
+    BCheckBox* fCompactModeRadio;  
+    BCheckBox* fCompactModeConfig;
+    void _SyncCompactCheckboxes(bool value);
     BListView*    fStationList; 
     SongLabel*    fDescView;
     void 		  UpdateUI(); 
