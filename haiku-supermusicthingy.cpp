@@ -1969,7 +1969,7 @@ void SuperMusicWindow::UpdateTrayState(bool enabled, bool hideWindow) {
 
 
 SuperMusicWindow::SuperMusicWindow()
-    : BWindow(BRect(100, 100, 550, 380), "SuperMusicThingy", B_TITLED_WINDOW, 
+    : BWindow(BRect(100, 100, 575, 250), "SuperMusicThingy", B_TITLED_WINDOW, 
               B_ASYNCHRONOUS_CONTROLS | B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE)
 {
     fAlbumArt = nullptr;
@@ -2058,7 +2058,7 @@ SuperMusicWindow::SuperMusicWindow()
    	fShuffleBtn = new IconButton("btn_shuffle", shuffleIcon, new BMessage(MSG_SHUFFLE));
 	fShuffleBtn->SetExplicitSize(BSize(75, 75)); 	
     
-    fVolumeSlider = new WheelSlider("volume", "Vol", new BMessage(MSG_VOL_CHANGE), 0, 100, B_HORIZONTAL, 5);
+    fVolumeSlider = new WheelSlider("volume", "", new BMessage(MSG_VOL_CHANGE), 0, 100, B_HORIZONTAL, 5);
     fVolumeSlider->SetValue(100);
     fVolumeSlider->SetTarget(this); 
     fVolumeSlider->SetModificationMessage(new BMessage(MSG_VOL_CHANGE));
