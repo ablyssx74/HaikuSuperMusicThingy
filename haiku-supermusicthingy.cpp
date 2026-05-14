@@ -2727,9 +2727,9 @@ void SuperMusicWindow::UpdateMPVFilters() {
                                 inputGain, limitVal, (float)fLimitRelease->Value());
         filterChain << limiterPart;
 
-        //if (cfg.showSpectrumVisuals) {
-            filterChain << ",@bouncy:astats=metadata=1:reset=1"; 
-       // }
+
+        filterChain << ",@bouncy:astats=metadata=1:reset=1"; 
+
     
 
     } else {
@@ -2754,10 +2754,8 @@ void SuperMusicWindow::UpdateMPVFilters() {
             (float)fLimitRelease->Value() / 1000.0f);
         filterChain << limiterPart;
 
-        //if (cfg.showSpectrumVisuals) 
             filterChain << "astats=metadata=1:reset=1]"; 
-        //else 
-            //filterChain << "]";
+
     }
     
 
@@ -3284,15 +3282,13 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                         ((AlbumArtView*)fArtView)->SetBitmap(fAlbumArt);
                     }
 
-                    // --- INTEGRATED VISUALIZER COLOR ADAPTATION ---
-                    // 1. Fallback to fAlbumArt if provided, otherwise check cache
+  
                     BBitmap* targetArt = fAlbumArt;
                     if (targetArt == nullptr && fIconCache.count(currentStationID) > 0) {
                         targetArt = fIconCache[currentStationID];
                         printf("[Visualizer] Falling back to icon cache for station %s. Extracting colors...\n", currentStationID.c_str());
                     }
-
-                    // 2. Safely apply the color adaptation within the Window Lock context
+           
                     if (targetArt != nullptr && this->fSpectrum != nullptr) {
                         this->fSpectrum->AdaptToAlbumArt(targetArt);
                     }
@@ -3383,11 +3379,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		break;
 		}
 
-
- 
-		
-		
-		            
+            
     		
         case MSG_VOL_CHANGE: {
             if (fVolumeSlider) {
@@ -3432,7 +3424,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		if (index >= 0) {
         		BStringItem* item = (BStringItem*)fPresetList->ItemAt(index);
         		load_specific_preset(item->Text()); 
-        		if (chkShuffle) chkShuffle->SetValue(B_CONTROL_OFF);
+        		 if (fChkShuffle != nullptr) {
+                		fChkShuffle->SetValue(B_CONTROL_OFF);
+            		}	
         		cfg.autoShuffle = false;
         		cfg.autoShuffleVisuals = false;
     		}
