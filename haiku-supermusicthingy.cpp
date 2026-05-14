@@ -2882,7 +2882,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
      // 7. Toggle Tabs and Extra Info
     if (cfg.compactMode) {
-        fprintf(stderr, "[DEBUG-7] Entering Compact Mode (Hiding UI Blocks)\n");
+        fprintf(stderr, "[DEBUG-7] Entering Compact Mode (Hiding Layout Elements)\n");
         if (fCompactModeRadio) fCompactModeRadio->Show();
         if (fDescView) fDescView->Hide();      
         if (fSongView) fSongView->Hide();      
@@ -2890,12 +2890,16 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         if (fListenersView) fListenersView->Show();
         if (fSpectrum) fSpectrum->Hide();
 
-        // Safe Approach: Hide the main multi-tab container component 
-        // to leave structural memory elements unchanged.
-        if (fTabView) fTabView->Hide();
+        // Safe Approach: Hide the inner views bound to your tab tabs 
+        // to shrink the window height while keeping the width intact.
+        if (fRadioGroup) fRadioGroup->Hide();
+        if (fStationGroup) fStationGroup->Hide();
+        if (fFavGroup) fFavGroup->Hide();
+        if (fConfigGroup) fConfigGroup->Hide();
+        if (fAboutGroup) fAboutGroup->Hide();
 
      } else {
-        fprintf(stderr, "[DEBUG-7] Exiting Compact Mode (Restoring UI Blocks)\n");
+        fprintf(stderr, "[DEBUG-7] Exiting Compact Mode (Restoring Layout Elements)\n");
         if (fCompactModeRadio) fCompactModeRadio->Hide();
         if (fDescView) fDescView->Show();
         if (fSongView) fSongView->Show();
@@ -2912,16 +2916,15 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             if (fEQSliders[i]) fEQSliders[i]->SetTarget(this);
         }
 
-        // Safe Approach: Restore visibility to the multi-tab component
-        if (fTabView) {
-            fTabView->Show();
-            fTabView->InvalidateLayout();
-        }
-        fprintf(stderr, "[DEBUG-7] UI interface view reconstruction done\n");
+        // Restore visibility to the layout structures
+        if (fRadioGroup) fRadioGroup->Show();
+        if (fStationGroup) fStationGroup->Show();
+        if (fFavGroup) fFavGroup->Show();
+        if (fConfigGroup) fConfigGroup->Show();
+        if (fAboutGroup) fAboutGroup->Show();
+        
+        fprintf(stderr, "[DEBUG-7] Tab rebuild generation sequence done\n");
     }
-
-
-
 
 
 
