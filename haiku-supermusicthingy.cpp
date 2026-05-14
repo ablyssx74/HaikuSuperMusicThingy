@@ -2882,49 +2882,29 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
      // 7. Toggle Tabs and Extra Info
     if (cfg.compactMode) {
-        fprintf(stderr, "[DEBUG-7] Entering Compact Mode section\n");
-        fCompactModeRadio->Show();
-        fDescView->Hide();      
-        fSongView->Hide();      
-        fquality->Show();
-        fListenersView->Show();
-        fSpectrum->Hide();
+        fprintf(stderr, "[DEBUG-7] Entering Compact Mode (Hiding UI Blocks)\n");
+        if (fCompactModeRadio) fCompactModeRadio->Show();
+        if (fDescView) fDescView->Hide();      
+        if (fSongView) fSongView->Hide();      
+        if (fquality) fquality->Show();
+        if (fListenersView) fListenersView->Show();
+        if (fSpectrum) fSpectrum->Hide();
 
-        BTab* tabsToRemove[] = { fRadioTab, fStationTab, fFavTab, fConfigTab, fAboutTab };
-        BGroupView* groupsToRemove[] = { fRadioGroup, fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
-
-        for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
-            BTab* tab = fTabView->TabAt(i);
-            for (int m = 0; m < 5; m++) {
-                if (tab == tabsToRemove[m]) {
-                    fprintf(stderr, "[DEBUG-7] Unparenting GroupView index %d from window layout\n", m);
-                    if (groupsToRemove[m] != nullptr) {
-                        fTabView->ContainerView()->RemoveChild(groupsToRemove[m]);
-                    }
-                    fprintf(stderr, "[DEBUG-7] Removing Tab index %d from tab view container\n", m);
-                    fTabView->RemoveTab(i);
-                }
-            }
-        }
-        
-        fRadioTab = nullptr;
-        fStationTab = nullptr;
-        fFavTab = nullptr;
-        fConfigTab = nullptr;
-        fAboutTab = nullptr;
-        fprintf(stderr, "[DEBUG-7] All tabs purged. Compact entry complete.\n");
+        // Safe Approach: Hide the main multi-tab container component 
+        // to leave structural memory elements unchanged.
+        if (fTabView) fTabView->Hide();
 
      } else {
-        fprintf(stderr, "[DEBUG-7] Exiting Compact Mode section\n");
-        fCompactModeRadio->Hide();
-        fDescView->Show();
-        fSongView->Show();
-        fquality->Show();
-        fListenersView->Show();
-        fSpectrum->Show();
+        fprintf(stderr, "[DEBUG-7] Exiting Compact Mode (Restoring UI Blocks)\n");
+        if (fCompactModeRadio) fCompactModeRadio->Hide();
+        if (fDescView) fDescView->Show();
+        if (fSongView) fSongView->Show();
+        if (fquality) fquality->Show();
+        if (fListenersView) fListenersView->Show();
+        if (fSpectrum) fSpectrum->Show();
         
-        fDescView->SetAlignment(B_ALIGN_CENTER);
-        fSongView->SetAlignment(B_ALIGN_CENTER);
+        if (fDescView) fDescView->SetAlignment(B_ALIGN_CENTER);
+        if (fSongView) fSongView->SetAlignment(B_ALIGN_CENTER);
         
         if (fVolumeSlider) fVolumeSlider->SetTarget(this);
         
@@ -2932,45 +2912,14 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             if (fEQSliders[i]) fEQSliders[i]->SetTarget(this);
         }
 
-        fprintf(stderr, "[DEBUG-7] Re-instantiating missing structures\n");
-        if (fRadioTab == nullptr)   { fRadioTab = new BTab();   fprintf(stderr, "[DEBUG-7] Alloc fRadioTab\n"); }
-        if (fStationTab == nullptr) { fStationTab = new BTab(); fprintf(stderr, "[DEBUG-7] Alloc fStationTab\n"); }
-        if (fFavTab == nullptr)     { fFavTab = new BTab();     fprintf(stderr, "[DEBUG-7] Alloc fFavTab\n"); }
-        if (fConfigTab == nullptr)  { fConfigTab = new BTab();  fprintf(stderr, "[DEBUG-7] Alloc fConfigTab\n"); }
-        if (fAboutTab == nullptr)   { fAboutTab = new BTab();   fprintf(stderr, "[DEBUG-7] Alloc fAboutTab\n"); }
-
-        BTab* tabsToAdd[] = { fRadioTab, fStationTab, fFavTab, fConfigTab, fAboutTab };
-        BGroupView* groups[] = { fRadioGroup, fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
-        const char* labels[] = { "Radio", "Stations", "Fav", "Config", "About" };
-
-        for (int i = 0; i < 5; i++) {
-            fprintf(stderr, "[DEBUG-7] Iteration loop check start for index %d (%s)\n", i, labels[i]);
-            if (tabsToAdd[i] == nullptr || groups[i] == nullptr) continue;
-
-            bool found = false;
-            int32 currentTabCount = fTabView->CountTabs();
-            for (int32 j = 0; j < currentTabCount; j++) {
-                if (fTabView->TabAt(j) == tabsToAdd[i]) {
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found) {
-                // FORCE DETACH: Strip any lingering parent references from the layout view 
-                // before passing it back into the BTabView engine.
-                if (groups[i]->Parent() != nullptr) {
-                    fprintf(stderr, "[DEBUG-7] Purging lingering parent from group %d\n", i);
-                    groups[i]->RemoveSelf(); 
-                }
-                
-                tabsToAdd[i]->SetLabel(labels[i]);
-                fprintf(stderr, "[DEBUG-7] Safely calling fTabView->AddTab() for index %d\n", i);
-                fTabView->AddTab(groups[i], tabsToAdd[i]);
-            }
+        // Safe Approach: Restore visibility to the multi-tab component
+        if (fTabView) {
+            fTabView->Show();
+            fTabView->InvalidateLayout();
         }
-        fprintf(stderr, "[DEBUG-7] Tab rebuild generation sequence done\n");
+        fprintf(stderr, "[DEBUG-7] UI interface view reconstruction done\n");
     }
+
 
 
 
