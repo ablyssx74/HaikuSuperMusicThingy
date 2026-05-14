@@ -27,7 +27,7 @@
 #include <Deskbar.h>
 #include <Dragger.h>
 #include <MessageRunner.h>
-
+#include <InterfaceDefs.h>
 
 // --- Haiku Storage Kit ---
 #include <Path.h>
@@ -714,7 +714,219 @@ void load_config() {
     }
 }
 
+class SpectrumView : public BView {
+public:
 
+    SpectrumView(BRect frame, const char* name)
+        : BView(frame, name, B_FOLLOW_ALL, B_WILL_DRAW | B_FRAME_EVENTS) {
+        SetViewColor(B_TRANSPARENT_COLOR); 
+        fCurrentLevel = -60.0;
+        
+        // FIX: frequencyData is a real array, memset now gets the correct destination pointer
+        memset(frequencyData, 0, 64);
+        
+        // Setup initial default palette
+        for (int i = 0; i < 64; i++) {
+            fBarHeights[i] = 0.0f;
+            fBarVelocities[i] = 0.0f;
+            fPeakHeights[i] = 0.0f;
+            fPeakHold[i] = 0;
+            fArtworkPalette[i] = { (uint8)(40 + i * 2), 210, (uint8)(255 - i * 3), 255 };
+        }
+        srand(time(nullptr));
+    }
+    
+    void UpdateLevel(double level) {
+    	if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) return;
+  
+        if (level > fCurrentLevel) {
+            fCurrentLevel = level;
+        } else {
+            fCurrentLevel = (fCurrentLevel * 0.88) + (level * 0.12);
+        }
+        Invalidate();
+    }
+
+    void AdaptToAlbumArt(BBitmap* artBitmap) {
+        if (artBitmap == nullptr || artBitmap->InitCheck() != B_OK) return;
+        
+        color_space space = artBitmap->ColorSpace();
+        if (space != B_RGBA32 && space != B_RGB32) return;
+
+        BRect bounds = artBitmap->Bounds();
+        int32 width = (int32)bounds.Width() + 1;
+        int32 height = (int32)bounds.Height() + 1;
+        
+        uint8* bitsBase = (uint8*)artBitmap->Bits();
+        int32 bpr = artBitmap->BytesPerRow();
+        if (!bitsBase) return;
+
+        // MULTI-ROW MATRIX: Define three distinct vertical zones to sample
+        int32 rows[3] = {
+            (int32)(height * 0.30f),  // Upper Zone: Captures sunset yellow & palm trees
+            (int32)(height * 0.55f),  // Middle Zone: Captures bridge neon purples & pinks
+            (int32)(height * 0.75f)   // Lower Zone: Captures blue/cyan grid lines & text glow
+        };
+
+        for (int i = 0; i < 64; i++) {
+            float horizontalPercent = (float)i / 64.0f;
+            int32 targetPixelX = (int32)(horizontalPercent * width);
+            int32 byteOffset = targetPixelX * 4; 
+
+            uint32 sumRed = 0, sumGreen = 0, sumBlue = 0;
+
+            // Sample across all three vertical coordinate zones
+            for (int r = 0; r < 3; r++) {
+                uint8* rowPtr = bitsBase + (rows[r] * bpr);
+                sumBlue  += rowPtr[byteOffset + 0];
+                sumGreen += rowPtr[byteOffset + 1];
+                sumRed   += rowPtr[byteOffset + 2];
+            }
+
+            // Calculate the blended average for this spectrum column slice
+            uint8 finalRed   = (uint8)(sumRed / 3);
+            uint8 finalGreen = (uint8)(sumGreen / 3);
+            uint8 finalBlue  = (uint8)(sumBlue / 3);
+
+            // Safety Guard: Avoid muddy backgrounds; boost vibrancy if too dark
+            if (finalRed < 35 && finalGreen < 35 && finalBlue < 35) {
+                fArtworkPalette[i] = { 244, 90, 160, 255 }; // Vaporwave Hot Pink fallback
+            } else {
+                fArtworkPalette[i] = { finalRed, finalGreen, finalBlue, 255 };
+            }
+        }
+        Invalidate();
+    }
+
+
+
+
+
+
+    virtual void Draw(BRect updateRect) {
+    	
+    if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) {
+        if (Parent() != nullptr) {
+            SetHighColor(Parent()->ViewColor());
+        } else {
+            SetHighColor(ui_color(B_PANEL_BACKGROUND_COLOR)); // Standard fallback
+        }
+        FillRect(Bounds());
+        return;
+    }
+
+
+    	
+        BRect b = Bounds();        
+        float floor = -45.0f; // Raised floor slightly to tighten baseline noise
+        float peak = (float)fCurrentLevel;
+        
+        if (peak < floor) peak = floor;
+        if (peak > 0.0f) peak = 0.0f;
+
+        float masterMagnitude = (peak - floor) / (0.0f - floor);
+
+        // Dynamically locate the slider pointer
+        float currentInputDb = 0.0f;
+        if (Window() != nullptr) {
+            BSlider* inputSlider = dynamic_cast<BSlider*>(Window()->FindView("LimitInput"));
+            if (inputSlider == nullptr) {
+                inputSlider = dynamic_cast<BSlider*>(Window()->FindView("input_gain"));
+            }
+
+            if (inputSlider != nullptr) {
+                currentInputDb = (float)inputSlider->Value();
+            }
+        }
+
+        // --- FIXED 50% MASTER ACCELERATION SENSITIVITY DAMPENER ---
+        // 1. Force a strict global 50% reduction right out of the gate
+        float masterSensitivityMultiplier = 0.50f;
+
+        // 2. Apply a quadratic divisor curve to counteract high limiter gain settings.
+        // As currentInputDb climbs from 0 to +20dB, this divisor smoothly expands, 
+        // dynamically pulling the top peaks down from the screen ceiling.
+        float limiterDivisor = 1.0f + (currentInputDb * 0.065f);
+
+        // Compute the highly attenuated final rendering magnitude
+        masterMagnitude = (powf(masterMagnitude, 2.0f) * masterSensitivityMultiplier) / limiterDivisor;
+
+        float width = b.Width();
+        float height = b.Height();
+        int numBars = 64;
+        float barWidth = width / numBars;
+
+        const float springStiffness = 0.28f; 
+        const float springDamping = 0.74f;   
+
+        for (int i = 0; i < numBars; i++) {
+            float frequencyScale = 1.0f;
+            if (i < 12) {
+                frequencyScale = 1.15f + ((12 - i) * 0.03f); 
+            } else if (i > 45) {
+                frequencyScale = 0.85f - ((i - 45) * 0.02f); 
+            }
+
+            float punchFactor = 0.80f + ((rand() % 40) / 100.0f); 
+            float targetHeight = masterMagnitude * height * frequencyScale * punchFactor;
+
+            float displacement = targetHeight - fBarHeights[i];
+            float springForce = displacement * springStiffness;
+            fBarVelocities[i] = (fBarVelocities[i] + springForce) * springDamping;
+            fBarHeights[i] += fBarVelocities[i];
+
+            float finalBarHeight = fBarHeights[i];
+            if (finalBarHeight > height) finalBarHeight = height;
+            if (finalBarHeight < 0.0f) {
+                finalBarHeight = 0.0f;
+                fBarVelocities[i] = 0.0f; 
+            }
+
+            if (finalBarHeight >= fPeakHeights[i]) {
+                fPeakHeights[i] = finalBarHeight;
+                fPeakHold[i] = 6; 
+            } else {
+                if (fPeakHold[i] > 0) {
+                    fPeakHold[i]--;
+                } else {
+                    fPeakHeights[i] -= (height * 0.025f); 
+                    if (fPeakHeights[i] < 0.0f) fPeakHeights[i] = 0.0f;
+                }
+            }
+
+            SetHighColor(fArtworkPalette[i]);             
+            FillRect(BRect(i * barWidth, height - finalBarHeight, 
+                           (i + 1) * barWidth - 1, height));
+
+            if (fPeakHeights[i] > finalBarHeight && fPeakHeights[i] > 2.0f) {
+                rgb_color peakColor = fArtworkPalette[i];
+                peakColor.red   = (uint8)min_c(255, peakColor.red + 50);
+                peakColor.green = (uint8)min_c(255, peakColor.green + 50);
+                peakColor.blue  = (uint8)min_c(255, peakColor.blue + 50);
+                
+                SetHighColor(peakColor); 
+                StrokeLine(BPoint(i * barWidth, height - fPeakHeights[i]),
+                           BPoint((i + 1) * barWidth - 1, height - fPeakHeights[i]));
+            }
+        }
+    }
+
+
+    void UpdateData(const uint8* data, size_t size) {
+    	if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) return;
+        memcpy(frequencyData, data, size > 64 ? 64 : size);
+        Invalidate();
+    }
+
+private:
+    double    fCurrentLevel; 
+    uint8     frequencyData[64]; // FIX: Restored missing array length bound constraints
+    float     fBarHeights[64];   // FIX: Restored array bounds
+    float     fBarVelocities[64];// FIX: Restored array bounds
+    float     fPeakHeights[64];  // FIX: Restored array bounds
+    int       fPeakHold[64];     // FIX: Restored array bounds
+    rgb_color fArtworkPalette[64];// FIX: Restored array bounds
+};
 
 
 void SuperMusicWindow::DownloadStationIcons() {
@@ -1673,61 +1885,6 @@ private:
 
 
 
-
-
-class SpectrumView : public BView {
-public:
-    SpectrumView(BRect frame, const char* name)
-        : BView(frame, name, B_FOLLOW_ALL, B_WILL_DRAW | B_FRAME_EVENTS) {
-        SetViewColor(B_TRANSPARENT_COLOR); 
-        fCurrentLevel = -60.0;
-        memset(frequencyData, 0, 64);
-    }
-    
-    void UpdateLevel(double level) {
-        if (level > fCurrentLevel) {
-            fCurrentLevel = level;
-        } else {
-            fCurrentLevel = (fCurrentLevel * 0.85) + (level * 0.15);
-        }
-        Invalidate();
-    }
-
-    virtual void Draw(BRect updateRect) {
-        BRect b = Bounds();        
-        float floor = -60.0f;
-        float peak = (float)fCurrentLevel;
-        if (peak < floor) peak = floor;
-        float magnitude = (peak - floor) / (0.0f - floor);
-        float width = b.Width();
-        float height = b.Height();
-        int numBars = 64;
-        float barWidth = width / numBars;
-
-        for (int i = 0; i < numBars; i++) {
-            float jitter = 0.8f + ((rand() % 40) / 100.0f); 
-            float barHeight = magnitude * height * jitter;            
-            if (barHeight > height) barHeight = height;
-            SetHighColor(0, 200 + (rand() % 55), 50 + (i * 2));             
-            FillRect(BRect(i * barWidth, height - barHeight, 
-                           (i + 1) * barWidth - 1, height));
-        }
-    }
-
-    // Note: real FFT would go here
-    void UpdateData(const uint8* data, size_t size) {
-        memcpy(frequencyData, data, size > 64 ? 64 : size);
-        Invalidate();
-    }
-
-private:
-    double fCurrentLevel; 
-    uint8 frequencyData[64];
-};
-
-
-
-
 class IconView : public BView {
 public:
     IconView(BBitmap* bitmap)
@@ -1875,8 +2032,8 @@ SuperMusicWindow::SuperMusicWindow()
     fArtView->SetExplicitMinSize(BSize(325 * scale, 325 * scale));
 	fArtView->SetExplicitMaxSize(BSize(325 * scale, 325 * scale));
 
-	fSpectrum = new SpectrumView(BRect(0, 0, 300, 50), "spectrum"); 
-	fSpectrum->SetExplicitMinSize(BSize(300, 50));
+	fSpectrum = new SpectrumView(BRect(0, 0, 200, 50), "spectrum"); 
+	fSpectrum->SetExplicitMinSize(BSize(200, 50));
 	fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 50)); 
     
     BBitmap* heartIcon = GetVectorIcon(kIconFav, kIconFavSize, 40);
@@ -1926,25 +2083,36 @@ BLayoutBuilder::Group<>(fControlStack, B_VERTICAL, 5)
 BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 0)
     .SetInsets(20)
     .Add(fArtView) 
-        .AddGroup(B_HORIZONTAL, 10)     	
+    
+    // Meta information section
+    .AddGroup(B_HORIZONTAL, 10)     	
         .Add(fDescView) 
-        .End()
-        .AddGroup(B_HORIZONTAL, 10) 
-    .Add(fSongView)
     .End()
+    
+    .AddGroup(B_HORIZONTAL, 10) 
+        .Add(fSongView)
+    .End()
+    
+    .AddGroup(B_HORIZONTAL, 10) 
+        .Add(fSpectrum)  
+    .End()
+    
     .AddGlue()
+    
+    // Controls and settings footer section
     .AddGroup(B_HORIZONTAL, 16) 
         .AddGroup(B_VERTICAL, 6) 
-        	.AddStrut(5)        	
+            .AddStrut(5)     	
             .Add(fListenersView)
             .Add(fquality)
             .Add(fCompactModeRadio)               
         .End()        
-        .Add(fBtnAddFav)        
+        .Add(fBtnAddFav) // Now cleanly grouped horizontally alongside the settings vertical stack
     .End()
-    .AddGlue()
-    .Add(fControlStack)    
-    .AddGlue();
+    
+    // Direct stack attachment without double-glue sandwiching
+    .Add(fControlStack);
+
   
   
  
@@ -2120,6 +2288,7 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 0)
     fChkShuffle = new BCheckBox("chk_shuffle", "Auto Shuffle On Start", new BMessage(MSG_CFG_AUTO_SHUFFLE));
     fChkShuffle->SetValue(cfg.autoShuffle ? B_CONTROL_ON : B_CONTROL_OFF);
     
+    
     fChkSysTray = new BCheckBox("chk_sysTray", "Use System tray", new BMessage(MSG_CFG_SYS_TRAY));
     fChkSysTray->SetValue(cfg.sysTray ? B_CONTROL_ON : B_CONTROL_OFF);
     fChkSysTray->SetEnabled(false);    
@@ -2163,7 +2332,10 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 0)
 
 	fEQToggle = new BCheckBox("eq_toggle", "15-Band EQ", new BMessage(MSG_TOGGLE_EQ));
 	fEQToggle->SetValue(cfg.eqEnabled ? B_CONTROL_ON : B_CONTROL_OFF);
-
+	
+    fEnableSpectrum = new BCheckBox("chk_spectrum", "Enable Spectrum Bars", new BMessage(MSG_TOGGLE_Spectrum));
+	fEnableSpectrum->SetValue(cfg.showSpectrumVisuals ? B_CONTROL_ON : B_CONTROL_OFF); 
+    
 	bool ladspaSupported = IsFFmpegLadspaAvailable();
 	fEnableladspa = new BCheckBox("enable_ladspa", "Use Ladspa", new BMessage(MSG_TOGGLE_LADSPA)); 
 
@@ -2229,11 +2401,11 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 0)
 	eqSliderRow->AddChild(limitGroup); 
 	fEQContainer->AddChild(eqSliderRow); 
 	fEQContainer->AddChild(buttonRow);
-
-
+	
 	if (!cfg.eqEnabled) {
     	fEQContainer->Hide();
     	fEnableladspa->Hide();
+    	fEnableSpectrum->Hide();
 	}
 	
 	
@@ -2275,6 +2447,7 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     .Add(fChkTheme)
    	.Add(fEQToggle)
    	.Add(fEnableladspa)
+   	.Add(fEnableSpectrum)
    	.Add(fEQContainer)
      #ifdef USE_PROJECTM
     .Add(fPresetToggle)
@@ -2554,9 +2727,9 @@ void SuperMusicWindow::UpdateMPVFilters() {
                                 inputGain, limitVal, (float)fLimitRelease->Value());
         filterChain << limiterPart;
 
-        if (cfg.showSpectrumVisuals) {
+        //if (cfg.showSpectrumVisuals) {
             filterChain << ",@bouncy:astats=metadata=1:reset=1"; 
-        }
+       // }
     
 
     } else {
@@ -2581,10 +2754,10 @@ void SuperMusicWindow::UpdateMPVFilters() {
             (float)fLimitRelease->Value() / 1000.0f);
         filterChain << limiterPart;
 
-        if (cfg.showSpectrumVisuals) 
+        //if (cfg.showSpectrumVisuals) 
             filterChain << "astats=metadata=1:reset=1]"; 
-        else 
-            filterChain << "]";
+        //else 
+            //filterChain << "]";
     }
     
 
@@ -2638,26 +2811,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     			break;
 			}
 
-		case MSG_PLAY_FAV: {
-    		int32 index = message->GetInt32("index", -1);
-    		if (index < 0 && fFavList) {
-        		index = fFavList->CurrentSelection();
-    		}
 
-    		if (index >= 0) {
-                StationItem* item = dynamic_cast<StationItem*>(fFavList->ItemAt(index));
-        		if (item) {           
-            		this->PlayStation(item->GetChannel());
-        		}
-    		}
-    		
-            BString lStr("Listeners: ");
-            lStr << currentListeners.c_str();
-            if (fListenersView) fListenersView->SetText(lStr.String());
-            
-    		this->UpdateUI();
-    		break;
-		}
+
+
 		
 		case MSG_COMPACTM_CHANGED: {
     		void* source = nullptr;
@@ -2731,7 +2887,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		fSongView->Hide();      
         		fquality->Show();
         		fListenersView->Show();
-        		//fSpectrum->Hide();
+        		fSpectrum->Hide();
 
         		for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
             		BTab* tab = fTabView->TabAt(i);
@@ -2744,7 +2900,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		fSongView->Show();
         		fquality->Show();
         		fListenersView->Show();
-        		//fSpectrum->Show();
+        		fSpectrum->Show();
         
         		fDescView->SetAlignment(B_ALIGN_CENTER);
     			fSongView->SetAlignment(B_ALIGN_CENTER);
@@ -2806,7 +2962,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		bool found = false;
         		for (int32 i = 0; i < fTabView->CountTabs(); i++) {
             		BTab* tab = fTabView->TabAt(i);
-            		if (tab && tab->Label() && strcmp(tab->Label(), matchLabel) == 0) {
+            		if (tab && tab->Label() != nullptr && strcmp(tab->Label(), matchLabel) == 0) {
                 		fTabView->Select(i);
                 		found = true;
                 		break;
@@ -2823,7 +2979,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
 
 		case MSG_SLEEP_CHANGED: {
-    		// 1. Clear out any previous countdown instance running
     		delete fSleepRunner;
     		fSleepRunner = NULL;
 
@@ -2835,45 +2990,33 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             
             		BMessage tickMessage(MSG_SLEEP_TIMER_TICK);
             		fSleepRunner = new BMessageRunner(BMessenger(this), &tickMessage, delay, 1);
-            
-            		fprintf(stderr, "[DEBUG] Sleep timer successfully engaged for %" B_PRId32 " minutes.\n", minutes);
-        		} else {
-            		fprintf(stderr, "[DEBUG] Sleep timer disabled.\n");
-        		}
+
+        		} 
    			}
     		break;
 		}
 
 		case MSG_SLEEP_TIMER_TICK: {
-    		fprintf(stderr, "[DEBUG] Sleep timer expired! Forcing complete audio and app shutdown...\n");
     
     		delete fSleepRunner;
     		fSleepRunner = NULL;
 
-    		// Reset dropdown layout selection back to disabled index position 0
     		if (fSleepMenu && fSleepMenu->ItemAt(0)) {
         		fSleepMenu->ItemAt(0)->SetMarked(true);
     		}
 
-    		// 1. Force mpv to shut down immediately
     		if (mpv) {
-        		// Send a synchronous quit signal to the underlying playback framework
         		mpv_command_string(mpv, "quit");
     		}
     
-    		// Stop accompanying sub-systems
     		StopVisuals();
 
-    		// 2. Clear out the Deskbar Icon layout manually so it does not leave a zombie Replicant
     		BDeskbar deskbar;
     		if (deskbar.HasItem("SuperMusicTrayIcon")) {
         		deskbar.RemoveItem("SuperMusicTrayIcon");
     		}
-
-    		// 3. Force your configuration profile parameters to save right now
     		save_config();
 
-    		// 4. Force the underlying BApplication to exit entirely, bypassing standard window-cancel blocks
     		be_app->PostMessage(B_QUIT_REQUESTED);
     		break;
 		}
@@ -2892,9 +3035,20 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		} else {
         		play_random();
     		}
+
+            // Centralized Visualizer Hook: At this point, play_random/play_favorite 
+            // have already set 'currentStationID' to the new random track.
+            if (fIconCache.count(currentStationID) > 0 && fIconCache[currentStationID] != nullptr) {
+                if (this->fSpectrum != nullptr) {
+                    printf("[Visualizer] Syncing shuffle artwork colors for ID: %s\n", currentStationID.c_str());
+                    this->fSpectrum->AdaptToAlbumArt(fIconCache[currentStationID]);
+                }
+            }
+
     		this->UpdateUI();
     		break;
-		} 
+		}
+
             
         case MSG_UPDATE_SONG: {
             const char* song = message->GetString("song", "Unknown");
@@ -2905,6 +3059,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             
             break;
         }
+        
         
         case MSG_CFG_AUTO_SHUFFLE: {
         BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_shuffle"));
@@ -2940,6 +3095,23 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         	break;
     	}
     	
+        case MSG_TOGGLE_Spectrum: {
+            cfg.showSpectrumVisuals = (fEnableSpectrum->Value() == B_CONTROL_ON);
+            save_config();
+
+            if (fSpectrum != nullptr) {
+                // Force Haiku app_server to clear the parent container boundaries
+                fSpectrum->Invalidate();
+                if (fSpectrum->Parent()) {
+                    fSpectrum->Parent()->Invalidate();
+                }
+            }
+
+            this->UpdateMPVFilters();
+            break;
+        }
+
+    	
     	case MSG_TOGGLE_LADSPA: {
     		cfg.ladspaEnabled = (fEnableladspa->Value() == B_CONTROL_ON);
     		save_config();
@@ -2948,19 +3120,33 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		}	
 
     	
-		case MSG_TOGGLE_EQ: {
+	case MSG_TOGGLE_EQ: {
     		BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("eq_toggle"));
     		if (chk) {
         		cfg.eqEnabled = (chk->Value() == B_CONTROL_ON);            
         
         		if (cfg.eqEnabled) {
-            		fEnableladspa->Show(); 
+            		fEnableladspa->Show();
+            		fEnableSpectrum->Show();
+            		fChkShuffle->Show();  
             		fEQContainer->Show();
         		} else {
             		fEnableladspa->Hide();  
+            		fEnableSpectrum->Hide();
             		fEQContainer->Hide();
         		}
         
+                // Force parent container and layout elements to instantly clear 
+                // and wipe away stale pixels using your custom dark theme colors
+                if (fSpectrum != nullptr) {
+                    fSpectrum->Invalidate();
+                    if (fSpectrum->Parent()) fSpectrum->Parent()->Invalidate();
+                }
+                if (fEQContainer) {
+                    fEQContainer->Invalidate();
+                    if (fEQContainer->Parent()) fEQContainer->Parent()->Invalidate();
+                }
+
         		InvalidateLayout();
         		ResizeToPreferred();
         		save_config();
@@ -2969,21 +3155,81 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		break;
 		}
 
+
     	
 		case MSG_PLAY_STATION: {
     		int32 index = fStationList->CurrentSelection();
     		if (index >= 0) {
         		StationItem* item = (StationItem*)fStationList->ItemAt(index);
-        		this->PlayStation(item->GetChannel()); 
+        		if (item) {
+            		this->PlayStation(item->GetChannel()); 
 
-            	BString lStr("Listeners: ");
-            	lStr << currentListeners.c_str();
-            	if (fListenersView) fListenersView->SetText(lStr.String());
-        
-        		this->UpdateUI();
+                	BString lStr("Listeners: ");
+                	lStr << currentListeners.c_str();
+                	if (fListenersView) fListenersView->SetText(lStr.String());
+                	
+                	Channel chan = item->GetChannel();
+                    if (fIconCache.count(chan.id) > 0 && fIconCache[chan.id] != nullptr) {
+                        printf("[Visualizer] Found icon in cache for %s. Extracting colors...\n", chan.title.c_str());
+                        if (this->fSpectrum != nullptr) {
+                            this->fSpectrum->AdaptToAlbumArt(fIconCache[chan.id]);
+                        }
+                    } 
+            
+                    if (cfg.compactMode) {
+                        //cfg.compactMode = false;
+                        BMessage compactMsg(MSG_COMPACTM_CHANGED);
+                        compactMsg.AddString("deferred_select", "radio");
+                        this->PostMessage(&compactMsg);
+                    }
+
+            		this->UpdateUI();
+        		}
     		}
     		break;
 		}
+
+		case MSG_PLAY_FAV: {
+    		int32 favoriteIndex = -1;
+            if (message->FindInt32("index", &favoriteIndex) != B_OK) {
+                favoriteIndex = -1;
+            }
+
+    		if (favoriteIndex < 0 && fFavList) {
+        		favoriteIndex = fFavList->CurrentSelection();
+    		}
+
+    		if (favoriteIndex >= 0 && fFavList) {
+                // FIX: Swap out runtime dynamic_cast for an explicit static pointer conversion
+                StationItem* item = (StationItem*)fFavList->ItemAt(favoriteIndex);
+        		if (item != nullptr) {           
+            		this->PlayStation(item->GetChannel());
+
+                    BString lStr("Listeners: ");
+                    lStr << currentListeners.c_str();
+                    if (fListenersView) fListenersView->SetText(lStr.String());
+                    
+                    Channel chan = item->GetChannel();
+                    if (fIconCache.count(chan.id) > 0 && fIconCache[chan.id] != nullptr) {
+                        printf("[Visualizer] Found icon in cache for %s. Extracting colors...\n", chan.title.c_str());
+                        if (this->fSpectrum != nullptr) {
+                            this->fSpectrum->AdaptToAlbumArt(fIconCache[chan.id]);
+                        }
+                    } 
+
+                    if (cfg.compactMode) {
+                        cfg.compactMode = false;
+                        BMessage compactMsg(MSG_COMPACTM_CHANGED);
+                        compactMsg.AddString("deferred_select", "radio");
+                        this->PostMessage(&compactMsg);
+                    }
+                    
+                    this->UpdateUI();
+        		}
+    		}
+    		break;
+		}
+
 
         case MSG_CFG_ICON_SIZE: {
     		int32 newSize;
@@ -3018,20 +3264,37 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         	break;
     	}            
 
-		case MSG_UPDATE_ART: {
-    		BBitmap* newArt;
-    		if (message->FindPointer("bitmap", (void**)&newArt) == B_OK) {
-        		if (Lock()) {
-            		fArtCache[currentStationID] = newArt;
-            		fAlbumArt = newArt;
-            		if (fArtView) {
-                		((AlbumArtView*)fArtView)->SetBitmap(fAlbumArt);
-            		}
-            		Unlock();
-        		}
-    		}
-    		break;
-		}
+        case MSG_UPDATE_ART: {
+            BBitmap* newArt;
+            if (message->FindPointer("bitmap", (void**)&newArt) == B_OK) {
+                if (Lock()) {
+                    fArtCache[currentStationID] = newArt;
+                    fAlbumArt = newArt;
+                    
+                    if (fArtView) {
+                        ((AlbumArtView*)fArtView)->SetBitmap(fAlbumArt);
+                    }
+
+                    // --- INTEGRATED VISUALIZER COLOR ADAPTATION ---
+                    // 1. Fallback to fAlbumArt if provided, otherwise check cache
+                    BBitmap* targetArt = fAlbumArt;
+                    if (targetArt == nullptr && fIconCache.count(currentStationID) > 0) {
+                        targetArt = fIconCache[currentStationID];
+                        printf("[Visualizer] Falling back to icon cache for station %s. Extracting colors...\n", currentStationID.c_str());
+                    }
+
+                    // 2. Safely apply the color adaptation within the Window Lock context
+                    if (targetArt != nullptr && this->fSpectrum != nullptr) {
+                        this->fSpectrum->AdaptToAlbumArt(targetArt);
+                    }
+                    // ----------------------------------------------
+
+                    Unlock();
+                }
+            }
+            break;
+        }
+
 
         case MSG_STOP:
             mpv_command_string(mpv, "stop");
@@ -3062,29 +3325,60 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		case MSG_PLAY: { 
     		int is_paused = 0;
     		mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &is_paused);
-    		const char* song = message->GetString("song", "Unknown");
+    		
+    		// FIX: Use proper Haiku FindString API pattern to avoid null assignment
+    		const char* song = nullptr;
+    		if (message->FindString("song", &song) != B_OK || song == nullptr) {
+        		song = "Unknown";
+    		}
+
     		if (is_paused) {
-       		 mpv_command_string(mpv, "set pause no");        
-            		char* current_title = mpv_get_property_string(mpv, "media-title");
-            		if (current_title) {
-                		song = current_title; 
-                		mpv_free(current_title);
-            		}
-            		fSongView->SetText(song);
+       		 	mpv_command_string(mpv, "set pause no");        
+            	char* current_title = mpv_get_property_string(mpv, "media-title");
+            	if (current_title) {
+                	song = current_title; 
+                	// DO NOT clear song pointer yet; use a temporary swap if freeing immediately
+                	fSongView->SetText(song);
+                	mpv_free(current_title);
+            	} else {
+                	fSongView->SetText(song);
+            	}
     		} 
     		else if (fStationList->CurrentSelection() < 0) {
-        		fTabView->Select(1); 
+                if (cfg.compactMode) {
+                    cfg.compactMode = false; 
+                    BMessage compactMsg(MSG_COMPACTM_CHANGED);
+                    compactMsg.AddString("deferred_select", "stations"); 
+                    this->PostMessage(&compactMsg);
+                } else {
+                    if (fTabView) fTabView->Select(1); 
+                }
     		} 
     		else {
         		int32 index = fStationList->CurrentSelection();
         		StationItem* item = (StationItem*)fStationList->ItemAt(index);
         		if (item) {
             		this->PlayStation(item->GetChannel());   
+                    
+                    if (cfg.compactMode) {
+                        //cfg.compactMode = false; 
+                        BMessage compactMsg(MSG_COMPACTM_CHANGED);
+                        compactMsg.AddString("deferred_select", "radio"); 
+                        this->PostMessage(&compactMsg);
+                    }
+
             		this->UpdateUI();
         		}
     		}
+
     		break;
-		}              
+		}
+
+
+ 
+		
+		
+		            
     		
         case MSG_VOL_CHANGE: {
             if (fVolumeSlider) {
@@ -3168,9 +3462,10 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		for(int i=0; i<15; i++) cfg.eqBands[i] = fEQSliders[i]->Value();
     		cfg.limitIn = fLimitInput->Value();
     		cfg.limitLmt = fLimitLimit->Value();
-    		cfg.limitRel = fLimitRelease->Value();    
+    		cfg.limitRel = fLimitRelease->Value();     		   
     		UpdateMPVFilters();
     		save_config(); 
+    		if (fSpectrum) fSpectrum->Invalidate(); 
     		break;
 		}
           
@@ -3220,13 +3515,13 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         
         		if (fTabView) {
             		const char* matchLabel = "Radio";
-            		if (targetTab == "stations")  matchLabel = "Stations"; // Separate target lookup matched
+            		if (targetTab == "stations")  matchLabel = "Stations"; 
             		if (targetTab == "favorites") matchLabel = "Fav"; 
             		if (targetTab == "eq")        matchLabel = "Config";
 
             		for (int32 i = 0; i < fTabView->CountTabs(); i++) {
                 		BTab* tab = fTabView->TabAt(i);
-                		if (tab && tab->Label() && strcmp(tab->Label(), matchLabel) == 0) {
+                		if (tab && tab->Label() != nullptr && strcmp(tab->Label(), matchLabel) == 0) {
                     		fTabView->Select(i);
                     		break;
                 		}
@@ -3235,6 +3530,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		}
     		break;
 		}
+
 
 
         
@@ -3505,10 +3801,27 @@ int32 mpv_loop_thread(void* data) {
                     win->PostMessage(MSG_AUDIO_READY);
                 }
             }
+            
 			else if (propName == "af-metadata/bouncy") {
     			if (prop->format == MPV_FORMAT_NODE) {
         			mpv_node* node = (mpv_node*)prop->data;
-        			if (node->format == MPV_FORMAT_NODE_MAP && node->u.list != nullptr) {
+        			
+        			if (node->format == MPV_FORMAT_NODE_MAP && cfg.ladspaEnabled) {
+            			for (int i = 0; i < node->u.list->num; i++) {
+                			if (strstr(node->u.list->keys[i], "Peak_level")) {
+                    			double peak = atof(node->u.list->values[i].u.string);
+                                
+                                if (win) {
+                                    BMessage bounce(MSG_UPDATE_BOUNCE);
+                                    bounce.AddDouble("level", peak);
+                                    win->PostMessage(&bounce);
+                                }
+                                break;
+                			}
+                        }
+                    } // Closes: if (node->format == MPV_FORMAT_NODE_MAP && cfg.ladspaEnabled)
+        			
+        			if (node->format == MPV_FORMAT_NODE_MAP && node->u.list != nullptr && !cfg.ladspaEnabled) {
             
             			for (int i = 0; i < node->u.list->num; i++) {
                 			if (node->u.list->keys[i] != nullptr && strstr(node->u.list->keys[i], "Peak_level")) {
@@ -3522,7 +3835,7 @@ int32 mpv_loop_thread(void* data) {
                     			} else if (valNode->format == MPV_FORMAT_DOUBLE) {
                         			peak = valNode->u.double_; 
                     			} else if (valNode->format == MPV_FORMAT_INT64) {
-                        			peak = (double)valNode->u.int64; // Removed trailing underscore
+                        			peak = (double)valNode->u.int64; 
                     			} else {
                         			continue; 
                     			}
@@ -3536,10 +3849,11 @@ int32 mpv_loop_thread(void* data) {
                 			}
                         }
                     }
-                }
+                }             
+                   
             }
         }
-    }
+    } 
     return 0;
 }
 
@@ -3732,10 +4046,6 @@ virtual void MouseDown(BPoint point) {
         BPoint screenPoint = ConvertToScreen(point);        
         popup->Go(screenPoint, true, true, true);
     }
-
-
-
-
 
 }
 

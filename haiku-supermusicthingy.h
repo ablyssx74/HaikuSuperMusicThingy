@@ -98,6 +98,7 @@ enum {
 	MSG_COMPACTM_CHANGED = 'cmod',
 	MSG_SLEEP_TIMER_TICK = 'slpt',
     MSG_SLEEP_CHANGED    = 'slpc',
+    MSG_TOGGLE_Spectrum  = 'tsmb',
     MSG_SHUFFLE_FAVS_CHANGED = 'sfch' 
  
 };
@@ -129,7 +130,7 @@ public:
     void UpdateMPVFilters(); 	
     void ApplyPreset(const float* values); 
 	void UpdateTrayState(bool enabled, bool hideWindow = true);
-
+	
 	  
 private:
 
@@ -172,6 +173,7 @@ private:
     IconView* fConfigLogo;
     
     BCheckBox* fChkShuffle;
+    BCheckBox* fEnableSpectrum;
     BCheckBox* fChkSysTray;
     BCheckBox* fChkTheme;
     BCheckBox* fChkPresetTimer;
