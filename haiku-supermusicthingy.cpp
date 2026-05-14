@@ -2891,8 +2891,10 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
         		for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
             		BTab* tab = fTabView->TabAt(i);
-            		if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab)
-                		fTabView->RemoveTab(i);
+            		if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab) {
+                		//fTabView->RemoveTab(i);
+						fTabView->RemoveTab(i, false); 
+					}
         		}
      		} else {
         		fCompactModeRadio->Hide();
