@@ -2880,88 +2880,81 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		fPauseBtn->SetExplicitSize(BSize(btnSize, btnSize));
     		fShuffleBtn->SetExplicitSize(BSize(btnSize, btnSize));
 
-    		// 7. Toggle Tabs and Extra Info
-    		if (cfg.compactMode) {
-        		fCompactModeRadio->Show();
-        		fDescView->Hide();      
-        		fSongView->Hide();      
-        		fquality->Show();
-        		fListenersView->Show();
-        		fSpectrum->Hide();
-for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
-    BTab* tab = fTabView->TabAt(i);
-    if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab) {
-        
-        #if defined(__x86__) && !defined(__x86_64__)
-        // --- Haiku 32-bit Hybrid Layout (BeOS R5 API Compatibility Mode) ---
-        // BTabView::RemoveTab only accepts 1 argument here. 
-        // We isolate the child view first to ensure memory stability.
-        BView* tabView = tab ? tab->View() : nullptr;
-        if (tabView != nullptr) {
-            fTabView->ContainerView()->RemoveChild(tabView);
+    // 7. Toggle Tabs and Extra Info
+    if (cfg.compactMode) {
+        fCompactModeRadio->Show();
+        fDescView->Hide();      
+        fSongView->Hide();      
+        fquality->Show();
+        fListenersView->Show();
+        fSpectrum->Hide();
+
+        for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
+            BTab* tab = fTabView->TabAt(i);
+            if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab) {
+                #ifdef __HAIKU_ARCH_X86_GCC2
+                fTabView->RemoveTab(i); // Deletes BTab memory on 32-bit
+                #else
+                fTabView->RemoveTab(i, false); // Detaches without deleting on 64-bit
+                #endif
+            }
         }
-        fTabView->RemoveTab(i); // BTab object is cleanly released by the OS interface
         
-        #else
-        // --- Haiku 64-bit Platform Layout ---
-        // Modern 64-bit API allows detaching without automatic deletion.
-        fTabView->RemoveTab(i, false); 
+        #ifdef __HAIKU_ARCH_X86_GCC2
+        // Clear dangling pointers on 32-bit since they were just freed
+        fStationTab = nullptr;
+        fFavTab = nullptr;
+        fConfigTab = nullptr;
+        fAboutTab = nullptr;
         #endif
+
+     } else {
+        fCompactModeRadio->Hide();
+        fDescView->Show();
+        fSongView->Show();
+        fquality->Show();
+        fListenersView->Show();
+        fSpectrum->Show();
         
+        fDescView->SetAlignment(B_ALIGN_CENTER);
+        fSongView->SetAlignment(B_ALIGN_CENTER);
+        
+        if (fVolumeSlider) fVolumeSlider->SetTarget(this);
+        
+        for (int i = 0; i < 15; i++) {
+            if (fEQSliders[i]) fEQSliders[i]->SetTarget(this);
+        }
+
+        #ifdef __HAIKU_ARCH_X86_GCC2
+        // On Haiku 32-bit, recreate the tabs since they were destroyed during entering compact mode
+        if (fStationTab == nullptr) fStationTab = new BTab();
+        if (fFavTab == nullptr)     fFavTab = new BTab();
+        if (fConfigTab == nullptr)  fConfigTab = new BTab();
+        if (fAboutTab == nullptr)   fAboutTab = new BTab();
+        #endif
+
+        BTab* tabsToAdd[] = { fRadioTab, fStationTab, fFavTab, fConfigTab, fAboutTab };
+        BGroupView* groups[] = { fRadioGroup, fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
+        const char* labels[] = { "Radio", "Stations", "Fav", "Config", "About" };
+
+        for (int i = 0; i < 5; i++) {
+            if (tabsToAdd[i] == nullptr || groups[i] == nullptr) continue;
+
+            bool found = false;
+            for (int32 j = 0; j < fTabView->CountTabs(); j++) {
+                if (fTabView->TabAt(j) == tabsToAdd[i]) {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                tabsToAdd[i]->SetLabel(labels[i]);
+                fTabView->AddTab(groups[i], tabsToAdd[i]);
+            }
+        }
     }
-}
 
-
-				
-				/*
-        		for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
-            		BTab* tab = fTabView->TabAt(i);
-            		if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab) {
-                		//fTabView->RemoveTab(i);
-						fTabView->RemoveTab(i, false); 
-					}
-        		}
-				*/
-				
-     		} else {
-        		fCompactModeRadio->Hide();
-        		fDescView->Show();
-        		fSongView->Show();
-        		fquality->Show();
-        		fListenersView->Show();
-        		fSpectrum->Show();
-        
-        		fDescView->SetAlignment(B_ALIGN_CENTER);
-    			fSongView->SetAlignment(B_ALIGN_CENTER);
-    	
-        		if (fVolumeSlider) fVolumeSlider->SetTarget(this);
-    	
-        		for (int i = 0; i < 15; i++) {
-            		if (fEQSliders[i]) fEQSliders[i]->SetTarget(this);
-        		}
-        
-        
-        		BTab* tabsToAdd[] = { fRadioTab, fStationTab, fFavTab, fConfigTab, fAboutTab };
-        		BGroupView* groups[] = { fRadioGroup, fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
-        		const char* labels[] = { "Radio", "Stations", "Fav", "Config", "About" };
-
-        		for (int i = 0; i < 5; i++) { // Clear loop range processing up to 5 elements
-            		if (tabsToAdd[i] == nullptr || groups[i] == nullptr) continue;
-
-            		bool found = false;
-            		for (int32 j = 0; j < fTabView->CountTabs(); j++) {
-                		if (fTabView->TabAt(j) == tabsToAdd[i]) {
-                    		found = true;
-                    		break;
-                		}
-            		}
-
-            		if (!found) {
-                		tabsToAdd[i]->SetLabel(labels[i]);
-                		fTabView->AddTab(groups[i], tabsToAdd[i]);
-            		}
-        		}
-    		}
 
 
     		fArtView->InvalidateLayout();
