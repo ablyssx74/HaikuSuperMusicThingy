@@ -2945,32 +2945,33 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
         for (int i = 0; i < 5; i++) {
             fprintf(stderr, "[DEBUG-7] Iteration loop check start for index %d (%s)\n", i, labels[i]);
-            if (tabsToAdd[i] == nullptr) { fprintf(stderr, "[DEBUG-7] ERROR: tab pointer %d is null\n", i); continue; }
-            if (groups[i] == nullptr)    { fprintf(stderr, "[DEBUG-7] ERROR: group pointer %d is null\n", i); continue; }
+            if (tabsToAdd[i] == nullptr || groups[i] == nullptr) continue;
 
             bool found = false;
             int32 currentTabCount = fTabView->CountTabs();
-            fprintf(stderr, "[DEBUG-7] Scanning fTabView elements. Current Count: %d\n", (int)currentTabCount);
-            
             for (int32 j = 0; j < currentTabCount; j++) {
                 if (fTabView->TabAt(j) == tabsToAdd[i]) {
                     found = true;
                     break;
                 }
             }
-            fprintf(stderr, "[DEBUG-7] Presence scan check completed. Found status = %s\n", found ? "true" : "false");
 
             if (!found) {
-                fprintf(stderr, "[DEBUG-7] Calling SetLabel() on pointer %p\n", (void*)tabsToAdd[i]);
-                tabsToAdd[i]->SetLabel(labels[i]);
+                // FORCE DETACH: Strip any lingering parent references from the layout view 
+                // before passing it back into the BTabView engine.
+                if (groups[i]->Parent() != nullptr) {
+                    fprintf(stderr, "[DEBUG-7] Purging lingering parent from group %d\n", i);
+                    groups[i]->RemoveSelf(); 
+                }
                 
-                fprintf(stderr, "[DEBUG-7] Calling fTabView->AddTab() for group pointer %p\n", (void*)groups[i]);
+                tabsToAdd[i]->SetLabel(labels[i]);
+                fprintf(stderr, "[DEBUG-7] Safely calling fTabView->AddTab() for index %d\n", i);
                 fTabView->AddTab(groups[i], tabsToAdd[i]);
-                fprintf(stderr, "[DEBUG-7] AddTab completed cleanly for index %d\n", i);
             }
         }
         fprintf(stderr, "[DEBUG-7] Tab rebuild generation sequence done\n");
     }
+
 
 
 
