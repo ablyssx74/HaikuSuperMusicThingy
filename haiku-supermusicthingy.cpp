@@ -2888,7 +2888,31 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		fquality->Show();
         		fListenersView->Show();
         		fSpectrum->Hide();
+			for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
+    			BTab* tab = fTabView->TabAt(i);
+    			if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab) {
+        
+        			#if __GNUC__ == 2
+        			// --- Haiku 32-bit (GCC2 Legacy Layout) ---
+        			// GCC2's RemoveTab(i) deletes memory immediately. 
+        			// We must remove the child view manually first to prevent visual glitching/crashes.
+        			BView* tabView = tab->View();
+        			if (tabView != nullptr) {
+            			fTabView->ContainerView()->RemoveChild(tabView);
+        			}
+        			fTabView->RemoveTab(i); // BTab object gets freed here by the OS
+        
+        			#else
+        			// --- Haiku 64-bit / Modern GCC ---
+        			// Modern Haiku API supports a second parameter to cleanly detach without deleting.
+        			fTabView->RemoveTab(i, false); 
+        			#endif
+        
+    			}
+			}
 
+				
+				/*
         		for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
             		BTab* tab = fTabView->TabAt(i);
             		if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab) {
@@ -2896,6 +2920,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 						fTabView->RemoveTab(i, false); 
 					}
         		}
+				*/
+				
      		} else {
         		fCompactModeRadio->Hide();
         		fDescView->Show();
