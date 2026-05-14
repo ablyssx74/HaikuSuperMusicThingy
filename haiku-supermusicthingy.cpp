@@ -2816,7 +2816,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
 		
 		case MSG_COMPACTM_CHANGED: {
-    		fprintf(stderr, "[DEBUG] MSG_COMPACTM_CHANGED entered\n");
     		void* source = nullptr;
     		message->FindPointer("source", &source);
     
@@ -2843,31 +2842,25 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
         		// Only update and save config if changed by explicit user interaction
         		cfg.compactMode = newState;
-        		fprintf(stderr, "[DEBUG] Calling save_config()\n");
         		save_config();
     		}
 
     		// 3. Safety Check: Stop if critical views are missing
-    		if (fPlayerGroup == NULL || fControlStack == NULL) {
-    		    fprintf(stderr, "[DEBUG] Safety check failed: fPlayerGroup or fControlStack is NULL\n");
+    		if (fPlayerGroup == NULL || fControlStack == NULL)
         		break;
-    		}
 
     		// 4. Setup sizes based on current state
-    		fprintf(stderr, "[DEBUG] Calculating scales and sizes\n");
     		float scale = be_plain_font->Size() / 12.0f; 
     		float artSize = cfg.compactMode ? (96 * scale) : (325 * scale);
     		float btnSize = cfg.compactMode ? (40 * scale) : (75 * scale);
     		float favSize = cfg.compactMode ? (40 * scale) : (40 * scale);
 
     		// 5. Apply Layout orientations
-    		fprintf(stderr, "[DEBUG] Setting GroupLayout properties\n");
     		fPlayerGroup->GroupLayout()->SetOrientation(cfg.compactMode ? B_HORIZONTAL : B_VERTICAL);
     		fPlayerGroup->GroupLayout()->SetSpacing(cfg.compactMode ? 5 : 10);
     		fControlStack->GroupLayout()->SetOrientation(B_VERTICAL); 
     
     		// 6. Update Widget Sizes
-    		fprintf(stderr, "[DEBUG] Updating widget sizes\n");
     		fDescView->SetAlignment(B_ALIGN_LEFT);
 			fSongView->SetAlignment(B_ALIGN_LEFT);
 	
@@ -2881,105 +2874,103 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		fArtView->SetExplicitSize(BSize(artSize, artSize));
     		fArtView->SetExplicitMinSize(BSize(artSize, artSize));
     		fArtView->SetExplicitMaxSize(BSize(artSize, artSize));
-    		
+    		//fBtnAddFav->SetExplicitSize(BSize(favSize, favSize));
     		fPlayBtn->SetExplicitSize(BSize(btnSize, btnSize));
     		fStopBtn->SetExplicitSize(BSize(btnSize, btnSize));
     		fPauseBtn->SetExplicitSize(BSize(btnSize, btnSize));
     		fShuffleBtn->SetExplicitSize(BSize(btnSize, btnSize));
 
-    		// 7. Toggle Tabs and Extra Info
-    		if (cfg.compactMode) {
-    		    fprintf(stderr, "[DEBUG] Processing: entering compact mode\n");
-        		fCompactModeRadio->Show();
-        		fDescView->Hide();      
-        		fSongView->Hide();      
-        		fquality->Show();
-        		fListenersView->Show();
-        		fSpectrum->Hide();
+    // 7. Toggle Tabs and Extra Info
+    if (cfg.compactMode) {
+        fCompactModeRadio->Show();
+        fDescView->Hide();      
+        fSongView->Hide();      
+        fquality->Show();
+        fListenersView->Show();
+        fSpectrum->Hide();
 
-                BTab* tabsToRemove[] = { fStationTab, fFavTab, fConfigTab, fAboutTab };
-                BGroupView* groupsToRemove[] = { fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
+        // Include ALL 5 tabs in the removal maps to completely clear out the BTabView container
+        BTab* tabsToRemove[] = { fRadioTab, fStationTab, fFavTab, fConfigTab, fAboutTab };
+        BGroupView* groupsToRemove[] = { fRadioGroup, fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
 
-        		for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
-            		BTab* tab = fTabView->TabAt(i);
-            		if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab) {
-            		    fprintf(stderr, "[DEBUG] Removing tab at index %d\n", (int)i);
-                        for (int m = 0; m < 4; m++) {
-                            if (tab == tabsToRemove[m] && groupsToRemove[m] != nullptr) {
-                                fTabView->ContainerView()->RemoveChild(groupsToRemove[m]);
-                            }
-                        }
-                		fTabView->RemoveTab(i);
-            		}
-        		}
-        		
-        		fStationTab = nullptr;
-        		fFavTab = nullptr;
-        		fConfigTab = nullptr;
-        		fAboutTab = nullptr;
-        		
-     		} else {
-     		    fprintf(stderr, "[DEBUG] Processing: exiting compact mode\n");
-        		fCompactModeRadio->Hide();
-        		fDescView->Show();
-        		fSongView->Show();
-        		fquality->Show();
-        		fListenersView->Show();
-        		fSpectrum->Show();
+        for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
+            BTab* tab = fTabView->TabAt(i);
+            
+            // Match against any of the 5 main layout pointers
+            for (int m = 0; m < 5; m++) {
+                if (tab == tabsToRemove[m]) {
+                    if (groupsToRemove[m] != nullptr) {
+                        fTabView->ContainerView()->RemoveChild(groupsToRemove[m]);
+                    }
+                    fTabView->RemoveTab(i); // Safely clear out tab handles
+                }
+            }
+        }
         
-        		fDescView->SetAlignment(B_ALIGN_CENTER);
-    			fSongView->SetAlignment(B_ALIGN_CENTER);
-    	
-        		fprintf(stderr, "[DEBUG] Setting targets for Volume/EQ Sliders\n");
-        		if (fVolumeSlider) fVolumeSlider->SetTarget(this);
-    	
-        		for (int i = 0; i < 15; i++) {
-            		if (fEQSliders[i]) fEQSliders[i]->SetTarget(this);
-        		}
+        // Nuillify all tab handles to prevent stale Use-After-Free conditions
+        fRadioTab = nullptr;
+        fStationTab = nullptr;
+        fFavTab = nullptr;
+        fConfigTab = nullptr;
+        fAboutTab = nullptr;
+
+     } else {
+        fCompactModeRadio->Hide();
+        fDescView->Show();
+        fSongView->Show();
+        fquality->Show();
+        fListenersView->Show();
+        fSpectrum->Show();
         
-        		fprintf(stderr, "[DEBUG] Recreating tab handles\n");
-                if (fStationTab == nullptr) fStationTab = new BTab();
-                if (fFavTab == nullptr)     fFavTab = new BTab();
-                if (fConfigTab == nullptr)  fConfigTab = new BTab();
-                if (fAboutTab == nullptr)   fAboutTab = new BTab();
+        fDescView->SetAlignment(B_ALIGN_CENTER);
+        fSongView->SetAlignment(B_ALIGN_CENTER);
         
-        		BTab* tabsToAdd[] = { fRadioTab, fStationTab, fFavTab, fConfigTab, fAboutTab };
-        		BGroupView* groups[] = { fRadioGroup, fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
-        		const char* labels[] = { "Radio", "Stations", "Fav", "Config", "About" };
+        if (fVolumeSlider) fVolumeSlider->SetTarget(this);
+        
+        for (int i = 0; i < 15; i++) {
+            if (fEQSliders[i]) fEQSliders[i]->SetTarget(this);
+        }
 
-        		for (int i = 0; i < 5; i++) {
-            		if (tabsToAdd[i] == nullptr || groups[i] == nullptr) {
-            		    fprintf(stderr, "[DEBUG] Skipping index %d (null check failed)\n", i);
-            		    continue;
-            		}
+        // Freshly instantiate ALL 5 tab layout containers evenly
+        if (fRadioTab == nullptr)   fRadioTab = new BTab();
+        if (fStationTab == nullptr) fStationTab = new BTab();
+        if (fFavTab == nullptr)     fFavTab = new BTab();
+        if (fConfigTab == nullptr)  fConfigTab = new BTab();
+        if (fAboutTab == nullptr)   fAboutTab = new BTab();
 
-            		bool found = false;
-            		for (int32 j = 0; j < fTabView->CountTabs(); j++) {
-                		if (fTabView->TabAt(j) == tabsToAdd[i]) {
-                    		found = true;
-                    		break;
-                		}
-            		}
+        BTab* tabsToAdd[] = { fRadioTab, fStationTab, fFavTab, fConfigTab, fAboutTab };
+        BGroupView* groups[] = { fRadioGroup, fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
+        const char* labels[] = { "Radio", "Stations", "Fav", "Config", "About" };
 
-            		if (!found) {
-            		    fprintf(stderr, "[DEBUG] Adding tab layout element: %s\n", labels[i]);
-                		tabsToAdd[i]->SetLabel(labels[i]);
-                		fTabView->AddTab(groups[i], tabsToAdd[i]);
-            		}
-        		}
-    		}
+        for (int i = 0; i < 5; i++) {
+            if (tabsToAdd[i] == nullptr || groups[i] == nullptr) continue;
 
-    		fprintf(stderr, "[DEBUG] Invalidating and executing window layout cycles\n");
+            bool found = false;
+            for (int32 j = 0; j < fTabView->CountTabs(); j++) {
+                if (fTabView->TabAt(j) == tabsToAdd[i]) {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                tabsToAdd[i]->SetLabel(labels[i]);
+                fTabView->AddTab(groups[i], tabsToAdd[i]);
+            }
+        }
+    }
+
+
+
+
+
     		fArtView->InvalidateLayout();
     		fPlayerGroup->InvalidateLayout();
     		this->Layout(true); 
-    		
-    		fprintf(stderr, "[DEBUG] Executing ApplyTheme()\n");
     		ApplyTheme(); 
 
     		BString deferredSelect;
     		if (message->FindString("deferred_select", &deferredSelect) == B_OK && fTabView) {
-    		    fprintf(stderr, "[DEBUG] Deferred select requested: %s\n", deferredSelect.String());
         		fTabView->InvalidateLayout();
         		fTabView->Layout(true);
         
@@ -3011,7 +3002,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             		fTabView->Select(fallbackIndex); 
         		}
     		}
-    		fprintf(stderr, "[DEBUG] MSG_COMPACTM_CHANGED completed safely\n");
     		break;
 		}
 
