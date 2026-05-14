@@ -2889,24 +2889,23 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         fListenersView->Show();
         fSpectrum->Hide();
 
+        // Safe for both architectures: strips out views and detaches tabs cleanly
         for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
             BTab* tab = fTabView->TabAt(i);
             if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab) {
-                #ifdef __HAIKU_ARCH_X86_GCC2
-                fTabView->RemoveTab(i); // Deletes BTab memory on 32-bit
-                #else
-                fTabView->RemoveTab(i, false); // Detaches without deleting on 64-bit
-                #endif
+                BView* tabView = tab ? tab->View() : nullptr;
+                if (tabView != nullptr) {
+                    fTabView->ContainerView()->RemoveChild(tabView);
+                }
+                fTabView->RemoveTab(i); // Universal 1-argument syntax compiles everywhere
             }
         }
         
-        #ifdef __HAIKU_ARCH_X86_GCC2
-        // Clear dangling pointers on 32-bit since they were just freed
+        // Clear old pointer addresses to prevent Use-After-Free crashes on subsequent toggles
         fStationTab = nullptr;
         fFavTab = nullptr;
         fConfigTab = nullptr;
         fAboutTab = nullptr;
-        #endif
 
      } else {
         fCompactModeRadio->Hide();
@@ -2925,13 +2924,11 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             if (fEQSliders[i]) fEQSliders[i]->SetTarget(this);
         }
 
-        #ifdef __HAIKU_ARCH_X86_GCC2
-        // On Haiku 32-bit, recreate the tabs since they were destroyed during entering compact mode
+        // Universally rebuild fresh, clean tab structures to eliminate memory allocation issues
         if (fStationTab == nullptr) fStationTab = new BTab();
         if (fFavTab == nullptr)     fFavTab = new BTab();
         if (fConfigTab == nullptr)  fConfigTab = new BTab();
         if (fAboutTab == nullptr)   fAboutTab = new BTab();
-        #endif
 
         BTab* tabsToAdd[] = { fRadioTab, fStationTab, fFavTab, fConfigTab, fAboutTab };
         BGroupView* groups[] = { fRadioGroup, fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
@@ -2954,6 +2951,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             }
         }
     }
+
 
 
 
