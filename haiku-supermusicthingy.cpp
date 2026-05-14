@@ -2874,7 +2874,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		fArtView->SetExplicitSize(BSize(artSize, artSize));
     		fArtView->SetExplicitMinSize(BSize(artSize, artSize));
     		fArtView->SetExplicitMaxSize(BSize(artSize, artSize));
-    		fBtnAddFav->SetExplicitSize(BSize(favSize, favSize));
+    		//fBtnAddFav->SetExplicitSize(BSize(favSize, favSize));
     		fPlayBtn->SetExplicitSize(BSize(btnSize, btnSize));
     		fStopBtn->SetExplicitSize(BSize(btnSize, btnSize));
     		fPauseBtn->SetExplicitSize(BSize(btnSize, btnSize));
