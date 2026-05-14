@@ -2888,28 +2888,29 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		fquality->Show();
         		fListenersView->Show();
         		fSpectrum->Hide();
-			for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
-    			BTab* tab = fTabView->TabAt(i);
-    			if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab) {
+for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
+    BTab* tab = fTabView->TabAt(i);
+    if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab) {
         
-        			#if __GNUC__ == 2
-        			// --- Haiku 32-bit (GCC2 Legacy Layout) ---
-        			// GCC2's RemoveTab(i) deletes memory immediately. 
-        			// We must remove the child view manually first to prevent visual glitching/crashes.
-        			BView* tabView = tab->View();
-        			if (tabView != nullptr) {
-            			fTabView->ContainerView()->RemoveChild(tabView);
-        			}
-        			fTabView->RemoveTab(i); // BTab object gets freed here by the OS
+        #if defined(__x86__) && !defined(__x86_64__)
+        // --- Haiku 32-bit Hybrid Layout (BeOS R5 API Compatibility Mode) ---
+        // BTabView::RemoveTab only accepts 1 argument here. 
+        // We isolate the child view first to ensure memory stability.
+        BView* tabView = tab ? tab->View() : nullptr;
+        if (tabView != nullptr) {
+            fTabView->ContainerView()->RemoveChild(tabView);
+        }
+        fTabView->RemoveTab(i); // BTab object is cleanly released by the OS interface
         
-        			#else
-        			// --- Haiku 64-bit / Modern GCC ---
-        			// Modern Haiku API supports a second parameter to cleanly detach without deleting.
-        			fTabView->RemoveTab(i, false); 
-        			#endif
+        #else
+        // --- Haiku 64-bit Platform Layout ---
+        // Modern 64-bit API allows detaching without automatic deletion.
+        fTabView->RemoveTab(i, false); 
+        #endif
         
-    			}
-			}
+    }
+}
+
 
 				
 				/*
