@@ -2880,8 +2880,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		fPauseBtn->SetExplicitSize(BSize(btnSize, btnSize));
     		fShuffleBtn->SetExplicitSize(BSize(btnSize, btnSize));
 
-    // 7. Toggle Tabs and Extra Info
+     // 7. Toggle Tabs and Extra Info
     if (cfg.compactMode) {
+        fprintf(stderr, "[DEBUG-7] Entering Compact Mode section\n");
         fCompactModeRadio->Show();
         fDescView->Hide();      
         fSongView->Hide();      
@@ -2889,32 +2890,32 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         fListenersView->Show();
         fSpectrum->Hide();
 
-        // Include ALL 5 tabs in the removal maps to completely clear out the BTabView container
         BTab* tabsToRemove[] = { fRadioTab, fStationTab, fFavTab, fConfigTab, fAboutTab };
         BGroupView* groupsToRemove[] = { fRadioGroup, fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
 
         for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
             BTab* tab = fTabView->TabAt(i);
-            
-            // Match against any of the 5 main layout pointers
             for (int m = 0; m < 5; m++) {
                 if (tab == tabsToRemove[m]) {
+                    fprintf(stderr, "[DEBUG-7] Unparenting GroupView index %d from window layout\n", m);
                     if (groupsToRemove[m] != nullptr) {
                         fTabView->ContainerView()->RemoveChild(groupsToRemove[m]);
                     }
-                    fTabView->RemoveTab(i); // Safely clear out tab handles
+                    fprintf(stderr, "[DEBUG-7] Removing Tab index %d from tab view container\n", m);
+                    fTabView->RemoveTab(i);
                 }
             }
         }
         
-        // Nuillify all tab handles to prevent stale Use-After-Free conditions
         fRadioTab = nullptr;
         fStationTab = nullptr;
         fFavTab = nullptr;
         fConfigTab = nullptr;
         fAboutTab = nullptr;
+        fprintf(stderr, "[DEBUG-7] All tabs purged. Compact entry complete.\n");
 
      } else {
+        fprintf(stderr, "[DEBUG-7] Exiting Compact Mode section\n");
         fCompactModeRadio->Hide();
         fDescView->Show();
         fSongView->Show();
@@ -2931,33 +2932,44 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             if (fEQSliders[i]) fEQSliders[i]->SetTarget(this);
         }
 
-        // Freshly instantiate ALL 5 tab layout containers evenly
-        if (fRadioTab == nullptr)   fRadioTab = new BTab();
-        if (fStationTab == nullptr) fStationTab = new BTab();
-        if (fFavTab == nullptr)     fFavTab = new BTab();
-        if (fConfigTab == nullptr)  fConfigTab = new BTab();
-        if (fAboutTab == nullptr)   fAboutTab = new BTab();
+        fprintf(stderr, "[DEBUG-7] Re-instantiating missing structures\n");
+        if (fRadioTab == nullptr)   { fRadioTab = new BTab();   fprintf(stderr, "[DEBUG-7] Alloc fRadioTab\n"); }
+        if (fStationTab == nullptr) { fStationTab = new BTab(); fprintf(stderr, "[DEBUG-7] Alloc fStationTab\n"); }
+        if (fFavTab == nullptr)     { fFavTab = new BTab();     fprintf(stderr, "[DEBUG-7] Alloc fFavTab\n"); }
+        if (fConfigTab == nullptr)  { fConfigTab = new BTab();  fprintf(stderr, "[DEBUG-7] Alloc fConfigTab\n"); }
+        if (fAboutTab == nullptr)   { fAboutTab = new BTab();   fprintf(stderr, "[DEBUG-7] Alloc fAboutTab\n"); }
 
         BTab* tabsToAdd[] = { fRadioTab, fStationTab, fFavTab, fConfigTab, fAboutTab };
         BGroupView* groups[] = { fRadioGroup, fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
         const char* labels[] = { "Radio", "Stations", "Fav", "Config", "About" };
 
         for (int i = 0; i < 5; i++) {
-            if (tabsToAdd[i] == nullptr || groups[i] == nullptr) continue;
+            fprintf(stderr, "[DEBUG-7] Iteration loop check start for index %d (%s)\n", i, labels[i]);
+            if (tabsToAdd[i] == nullptr) { fprintf(stderr, "[DEBUG-7] ERROR: tab pointer %d is null\n", i); continue; }
+            if (groups[i] == nullptr)    { fprintf(stderr, "[DEBUG-7] ERROR: group pointer %d is null\n", i); continue; }
 
             bool found = false;
-            for (int32 j = 0; j < fTabView->CountTabs(); j++) {
+            int32 currentTabCount = fTabView->CountTabs();
+            fprintf(stderr, "[DEBUG-7] Scanning fTabView elements. Current Count: %d\n", (int)currentTabCount);
+            
+            for (int32 j = 0; j < currentTabCount; j++) {
                 if (fTabView->TabAt(j) == tabsToAdd[i]) {
                     found = true;
                     break;
                 }
             }
+            fprintf(stderr, "[DEBUG-7] Presence scan check completed. Found status = %s\n", found ? "true" : "false");
 
             if (!found) {
+                fprintf(stderr, "[DEBUG-7] Calling SetLabel() on pointer %p\n", (void*)tabsToAdd[i]);
                 tabsToAdd[i]->SetLabel(labels[i]);
+                
+                fprintf(stderr, "[DEBUG-7] Calling fTabView->AddTab() for group pointer %p\n", (void*)groups[i]);
                 fTabView->AddTab(groups[i], tabsToAdd[i]);
+                fprintf(stderr, "[DEBUG-7] AddTab completed cleanly for index %d\n", i);
             }
         }
+        fprintf(stderr, "[DEBUG-7] Tab rebuild generation sequence done\n");
     }
 
 
