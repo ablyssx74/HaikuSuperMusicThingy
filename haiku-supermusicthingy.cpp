@@ -2815,34 +2815,44 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
 
 		
-	case MSG_COMPACTM_CHANGED: {
+		case MSG_COMPACTM_CHANGED: {
     		void* source = nullptr;
     		message->FindPointer("source", &source);
     
     		bool newState;
     
-    		// Check if this message was sent programmatically during startup
     		if (source == nullptr) {
         		newState = cfg.compactMode;
-        
-        		// Sync both UI controls to match the loaded configuration
-        		if (fCompactModeConfig) 
-            		fCompactModeConfig->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
-        		if (fCompactModeRadio) 
-            		fCompactModeRadio->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
+        		if (fCompactModeConfig) fCompactModeConfig->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
+        		if (fCompactModeRadio) fCompactModeRadio->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
     		} else {
-        		// Handle normal user click interactions
         		if (source == fCompactModeConfig) {
             		newState = (fCompactModeConfig->Value() == B_CONTROL_ON);
-            		if (fCompactModeRadio) fCompactModeRadio->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
         		} else {
             		newState = (fCompactModeRadio->Value() == B_CONTROL_ON);
-            		if (fCompactModeConfig) fCompactModeConfig->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
         		}
 
         		// Only update and save config if changed by explicit user interaction
         		cfg.compactMode = newState;
         		save_config();
+
+                #ifdef IS_HAIKU_32BIT
+                // If turning compact mode OFF on 32-bit, perform a clean application restart
+                if (!newState) {
+                    fprintf(stderr, "[SYSTEM] 32-bit layout workaround triggered: Restarting app...\n");
+                    
+                    // 1. Re-launch a completely fresh instance of this music player
+                    be_roster->Launch(be_app->Signature());
+                    
+                    // 2. Instruct the current running application instance to shut down cleanly
+                    be_app->PostMessage(B_QUIT_REQUESTED);
+                    break;
+                }
+                #endif
+
+                // Sync the UI controls if we aren't restarting (e.g., turning compact mode ON)
+                if (fCompactModeRadio) fCompactModeRadio->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
+                if (fCompactModeConfig) fCompactModeConfig->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
     		}
 
     		// 3. Safety Check: Stop if critical views are missing
