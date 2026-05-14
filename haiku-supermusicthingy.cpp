@@ -2889,19 +2889,27 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         fListenersView->Show();
         fSpectrum->Hide();
 
-        // Safe for both architectures: strips out views and detaches tabs cleanly
+        // Statically map your tabs to their matching group views for explicit cleanup
+        BTab* tabsToRemove[] = { fStationTab, fFavTab, fConfigTab, fAboutTab };
+        BGroupView* groupsToRemove[] = { fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
+
         for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
             BTab* tab = fTabView->TabAt(i);
+            
             if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab) {
-                BView* tabView = tab ? tab->View() : nullptr;
-                if (tabView != nullptr) {
-                    fTabView->ContainerView()->RemoveChild(tabView);
+                // Find matching group to remove from the layout container view
+                for (int m = 0; m < 4; m++) {
+                    if (tab == tabsToRemove[m] && groupsToRemove[m] != nullptr) {
+                        // Explicitly unparent the group view from the window layout tree
+                        fTabView->ContainerView()->RemoveChild(groupsToRemove[m]);
+                    }
                 }
-                fTabView->RemoveTab(i); // Universal 1-argument syntax compiles everywhere
+                
+                fTabView->RemoveTab(i); // Universal 1-argument syntax cleanly drops the tab object
             }
         }
         
-        // Clear old pointer addresses to prevent Use-After-Free crashes on subsequent toggles
+        // Clear old pointer addresses to prevent Use-After-Free crashes
         fStationTab = nullptr;
         fFavTab = nullptr;
         fConfigTab = nullptr;
@@ -2924,7 +2932,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             if (fEQSliders[i]) fEQSliders[i]->SetTarget(this);
         }
 
-        // Universally rebuild fresh, clean tab structures to eliminate memory allocation issues
+        // Rebuild clean tab structures
         if (fStationTab == nullptr) fStationTab = new BTab();
         if (fFavTab == nullptr)     fFavTab = new BTab();
         if (fConfigTab == nullptr)  fConfigTab = new BTab();
