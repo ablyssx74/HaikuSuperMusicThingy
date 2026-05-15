@@ -2237,7 +2237,7 @@ void SuperMusicWindow::UpdateTrayState(bool enabled, bool hideWindow) {
         if (!deskbar.HasItem(trayItemName)) {
             status_t err = B_ERROR;
 
-			#ifdef IS_HAIKU_32BIT
+			#ifndef IS_HAIKU_32BIT
             // 64-bit Native: Keep using the fast internal executable allocation reference
             app_info info;
             be_app->GetAppInfo(&info);             
@@ -4290,7 +4290,7 @@ public:
     		// Explicitly target the layout class identification
     		archive->AddString("class", "MyIcon");
 
-  			#ifdef IS_HAIKU_32BIT
+  			#ifndef IS_HAIKU_32BIT
     		// 64-bit Native: Everything is unified under a modern compiler toolchain
     		archive->AddString("add_on", "application/x-vnd.HaikuSuperMusicThingy"); 
 			#else
