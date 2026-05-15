@@ -20,7 +20,6 @@ ifeq ($(UNAME_M), x86)
     CXX = g++-x86
     ARCH = x86_gcc2
     LIB_ARCH_DIR = /x86
-    DEFINES += -DIS_HAIKU_32BIT
 ifeq ($(ENABLE_PROJECTM), ON)
     TPL_FILE := $(NAME)_projectm_x86.tpl
 else

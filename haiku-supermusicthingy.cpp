@@ -3156,20 +3156,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		cfg.compactMode = newState;
         		save_config();
 
-                #ifdef IS_HAIKU_32BIT
-                // If turning compact mode OFF on 32-bit, perform a clean application restart
-                if (!newState) {
-                    fprintf(stderr, "[SYSTEM] 32-bit layout workaround triggered: Restarting app...\n");
-                    
-                    // 1. Re-launch a completely fresh instance of this music player
-                    be_roster->Launch(be_app->Signature());
-                    
-                    // 2. Instruct the current running application instance to shut down cleanly
-                    be_app->PostMessage(B_QUIT_REQUESTED);
-                    break;
-                }
-                #endif
-
                 // Sync the UI controls if we aren't restarting (e.g., turning compact mode ON)
                 if (fCompactModeRadio) fCompactModeRadio->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
                 if (fCompactModeConfig) fCompactModeConfig->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
