@@ -1160,35 +1160,41 @@ public:
 
         // 4. --- OVERLAY GRADIENT EDGE FADERS ---
         float viewWidth = Bounds().Width();
-        float viewHeight = Bounds().Height();
-        float fadeWidth = 3.0f; // Width of the fade zone in pixels (Adjust for wider/narrower fade)
+        
+        // ONLY APPLY FADE EFFECTS IF TEXT EXCEEDS THE VIEW WIDTH
+        float textWidth = currentFont.StringWidth(fRawText.String());
+        if (textWidth > viewWidth) {
+            float viewHeight = Bounds().Height();
+            float fadeWidth = 9.0f; 
 
-        // Set up the drawing mode for alpha channel opacity blending overrides
-        SetDrawingMode(B_OP_ALPHA);
-        SetBlendingMode(B_CONSTANT_ALPHA, B_ALPHA_OVERLAY);
+            // Set up the drawing mode for alpha channel opacity blending overrides
+            SetDrawingMode(B_OP_ALPHA);
+            SetBlendingMode(B_CONSTANT_ALPHA, B_ALPHA_OVERLAY);
 
-        // Render 1-pixel wide vertical lines with changing transparency levels
-        for (int x = 0; x < (int)fadeWidth; x++) {
-            // Compute percentage factor spanning across the gradient edge scale
-            float factor = (float)x / fadeWidth; 
-            
-            // Map alpha density value (interpolate cleanly from solid background to transparent)
-            uint8 alphaVal = (uint8)((1.0f - factor) * 255);
-            
-            // Configure composite blending color to match your active app theme backdrop
-            rgb_color fadeColor = bgColor;
-            fadeColor.alpha = alphaVal;
-            SetHighColor(fadeColor);
+            // Render 1-pixel wide vertical lines with changing transparency levels
+            for (int x = 0; x < (int)fadeWidth; x++) {
+                // Compute percentage factor spanning across the gradient edge scale
+                float factor = (float)x / fadeWidth; 
+                
+                // Map alpha density value (interpolate cleanly from solid background to transparent)
+                uint8 alphaVal = (uint8)((1.0f - factor) * 255);
+                
+                // Configure composite blending color to match your active app theme backdrop
+                rgb_color fadeColor = bgColor;
+                fadeColor.alpha = alphaVal;
+                SetHighColor(fadeColor);
 
-            // Draw Left Edge Fade Line (Smoothly hiding text as it enters from the left margin)
-            StrokeLine(BPoint((float)x, 0.0f), BPoint((float)x, viewHeight));
+                // Draw Left Edge Fade Line (Smoothly hiding text as it enters from the left margin)
+                StrokeLine(BPoint((float)x, 0.0f), BPoint((float)x, viewHeight));
 
-            // Draw Right Edge Fade Line (Smoothly hiding text as it scrolls out the right margin)
-            StrokeLine(BPoint(viewWidth - 1.0f - x, 0.0f), BPoint(viewWidth - 1.0f - x, viewHeight));
+                // Draw Right Edge Fade Line (Smoothly hiding text as it scrolls out the right margin)
+                StrokeLine(BPoint(viewWidth - 1.0f - x, 0.0f), BPoint(viewWidth - 1.0f - x, viewHeight));
+            }
         }
 
         PopState();
     }
+
 
 
 private:
