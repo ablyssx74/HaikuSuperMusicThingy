@@ -867,9 +867,9 @@ virtual void Pulse() {
             }
         }
 
-        // --- FIXED 50% MASTER ACCELERATION SENSITIVITY DAMPENER ---
-        // 1. Force a strict global 50% reduction right out of the gate
-        float masterSensitivityMultiplier = 0.50f;
+        // --- MASTER ACCELERATION SENSITIVITY DAMPENER ---
+        // 1. Force a strict global reduction right out of the gate
+        float masterSensitivityMultiplier = 0.87f;
 
         // 2. Apply a quadratic divisor curve to counteract high limiter gain settings.
         // As currentInputDb climbs from 0 to +20dB, this divisor smoothly expands, 
