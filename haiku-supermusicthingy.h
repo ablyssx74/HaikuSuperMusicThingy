@@ -33,6 +33,7 @@
 #include <Bitmap.h>
 #include <vector>
 #include <set>
+#include <Region.h>
 
 
 
@@ -130,6 +131,7 @@ public:
     void UpdateMPVFilters(); 	
     void ApplyPreset(const float* values); 
 	void UpdateTrayState(bool enabled, bool hideWindow = true);
+
 	
 	  
 private:

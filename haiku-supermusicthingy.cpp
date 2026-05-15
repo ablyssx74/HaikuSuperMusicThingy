@@ -28,6 +28,8 @@
 #include <Dragger.h>
 #include <MessageRunner.h>
 #include <InterfaceDefs.h>
+#include <Region.h>
+
 
 // --- Haiku Storage Kit ---
 #include <Path.h>
@@ -425,41 +427,7 @@ private:
 
 
 
-class SongLabel : public BTextView {
-public:
-    SongLabel(const char* name) : BTextView(name) {
-        MakeEditable(false);
-        MakeSelectable(false);
-        SetWordWrap(true);
-        SetAlignment(B_ALIGN_CENTER);
-        
-   
-        SetInsets(2, 2, 2, 2); 
-        SetExplicitMinSize(BSize(B_SIZE_UNSET, 50));
-    }
 
-
-    void AttachedToWindow() override {
-        BTextView::AttachedToWindow();
-        SetViewColor(Parent()->ViewColor());
-        BRect r = Bounds();
-        r.InsetBy(2, 2); 
-        SetTextRect(r);
-    }
-
-
-    void FrameResized(float width, float height) override {
-        BTextView::FrameResized(width, height);
-        BRect r = Bounds();
-        r.InsetBy(2, 2);
-        SetTextRect(r);
-    }
-    
-    void SetCustomFont(const BFont* font) {
-        SetFontAndColor(font); 
-        Invalidate();
-    }
-};
 
 
 
@@ -725,10 +693,8 @@ public:
         SetViewColor(B_TRANSPARENT_COLOR); 
         fCurrentLevel = -60.0;
        
-        // FIX: frequencyData is a real array, memset now gets the correct destination pointer
         memset(frequencyData, 0, 64);
         
-        // Setup initial default palette
         for (int i = 0; i < 64; i++) {
             fBarHeights[i] = 0.0f;
             fBarVelocities[i] = 0.0f;
@@ -739,18 +705,18 @@ public:
         srand(time(nullptr));
     }
     
-void UpdateLevel(double level) {
-    if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) return;
+	void UpdateLevel(double level) {
+    	if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) return;
     
-    fLastDataTime = system_time(); // <-- Record the exact microsecond data arrived
+    	fLastDataTime = system_time(); 
     
-    if (level > fCurrentLevel) {
+    	if (level > fCurrentLevel) {
         fCurrentLevel = level;
-    } else {
-        fCurrentLevel = (fCurrentLevel * 0.88) + (level * 0.12);
-    }
-    Invalidate();
-}
+    	} else {
+        	fCurrentLevel = (fCurrentLevel * 0.88) + (level * 0.12);
+    	}
+    	Invalidate();
+	}
 
 
     void AdaptToAlbumArt(BBitmap* artBitmap) {
@@ -794,31 +760,28 @@ void UpdateLevel(double level) {
             uint8 finalGreen = (uint8)(sumGreen / 3);
             uint8 finalBlue  = (uint8)(sumBlue / 3);
 
-            // Safety Guard: Avoid muddy backgrounds; boost vibrancy if too dark
-// If the sampled column is too dark, boost its vibrancy using its own color signature
-if (finalRed < 35 && finalGreen < 35 && finalBlue < 35) {
-    // Find which channel is the strongest to preserve the primary tint (e.g., green)
-    uint8 maxChannel = max_c(finalRed, max_c(finalGreen, finalBlue));
-    
-    if (maxChannel == 0) {
-        // Absolute pitch black fallback: pick a deep neutral gray/blue instead of hot pink
-        fArtworkPalette[i] = { 40, 50, 60, 255 }; 
-    } else {
-        // Amplify the existing subtle tint to a visible baseline floor (e.g., scale up to 60)
-        float boostFactor = 60.0f / (float)maxChannel;
-        fArtworkPalette[i] = {
-            (uint8)min_c(255, (int)(finalRed * boostFactor)),
-            (uint8)min_c(255, (int)(finalGreen * boostFactor)),
-            (uint8)min_c(255, (int)(finalBlue * boostFactor)),
-            255
-        };
-    }
-} else {
-    fArtworkPalette[i] = { finalRed, finalGreen, finalBlue, 255 };
-}
 
-        }
-        Invalidate();
+			if (finalRed < 35 && finalGreen < 35 && finalBlue < 35) {
+    			uint8 maxChannel = max_c(finalRed, max_c(finalGreen, finalBlue));
+    
+    		if (maxChannel == 0) {
+        		fArtworkPalette[i] = { 40, 50, 60, 255 }; 
+    			} else {
+        		// Amplify the existing subtle tint to a visible baseline floor (e.g., scale up to 60)
+        		float boostFactor = 60.0f / (float)maxChannel;
+        		fArtworkPalette[i] = {
+            		(uint8)min_c(255, (int)(finalRed * boostFactor)),
+            		(uint8)min_c(255, (int)(finalGreen * boostFactor)),
+            		(uint8)min_c(255, (int)(finalBlue * boostFactor)),
+            		255
+        	};
+    	}
+			} else {
+    		fArtworkPalette[i] = { finalRed, finalGreen, finalBlue, 255 };
+		}
+
+        	}
+        	Invalidate();
     }
 
 virtual void AttachedToWindow() override {
@@ -861,7 +824,6 @@ virtual void Pulse() {
             }
         }
 
-        // Redraw only if there's still visible movement happening
         if (changesRemaining) {
             Invalidate();
         }
@@ -876,16 +838,15 @@ virtual void Pulse() {
         if (Parent() != nullptr) {
             SetHighColor(Parent()->ViewColor());
         } else {
-            SetHighColor(ui_color(B_PANEL_BACKGROUND_COLOR)); // Standard fallback
+            SetHighColor(ui_color(B_PANEL_BACKGROUND_COLOR));
         }
         FillRect(Bounds());
         return;
     }
 
-
     	
         BRect b = Bounds();        
-        float floor = -45.0f; // Raised floor slightly to tighten baseline noise
+        float floor = -45.0f;
         float peak = (float)fCurrentLevel;
         
         if (peak < floor) peak = floor;
@@ -922,11 +883,9 @@ virtual void Pulse() {
 		int numBars = 64;
 
 		// Track the dimensions of the artwork frame above it
-		// Adjust these hardcoded magic numbers if your layout padding changes
 		float artworkWidth = 325.0f; 
 		float totalViewWidth = b.Width();
 
-		// Compute the exact starting point to center-align the spectrum with the artwork
 		float startX = (totalViewWidth - artworkWidth) / 2.0f;
 		float barWidth = artworkWidth / numBars;
 
@@ -1003,6 +962,250 @@ private:
     rgb_color fArtworkPalette[64];// FIX: Restored array bounds
     bigtime_t fLastDataTime;    
 };
+
+
+class SongLabel : public BTextView {
+public:
+    SongLabel(const char* name) : BTextView(name) {
+        MakeEditable(false);
+        MakeSelectable(false);
+        SetWordWrap(true);
+        SetAlignment(B_ALIGN_CENTER);
+        SetInsets(2, 2, 2, 2); 
+        SetExplicitMinSize(BSize(B_SIZE_UNSET, 50));
+        
+        fScrollOffset = 0.0f;
+        fWaitTicks = 0;
+        fIsWrapped = true;
+        fRawText = "";
+    }
+    
+    // 1. Fix the Minimum Size Override
+    BSize MinSize() override {
+        if (!cfg.compactMode) {
+            return BTextView::MinSize(); // Return to native multi-line defaults
+        }
+        return BSize(150.0f, 16.0f); 
+    }
+
+    // 2. Fix the Preferred Size Override
+    BSize PreferredSize() override {
+        if (!cfg.compactMode) {
+            return BTextView::PreferredSize(); // Return to native multi-line defaults
+        }
+        return BSize(150.0f, 20.0f);
+    }
+
+    // 3. Fix the Maximum Size Override (This stops the view overlap bug)
+    BSize MaxSize() override {
+        if (!cfg.compactMode) {
+            return BTextView::MaxSize(); // Return to native unlimited multi-line height bounds
+        }
+        return BSize(B_SIZE_UNLIMITED, 24.0f); // Restrict height ONLY in compact horizontal mode
+    }
+
+
+
+    void SetText(const char* text, const text_run_array* runs = nullptr) {
+        // SAFETY GUARD: If a NULL pointer is passed, use an empty string literal instead
+        if (text == nullptr) {
+            fRawText = "";
+            BTextView::SetText("");
+        } else {
+            fRawText = text;
+            BTextView::SetText(text, runs);
+        }
+        ResetMarquee();
+    }
+
+
+    void ResetMarquee() {
+        fScrollOffset = 0.0f;
+        fWaitTicks = 0;
+        Invalidate();
+    }
+    
+    void SetCompactMode(bool enabled) {
+    	BString currentText(fRawText.String());
+    	
+        if (!enabled) {
+            fScrollOffset = 0.0f;
+            fWaitTicks = 0;
+            fIsWrapped = true;
+            SetWordWrap(true);
+            SetAlignment(B_ALIGN_CENTER);
+            
+            BRect r = Bounds();
+            r.InsetBy(2, 2);
+            SetTextRect(r);
+        } else {
+            fScrollOffset = 0.0f;
+            fWaitTicks = 0;
+            fIsWrapped = false;
+            SetWordWrap(false);
+            SetAlignment(B_ALIGN_LEFT);
+            
+            BRect r = Bounds();
+            r.left = 2; 
+            r.right = 99999.0f; // Expand clipping plane
+            SetTextRect(r);
+        }
+
+        // Force a synchronous line calculation sweep matching current constraints
+        //BTextView::SetText(fRawText.String()); 
+        BTextView::SetText(""); 
+   		BTextView::SetText(currentText.String()); 
+        Invalidate();
+    }
+
+    void Pulse() override {
+        BTextView::Pulse();
+
+        if (!cfg.compactMode) {
+            if (!fIsWrapped || fScrollOffset != 0.0f) {
+                fScrollOffset = 0.0f;
+                fWaitTicks = 0;
+                fIsWrapped = true;
+                SetWordWrap(true);
+                SetAlignment(B_ALIGN_CENTER);
+                BRect r = Bounds();
+                r.InsetBy(2, 2);
+                SetTextRect(r);
+                Invalidate();
+            }
+            return;
+        }
+
+        // Measure text width using the raw cached string
+        BFont currentFont;
+        GetFontAndColor(0, &currentFont);
+        float textWidth = currentFont.StringWidth(fRawText.String());
+
+        // Read the actual layout width constraint assigned by the container
+        float viewWidth = Bounds().Width();
+
+        // If the text fits inside the active layout box, do not scroll
+        if (textWidth <= viewWidth) {
+            fScrollOffset = 0.0f;
+            return;
+        }
+
+        // Delay starting the scroll animation for 30 ticks (~1.5s)
+        if (fScrollOffset == 0.0f && fWaitTicks < 30) {
+            fWaitTicks++;
+            return;
+        }
+
+        fScrollOffset += 1.2f; // Marquee speed adjustment
+
+        // Loop the marquee smoothly once the text scrolls past the view boundary
+        if (fScrollOffset > (textWidth + 30.0f)) {
+            fScrollOffset = -viewWidth;
+            fWaitTicks = 0;
+        }
+
+        Invalidate();
+    }
+
+
+    void AttachedToWindow() override {
+        BTextView::AttachedToWindow();
+        SetViewColor(Parent()->ViewColor());
+        BRect r = Bounds();
+        r.InsetBy(2, 2); 
+        SetTextRect(r);
+    }
+
+    void FrameResized(float width, float height) override {
+        BTextView::FrameResized(width, height);
+        BRect r = Bounds();
+        r.InsetBy(2, 2);
+        if (!cfg.compactMode) {
+            SetTextRect(r);
+        } else {
+            r.right = 99999;
+            SetTextRect(r);
+        }
+    }
+    
+    void SetCustomFont(const BFont* font) {
+        SetFontAndColor(font); 
+        Invalidate();
+    }
+
+    void Draw(BRect updateRect) override {
+        if (!cfg.compactMode) {
+            BTextView::Draw(updateRect);
+            return;
+        }
+
+        PushState();
+        BRegion clipRegion(Bounds());
+        ConstrainClippingRegion(&clipRegion);
+
+        // 1. Wipe the baseline view background space completely clean
+        rgb_color bgColor = ViewColor();
+        SetLowColor(bgColor);
+        FillRect(Bounds(), B_SOLID_LOW);
+
+        // 2. Fetch the active font geometry metrics definitions
+        BFont currentFont;
+        rgb_color fontColor;
+        GetFontAndColor(0, &currentFont, &fontColor);
+        
+        font_height fh;
+        currentFont.GetHeight(&fh);
+        float textY = (Bounds().Height() - (fh.ascent + fh.descent)) / 2.0f + fh.ascent;
+
+        SetHighColor(fontColor);
+        SetFont(&currentFont);
+
+        // 3. Render the continuous raw text horizontal marquee tracking line
+        DrawString(fRawText.String(), BPoint(-fScrollOffset, textY));
+
+        // 4. --- OVERLAY GRADIENT EDGE FADERS ---
+        float viewWidth = Bounds().Width();
+        float viewHeight = Bounds().Height();
+        float fadeWidth = 12.0f; // Width of the fade zone in pixels (Adjust for wider/narrower fade)
+
+        // Set up the drawing mode for alpha channel opacity blending overrides
+        SetDrawingMode(B_OP_ALPHA);
+        SetBlendingMode(B_CONSTANT_ALPHA, B_ALPHA_OVERLAY);
+
+        // Render 1-pixel wide vertical lines with changing transparency levels
+        for (int x = 0; x < (int)fadeWidth; x++) {
+            // Compute percentage factor spanning across the gradient edge scale
+            float factor = (float)x / fadeWidth; 
+            
+            // Map alpha density value (interpolate cleanly from solid background to transparent)
+            uint8 alphaVal = (uint8)((1.0f - factor) * 255);
+            
+            // Configure composite blending color to match your active app theme backdrop
+            rgb_color fadeColor = bgColor;
+            fadeColor.alpha = alphaVal;
+            SetHighColor(fadeColor);
+
+            // Draw Left Edge Fade Line (Smoothly hiding text as it enters from the left margin)
+            StrokeLine(BPoint((float)x, 0.0f), BPoint((float)x, viewHeight));
+
+            // Draw Right Edge Fade Line (Smoothly hiding text as it scrolls out the right margin)
+            StrokeLine(BPoint(viewWidth - 1.0f - x, 0.0f), BPoint(viewWidth - 1.0f - x, viewHeight));
+        }
+
+        PopState();
+    }
+
+
+private:
+    float   fScrollOffset;
+    int32   fWaitTicks;
+    bool    fIsWrapped;
+    BString fRawText; // FIX: Caches the unedited string across layout changes
+};
+
+
+
+
 
 
 void SuperMusicWindow::DownloadStationIcons() {
@@ -1398,7 +1601,8 @@ void play_favorite() {
 
     currentSong = "Loading Favorite...";
     if (gGuiWindow && gGuiWindow->Lock()) {
-        gGuiWindow->UpdateStatus(currentStation.c_str(), currentSong.c_str());
+       // gGuiWindow->UpdateStatus(currentStation.c_str(), currentSong.c_str());
+        gGuiWindow->UpdateStatus(currentDesc.c_str(), currentSong.c_str());
         gGuiWindow->Unlock();
     }
 
@@ -1531,7 +1735,8 @@ void play_random() {
                     download_art(url);
                 }).detach();
             }
-            gGuiWindow->UpdateStatus(currentStation.c_str(), currentSong.c_str());
+            //gGuiWindow->UpdateStatus(currentStation.c_str(), currentSong.c_str());
+            gGuiWindow->UpdateStatus(currentDesc.c_str(), currentSong.c_str());
             gGuiWindow->Unlock();
         }
     }
@@ -2016,12 +2221,22 @@ private:
 
 
 void SuperMusicWindow::UpdateStatus(const char* station, const char* song) {
-    if (Lock()) {
-        fStationView->SetText("");
-        fSongView->SetText(song);
-        Unlock();
+    if (!Lock()) return;
+
+    const char* safeStation = (station != nullptr) ? station : "";
+    const char* safeSong = (song != nullptr) ? song : "Streaming...";
+
+    if (fDescView != nullptr) {
+        ((SongLabel*)fDescView)->SetText(safeStation);
     }
+
+    if (fSongView != nullptr) {
+        ((SongLabel*)fSongView)->SetText(safeSong);
+    }
+    
+    Unlock();
 }
+
 
 
 
@@ -2069,6 +2284,8 @@ SuperMusicWindow::SuperMusicWindow()
     : BWindow(BRect(100, 100, 575, 250), "SuperMusicThingy", B_TITLED_WINDOW, 
               B_ASYNCHRONOUS_CONTROLS | B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE)
 {
+	
+	SetPulseRate(50000); 
     fAlbumArt = nullptr;
     #ifdef USE_PROJECTM
     fProjectM = pm; 
@@ -2181,18 +2398,13 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 0)
     .SetInsets(20)
     .Add(fArtView) 
     
-    // Meta information section
-    .AddGroup(B_HORIZONTAL, 10)     	
-        .Add(fDescView) 
-    .End()
+    // FIX: Meta information section added directly to root stack
+    // By providing an alignment parameter, Haiku constrains the vertical box boundaries tightly
+    .Add(fDescView, B_ALIGN_HORIZONTAL_CENTER) 
+    .Add(fSongView, B_ALIGN_HORIZONTAL_CENTER)
     
-    .AddGroup(B_HORIZONTAL, 10) 
-        .Add(fSongView)
-    .End()
-    
-    .AddGroup(B_HORIZONTAL, 10) 
-        .Add(fSpectrum)  
-    .End()
+    // Spectrum visualizer track
+    .Add(fSpectrum)  
     
     .AddGlue()
     
@@ -2204,11 +2416,11 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 0)
             .Add(fquality)
             .Add(fCompactModeRadio)               
         .End()        
-        .Add(fBtnAddFav) // Now cleanly grouped horizontally alongside the settings vertical stack
+        .Add(fBtnAddFav) 
     .End()
     
-    // Direct stack attachment without double-glue sandwiching
     .Add(fControlStack);
+
 
   
   
@@ -2962,13 +3174,30 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
     		// 5. Apply Layout orientations
     		fPlayerGroup->GroupLayout()->SetOrientation(cfg.compactMode ? B_HORIZONTAL : B_VERTICAL);
-    		fPlayerGroup->GroupLayout()->SetSpacing(cfg.compactMode ? 5 : 10);
+    		fPlayerGroup->GroupLayout()->SetSpacing(cfg.compactMode ? 3 : 10);
     		fControlStack->GroupLayout()->SetOrientation(B_VERTICAL); 
     
     		// 6. Update Widget Sizes
-    		fDescView->SetAlignment(B_ALIGN_LEFT);
-			fSongView->SetAlignment(B_ALIGN_LEFT);
-	
+            if (fDescView) {
+                ((SongLabel*)fDescView)->SetCompactMode(cfg.compactMode);
+            }
+            if (fSongView) {
+                ((SongLabel*)fSongView)->SetCompactMode(cfg.compactMode);
+                
+                // FIX: Force the layout container box to be 25% wider in compact mode
+                if (cfg.compactMode) {
+                    float expandedWidth = 220.0f * scale; // Set a generous explicit layout width track
+                    fSongView->SetExplicitMinSize(BSize(expandedWidth, B_SIZE_UNSET));
+                    fSongView->SetExplicitPreferredSize(BSize(expandedWidth, B_SIZE_UNSET));
+                    fSongView->SetExplicitMaxSize(BSize(expandedWidth, 24.0f * scale));
+                } else {
+                    // Restore native unrestricted multi-line sizes when returning to vertical mode
+                    fSongView->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+                    fSongView->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+                    fSongView->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED));
+                }
+            }
+
 			if (fBtnAddFav) {
         		BSize favTargetSize(favSize, favSize);
         		fBtnAddFav->SetExplicitSize(favTargetSize);
@@ -2980,16 +3209,20 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		fArtView->SetExplicitMinSize(BSize(artSize, artSize));
     		fArtView->SetExplicitMaxSize(BSize(artSize, artSize));
     		fBtnAddFav->SetExplicitSize(BSize(favSize, favSize));
-    		//fPlayBtn->SetExplicitSize(BSize(btnSize, btnSize));
     		fStopBtn->SetExplicitSize(BSize(btnSize, btnSize));
     		fPauseBtn->SetExplicitSize(BSize(btnSize, btnSize));
     		fShuffleBtn->SetExplicitSize(BSize(btnSize, btnSize));
 
+
     		// 7. Toggle Tabs and Extra Info
     		if (cfg.compactMode) {
+    			
+    			fPlayerGroup->GroupLayout()->SetInsets(5);
+        		fControlStack->GroupLayout()->SetInsets(2);
+        		
         		fCompactModeRadio->Show();
         		fDescView->Hide();      
-        		fSongView->Hide();      
+        		fSongView->Show();      
         		fquality->Show();
         		fListenersView->Show();
         		fSpectrum->Hide();
@@ -3000,6 +3233,10 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                 		fTabView->RemoveTab(i);
         		}
      		} else {
+     			fPlayerGroup->GroupLayout()->SetInsets(20);
+        		fControlStack->GroupLayout()->SetInsets(5);        
+       			fSongView->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+       			
         		fCompactModeRadio->Hide();
         		fDescView->Show();
         		fSongView->Show();
@@ -3007,9 +3244,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		fListenersView->Show();
         		fSpectrum->Show();
         
-        		fDescView->SetAlignment(B_ALIGN_CENTER);
-    			fSongView->SetAlignment(B_ALIGN_CENTER);
-    	
+  	
         		if (fVolumeSlider) fVolumeSlider->SetTarget(this);
     	
         		for (int i = 0; i < 15; i++) {
@@ -3044,6 +3279,14 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		fPlayerGroup->InvalidateLayout();
     		this->Layout(true); 
     		ApplyTheme(); 
+    		
+    		if (fDescView) {
+                ((SongLabel*)fDescView)->SetCompactMode(cfg.compactMode);
+            }
+            if (fSongView) {
+                ((SongLabel*)fSongView)->SetCompactMode(cfg.compactMode);
+            }
+    		
 
     		BString deferredSelect;
     		if (message->FindString("deferred_select", &deferredSelect) == B_OK && fTabView) {
@@ -3144,7 +3387,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             // have already set 'currentStationID' to the new random track.
             if (fIconCache.count(currentStationID) > 0 && fIconCache[currentStationID] != nullptr) {
                 if (this->fSpectrum != nullptr) {
-                    printf("[Visualizer] Syncing shuffle artwork colors for ID: %s\n", currentStationID.c_str());
                     this->fSpectrum->AdaptToAlbumArt(fIconCache[currentStationID]);
                 }
             }
@@ -3156,13 +3398,18 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             
         case MSG_UPDATE_SONG: {
             const char* song = message->GetString("song", "Unknown");
-            if (fSongView) fSongView->SetText(song);
-            if (cfg.showNotifications) {
-        		SendNotification(song);
-   			 }
             
+            // Sync your application's global track tracker variable
+            currentSong = (song != nullptr) ? song : "Unknown";
+
+            UpdateStatus(currentDesc.c_str(), currentSong.c_str());
+
+            if (cfg.showNotifications) {
+                SendNotification(song);
+            }
             break;
         }
+
         
         
         case MSG_CFG_AUTO_SHUFFLE: {
@@ -3274,7 +3521,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                 	
                 	Channel chan = item->GetChannel();
                     if (fIconCache.count(chan.id) > 0 && fIconCache[chan.id] != nullptr) {
-                        printf("[Visualizer] Found icon in cache for %s. Extracting colors...\n", chan.title.c_str());
+                       // printf("[Visualizer] Found icon in cache for %s. Extracting colors...\n", chan.title.c_str());
                         if (this->fSpectrum != nullptr) {
                             this->fSpectrum->AdaptToAlbumArt(fIconCache[chan.id]);
                         }
@@ -3315,7 +3562,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                     
                     Channel chan = item->GetChannel();
                     if (fIconCache.count(chan.id) > 0 && fIconCache[chan.id] != nullptr) {
-                        printf("[Visualizer] Found icon in cache for %s. Extracting colors...\n", chan.title.c_str());
                         if (this->fSpectrum != nullptr) {
                             this->fSpectrum->AdaptToAlbumArt(fIconCache[chan.id]);
                         }
@@ -3383,7 +3629,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                     BBitmap* targetArt = fAlbumArt;
                     if (targetArt == nullptr && fIconCache.count(currentStationID) > 0) {
                         targetArt = fIconCache[currentStationID];
-                        printf("[Visualizer] Falling back to icon cache for station %s. Extracting colors...\n", currentStationID.c_str());
                     }
            
                     if (targetArt != nullptr && this->fSpectrum != nullptr) {
