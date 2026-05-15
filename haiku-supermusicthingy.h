@@ -135,6 +135,7 @@ public:
 private:
 
 
+
     BStringView*    fSleepLabel;
     BMenuField*     fSleepField;
     BPopUpMenu*     fSleepMenu;

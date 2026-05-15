@@ -714,14 +714,17 @@ void load_config() {
     }
 }
 
+
+
+
 class SpectrumView : public BView {
 public:
 
     SpectrumView(BRect frame, const char* name)
-        : BView(frame, name, B_FOLLOW_ALL, B_WILL_DRAW | B_FRAME_EVENTS) {
+        : BView(frame, name, B_FOLLOW_ALL, B_WILL_DRAW | B_FRAME_EVENTS | B_PULSE_NEEDED) {
         SetViewColor(B_TRANSPARENT_COLOR); 
         fCurrentLevel = -60.0;
-        
+       
         // FIX: frequencyData is a real array, memset now gets the correct destination pointer
         memset(frequencyData, 0, 64);
         
@@ -736,16 +739,19 @@ public:
         srand(time(nullptr));
     }
     
-    void UpdateLevel(double level) {
-    	if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) return;
-  
-        if (level > fCurrentLevel) {
-            fCurrentLevel = level;
-        } else {
-            fCurrentLevel = (fCurrentLevel * 0.88) + (level * 0.12);
-        }
-        Invalidate();
+void UpdateLevel(double level) {
+    if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) return;
+    
+    fLastDataTime = system_time(); // <-- Record the exact microsecond data arrived
+    
+    if (level > fCurrentLevel) {
+        fCurrentLevel = level;
+    } else {
+        fCurrentLevel = (fCurrentLevel * 0.88) + (level * 0.12);
     }
+    Invalidate();
+}
+
 
     void AdaptToAlbumArt(BBitmap* artBitmap) {
         if (artBitmap == nullptr || artBitmap->InitCheck() != B_OK) return;
@@ -789,17 +795,78 @@ public:
             uint8 finalBlue  = (uint8)(sumBlue / 3);
 
             // Safety Guard: Avoid muddy backgrounds; boost vibrancy if too dark
-            if (finalRed < 35 && finalGreen < 35 && finalBlue < 35) {
-                fArtworkPalette[i] = { 244, 90, 160, 255 }; // Vaporwave Hot Pink fallback
-            } else {
-                fArtworkPalette[i] = { finalRed, finalGreen, finalBlue, 255 };
-            }
+// If the sampled column is too dark, boost its vibrancy using its own color signature
+if (finalRed < 35 && finalGreen < 35 && finalBlue < 35) {
+    // Find which channel is the strongest to preserve the primary tint (e.g., green)
+    uint8 maxChannel = max_c(finalRed, max_c(finalGreen, finalBlue));
+    
+    if (maxChannel == 0) {
+        // Absolute pitch black fallback: pick a deep neutral gray/blue instead of hot pink
+        fArtworkPalette[i] = { 40, 50, 60, 255 }; 
+    } else {
+        // Amplify the existing subtle tint to a visible baseline floor (e.g., scale up to 60)
+        float boostFactor = 60.0f / (float)maxChannel;
+        fArtworkPalette[i] = {
+            (uint8)min_c(255, (int)(finalRed * boostFactor)),
+            (uint8)min_c(255, (int)(finalGreen * boostFactor)),
+            (uint8)min_c(255, (int)(finalBlue * boostFactor)),
+            255
+        };
+    }
+} else {
+    fArtworkPalette[i] = { finalRed, finalGreen, finalBlue, 255 };
+}
+
         }
         Invalidate();
     }
 
+virtual void AttachedToWindow() override {
+    BView::AttachedToWindow(); // Essential: calls the base class setup
+    
+    if (Window() != nullptr) {
+        Window()->SetPulseRate(50000); // 50ms interval (20Hz ticks)
+    }
+}
 
 
+virtual void Pulse() {
+    // 100,000 microseconds = 100ms timeout
+    if ((system_time() - fLastDataTime) > 100000) { 
+        float floor = -45.0f;
+        bool changesRemaining = false;
+
+        // Smoothly decay the master volume tracker floor
+        if (fCurrentLevel > floor) {
+            fCurrentLevel = (fCurrentLevel * 0.80) + (floor * 0.20);
+            changesRemaining = true;
+        }
+
+        // Decay the spring simulations for individual bars
+        for (int i = 0; i < 64; i++) {
+            if (fBarHeights[i] > 0.05f) {
+                fBarHeights[i] *= 0.75f; // Pull down exponentially
+                fBarVelocities[i] *= 0.50f;
+                changesRemaining = true;
+            } else {
+                fBarHeights[i] = 0.0f;
+                fBarVelocities[i] = 0.0f;
+            }
+            
+            // Bring peak bars down too
+            if (fPeakHeights[i] > 0.0f) {
+                fPeakHeights[i] -= 1.5f;
+                if (fPeakHeights[i] < 0.0f) fPeakHeights[i] = 0.0f;
+                changesRemaining = true;
+            }
+        }
+
+        // Redraw only if there's still visible movement happening
+        if (changesRemaining) {
+            Invalidate();
+        }
+    }
+}
 
 
 
@@ -851,10 +918,18 @@ public:
         // Compute the highly attenuated final rendering magnitude
         masterMagnitude = (powf(masterMagnitude, 2.0f) * masterSensitivityMultiplier) / limiterDivisor;
 
-        float width = b.Width();
-        float height = b.Height();
-        int numBars = 64;
-        float barWidth = width / numBars;
+		float height = b.Height();
+		int numBars = 64;
+
+		// Track the dimensions of the artwork frame above it
+		// Adjust these hardcoded magic numbers if your layout padding changes
+		float artworkWidth = 325.0f; 
+		float totalViewWidth = b.Width();
+
+		// Compute the exact starting point to center-align the spectrum with the artwork
+		float startX = (totalViewWidth - artworkWidth) / 2.0f;
+		float barWidth = artworkWidth / numBars;
+
 
         const float springStiffness = 0.28f; 
         const float springDamping = 0.74f;   
@@ -895,8 +970,8 @@ public:
             }
 
             SetHighColor(fArtworkPalette[i]);             
-            FillRect(BRect(i * barWidth, height - finalBarHeight, 
-                           (i + 1) * barWidth - 1, height));
+            FillRect(BRect(startX + (i * barWidth), height - finalBarHeight, 
+               startX + ((i + 1) * barWidth) - 1, height));
 
             if (fPeakHeights[i] > finalBarHeight && fPeakHeights[i] > 2.0f) {
                 rgb_color peakColor = fArtworkPalette[i];
@@ -905,8 +980,8 @@ public:
                 peakColor.blue  = (uint8)min_c(255, peakColor.blue + 50);
                 
                 SetHighColor(peakColor); 
-                StrokeLine(BPoint(i * barWidth, height - fPeakHeights[i]),
-                           BPoint((i + 1) * barWidth - 1, height - fPeakHeights[i]));
+                StrokeLine(BPoint(startX + (i * barWidth), height - fPeakHeights[i]),
+           			BPoint(startX + ((i + 1) * barWidth) - 1, height - fPeakHeights[i]));
             }
         }
     }
@@ -926,6 +1001,7 @@ private:
     float     fPeakHeights[64];  // FIX: Restored array bounds
     int       fPeakHold[64];     // FIX: Restored array bounds
     rgb_color fArtworkPalette[64];// FIX: Restored array bounds
+    bigtime_t fLastDataTime;    
 };
 
 
@@ -1289,18 +1365,27 @@ void play_favorite() {
 
             finalUrl = get_quality_url(ch); 
 
-            if (!currentAlbumArtUrl.empty()) {
-                if (gGuiWindow && gGuiWindow->fArtCache.count(currentStationID) > 0) {
-                    if (gGuiWindow->Lock()) {
+            if (!currentAlbumArtUrl.empty() && gGuiWindow) {
+                if (gGuiWindow->Lock()) {
+                    // FIX: Direct access to fDescView removed to avoid private context error.
+                    // Descriptions can be updated safely using the public UpdateStatus method below.
+
+                    if (gGuiWindow->fArtCache.count(currentStationID) > 0) {
                         gGuiWindow->fAlbumArt = gGuiWindow->fArtCache[currentStationID];
-                        if (gGuiWindow->fArtView)
+                        if (gGuiWindow->fArtView) {
                             ((AlbumArtView*)gGuiWindow->fArtView)->SetBitmap(gGuiWindow->fAlbumArt);
-                        gGuiWindow->Unlock();
+                        }
+                    } else {
+                        gGuiWindow->fAlbumArt = nullptr;
+                        if (gGuiWindow->fArtView) {
+                            ((AlbumArtView*)gGuiWindow->fArtView)->SetBitmap(nullptr);
+                        }
+
+                        std::thread([artUrl = currentAlbumArtUrl]() {
+                            download_art(artUrl);
+                        }).detach();
                     }
-                } else {
-                    std::thread([artUrl = currentAlbumArtUrl]() {
-                        download_art(artUrl);
-                    }).detach();
+                    gGuiWindow->Unlock();
                 }
             }
             break;
@@ -1322,6 +1407,8 @@ void play_favorite() {
     
     fade_volume(mpv, original_vol, 500);
 }
+
+
 
 
 
@@ -1425,21 +1512,31 @@ void play_random() {
     currentSong = "Buffering...";
     currentAlbumArtUrl = chan.largeimage;
 
-    if (!currentAlbumArtUrl.empty()) {
-        if (gGuiWindow && gGuiWindow->fArtCache.count(currentStationID) > 0) {
-            gGuiWindow->fAlbumArt = gGuiWindow->fArtCache[currentStationID];
-            if (gGuiWindow->fArtView) {
-                gGuiWindow->fArtView->Invalidate();
+    if (!currentAlbumArtUrl.empty() && gGuiWindow) {
+        if (gGuiWindow->Lock()) {
+            // FIX: Removed private fDescView calls from this external loop context.
+            
+            if (gGuiWindow->fArtCache.count(currentStationID) > 0) {
+                gGuiWindow->fAlbumArt = gGuiWindow->fArtCache[currentStationID];
+                if (gGuiWindow->fArtView) {
+                    ((AlbumArtView*)gGuiWindow->fArtView)->SetBitmap(gGuiWindow->fAlbumArt);
+                }
+            } else {
+                gGuiWindow->fAlbumArt = nullptr;
+                if (gGuiWindow->fArtView) {
+                    ((AlbumArtView*)gGuiWindow->fArtView)->SetBitmap(nullptr);
+                }
+                
+                std::thread([url = currentAlbumArtUrl]() {
+                    download_art(url);
+                }).detach();
             }
-        } else {
-            std::thread([url = currentAlbumArtUrl]() {
-                download_art(url);
-            }).detach();
+            gGuiWindow->UpdateStatus(currentStation.c_str(), currentSong.c_str());
+            gGuiWindow->Unlock();
         }
     }
     
     std::string url = get_quality_url(chan); 
-    
     const char *cmd[] = {"loadfile", url.c_str(), NULL};
     mpv_command(mpv, cmd);
     
