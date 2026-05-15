@@ -954,12 +954,12 @@ virtual void Pulse() {
 
 private:
     double    fCurrentLevel; 
-    uint8     frequencyData[64]; // FIX: Restored missing array length bound constraints
-    float     fBarHeights[64];   // FIX: Restored array bounds
-    float     fBarVelocities[64];// FIX: Restored array bounds
-    float     fPeakHeights[64];  // FIX: Restored array bounds
-    int       fPeakHold[64];     // FIX: Restored array bounds
-    rgb_color fArtworkPalette[64];// FIX: Restored array bounds
+    uint8     frequencyData[64]; 
+    float     fBarHeights[64];   
+    float     fBarVelocities[64];
+    float     fPeakHeights[64];  
+    int       fPeakHold[64];     
+    rgb_color fArtworkPalette[64];
     bigtime_t fLastDataTime;    
 };
 
@@ -980,34 +980,30 @@ public:
         fRawText = "";
     }
     
-    // 1. Fix the Minimum Size Override
     BSize MinSize() override {
         if (!cfg.compactMode) {
-            return BTextView::MinSize(); // Return to native multi-line defaults
+            return BTextView::MinSize(); 
         }
         return BSize(150.0f, 16.0f); 
     }
 
-    // 2. Fix the Preferred Size Override
     BSize PreferredSize() override {
         if (!cfg.compactMode) {
-            return BTextView::PreferredSize(); // Return to native multi-line defaults
+            return BTextView::PreferredSize(); 
         }
         return BSize(150.0f, 20.0f);
     }
 
-    // 3. Fix the Maximum Size Override (This stops the view overlap bug)
     BSize MaxSize() override {
         if (!cfg.compactMode) {
-            return BTextView::MaxSize(); // Return to native unlimited multi-line height bounds
+            return BTextView::MaxSize(); 
         }
-        return BSize(B_SIZE_UNLIMITED, 24.0f); // Restrict height ONLY in compact horizontal mode
+        return BSize(B_SIZE_UNLIMITED, 24.0f); 
     }
 
 
 
     void SetText(const char* text, const text_run_array* runs = nullptr) {
-        // SAFETY GUARD: If a NULL pointer is passed, use an empty string literal instead
         if (text == nullptr) {
             fRawText = "";
             BTextView::SetText("");
@@ -1052,7 +1048,6 @@ public:
         }
 
         // Force a synchronous line calculation sweep matching current constraints
-        //BTextView::SetText(fRawText.String()); 
         BTextView::SetText(""); 
    		BTextView::SetText(currentText.String()); 
         Invalidate();
@@ -1570,9 +1565,6 @@ void play_favorite() {
 
             if (!currentAlbumArtUrl.empty() && gGuiWindow) {
                 if (gGuiWindow->Lock()) {
-                    // FIX: Direct access to fDescView removed to avoid private context error.
-                    // Descriptions can be updated safely using the public UpdateStatus method below.
-
                     if (gGuiWindow->fArtCache.count(currentStationID) > 0) {
                         gGuiWindow->fAlbumArt = gGuiWindow->fArtCache[currentStationID];
                         if (gGuiWindow->fArtView) {
@@ -1598,10 +1590,8 @@ void play_favorite() {
     double original_vol;
     mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &original_vol);
     fade_volume(mpv, 0, 300);
-
     currentSong = "Loading Favorite...";
     if (gGuiWindow && gGuiWindow->Lock()) {
-       // gGuiWindow->UpdateStatus(currentStation.c_str(), currentSong.c_str());
         gGuiWindow->UpdateStatus(currentDesc.c_str(), currentSong.c_str());
         gGuiWindow->Unlock();
     }
@@ -1717,9 +1707,7 @@ void play_random() {
     currentAlbumArtUrl = chan.largeimage;
 
     if (!currentAlbumArtUrl.empty() && gGuiWindow) {
-        if (gGuiWindow->Lock()) {
-            // FIX: Removed private fDescView calls from this external loop context.
-            
+        if (gGuiWindow->Lock()) {          
             if (gGuiWindow->fArtCache.count(currentStationID) > 0) {
                 gGuiWindow->fAlbumArt = gGuiWindow->fArtCache[currentStationID];
                 if (gGuiWindow->fArtView) {
@@ -1735,7 +1723,6 @@ void play_random() {
                     download_art(url);
                 }).detach();
             }
-            //gGuiWindow->UpdateStatus(currentStation.c_str(), currentSong.c_str());
             gGuiWindow->UpdateStatus(currentDesc.c_str(), currentSong.c_str());
             gGuiWindow->Unlock();
         }
@@ -2250,18 +2237,18 @@ void SuperMusicWindow::UpdateTrayState(bool enabled, bool hideWindow) {
         if (!deskbar.HasItem(trayItemName)) {
             status_t err = B_ERROR;
 
-#if defined(__x86_64__)
+			#ifdef IS_HAIKU_32BIT
             // 64-bit Native: Keep using the fast internal executable allocation reference
             app_info info;
             be_app->GetAppInfo(&info);             
             err = deskbar.AddItem(&info.ref);
-#else
+			#else
             // 32-bit Hybrid: Dynamically look up the signature of the GCC 2 shared add-on library
             entry_ref addonRef;
             if (be_roster->FindApp("application/x-vnd.SuperMusicTrayIconLibrary", &addonRef) == B_OK) {
                 err = deskbar.AddItem(&addonRef);
             }
-#endif
+			#endif
             
             if (err == B_OK && hideWindow) {
                 Hide();
@@ -2395,33 +2382,22 @@ BLayoutBuilder::Group<>(fControlStack, B_VERTICAL, 5)
         .Add(fShuffleBtn)
       .End();
 
-// 1. Declare a new view pointer at the top of your layout layout section:
 BGroupView* fMetaAndSpectrumStack = new BGroupView(B_VERTICAL, 5);
-
-// 2. Build the vertical stack for the song title and spectrum visualizer
 BLayoutBuilder::Group<>(fMetaAndSpectrumStack, B_VERTICAL, 5)
     .SetInsets(4)
-    .AddStrut(6)
+    .AddStrut(7)
     .Add(fSongView)
     .Add(fSpectrum)
     .AddStrut(1) 
 .End();
 
-// 3. Assemble the unified fPlayerGroup layout hierarchy
+
 BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     .SetInsets(20)
     .Add(fArtView) 
-    
-    // Station description/metadata header lines
     .Add(fDescView, B_ALIGN_HORIZONTAL_CENTER) 
-    
-    // FIX: Inject the combined text-and-spectrum stack here.
-    // This forces the spectrum to stay underneath fSongView in horizontal compact mode!
-    .Add(fMetaAndSpectrumStack) 
-    
-    .AddGlue()
-    
-    // Controls and settings footer section
+    .Add(fMetaAndSpectrumStack)     
+    .AddGlue()    
     .AddGroup(B_HORIZONTAL, 16) 
         .AddGroup(B_VERTICAL, 6) 
             .AddStrut(5)     	
@@ -2434,10 +2410,6 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     
     .Add(fControlStack);
 
-
-  
-  
- 
 
 
 
@@ -3189,6 +3161,11 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                     fSongView->SetExplicitPreferredSize(BSize(expandedWidth, B_SIZE_UNSET));
                     fSongView->SetExplicitMaxSize(BSize(expandedWidth, 24.0f * scale));
                     
+                    float sliderWidth = (btnSize * 4) + (5 * 3); // Fits exactly over the 4 buttons + spacing
+   					fVolumeSlider->SetExplicitMaxSize(BSize(sliderWidth, B_SIZE_UNSET));
+    				fVolumeSlider->SetExplicitPreferredSize(BSize(sliderWidth, B_SIZE_UNSET));
+                    
+                    
                     if (fSpectrum) {
                         fSpectrum->SetExplicitMinSize(BSize(expandedWidth, 50.0f * scale));
                         fSpectrum->SetExplicitMaxSize(BSize(expandedWidth, 50.0f * scale));
@@ -3203,6 +3180,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                     fSongView->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
                     fSongView->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
                     fSongView->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED));
+                    
+                    fVolumeSlider->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+    				fVolumeSlider->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
                     
                     if (fSpectrum) {
                         fSpectrum->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
@@ -3227,8 +3207,10 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		fArtView->SetExplicitMinSize(BSize(artSize, artSize));
     		fArtView->SetExplicitMaxSize(BSize(artSize, artSize));
     		fBtnAddFav->SetExplicitSize(BSize(favSize, favSize));
+    		
     		fStopBtn->SetExplicitSize(BSize(btnSize, btnSize));
     		fPauseBtn->SetExplicitSize(BSize(btnSize, btnSize));
+    		fPlayBtn->SetExplicitSize(BSize(btnSize, btnSize)); 
     		fShuffleBtn->SetExplicitSize(BSize(btnSize, btnSize));
 
     		// 7. Toggle Tabs and Extra Info
@@ -4308,13 +4290,13 @@ public:
     		// Explicitly target the layout class identification
     		archive->AddString("class", "MyIcon");
 
-#if defined(__x86_64__)
+  			#ifdef IS_HAIKU_32BIT
     		// 64-bit Native: Everything is unified under a modern compiler toolchain
     		archive->AddString("add_on", "application/x-vnd.HaikuSuperMusicThingy"); 
-#else
+			#else
     		// 32-bit Hybrid: Tell GCC 2 Deskbar to load the separate GCC 2 shared library
     		archive->AddString("add_on", "application/x-vnd.SuperMusicTrayIconLibrary"); 
-#endif
+			#endif
     
     return B_OK;
 }
