@@ -2589,7 +2589,7 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     fChkShuffle->SetValue(cfg.autoShuffle ? B_CONTROL_ON : B_CONTROL_OFF);
     
     
-    fChkSysTray = new BCheckBox("chk_sysTray", "Use System tray", new BMessage(MSG_CFG_SYS_TRAY));
+    fChkSysTray = new BCheckBox("chk_sysTray", "System Tray", new BMessage(MSG_CFG_SYS_TRAY));
     fChkSysTray->SetValue(cfg.sysTray ? B_CONTROL_ON : B_CONTROL_OFF);
     fChkSysTray->SetEnabled(false);    
     
@@ -2601,7 +2601,7 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     fPresetToggle->SetValue(B_CONTROL_OFF); 
 
     // Visuals and Favorites
-    fVisualsCheckbox = new BCheckBox("visuals_toggle", "Enable Visualizer (Experimental)", new BMessage(MSG_TOGGLE_VISUALS));
+    fVisualsCheckbox = new BCheckBox("visuals_toggle", "Visualizer (Experimental)", new BMessage(MSG_TOGGLE_VISUALS));
     fVisualsCheckbox->SetValue(cfg.showVisuals ? B_CONTROL_ON : B_CONTROL_OFF);  
     
     fShuffleFavsCheckbox = new BCheckBox("shuffle_favs", "Shuffle Only Favorites", new BMessage(MSG_SHUFFLE_FAVS_CHANGED));
@@ -2633,15 +2633,15 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
 	fEQToggle = new BCheckBox("eq_toggle", "15-Band EQ", new BMessage(MSG_TOGGLE_EQ));
 	fEQToggle->SetValue(cfg.eqEnabled ? B_CONTROL_ON : B_CONTROL_OFF);
 	
-    fEnableSpectrum = new BCheckBox("chk_spectrum", "Enable Spectrum Bars", new BMessage(MSG_TOGGLE_Spectrum));
+    fEnableSpectrum = new BCheckBox("chk_spectrum", "Spectrum Bars", new BMessage(MSG_TOGGLE_Spectrum));
 	fEnableSpectrum->SetValue(cfg.showSpectrumVisuals ? B_CONTROL_ON : B_CONTROL_OFF); 
     
 	bool ladspaSupported = IsFFmpegLadspaAvailable();
-	fEnableladspa = new BCheckBox("enable_ladspa", "Use Ladspa", new BMessage(MSG_TOGGLE_LADSPA)); 
+	fEnableladspa = new BCheckBox("enable_ladspa", "Ladspa", new BMessage(MSG_TOGGLE_LADSPA)); 
 
 	if (!ladspaSupported) {
     	fEnableladspa->SetEnabled(false);
-    	fEnableladspa->SetLabel("Use Ladspa (Not compiled in FFmpeg)");
+    	fEnableladspa->SetLabel("Ladspa (Not compiled in FFmpeg)");
 		} else {
     	fEnableladspa->SetValue(cfg.ladspaEnabled ? B_CONTROL_ON : B_CONTROL_OFF);
 	}
