@@ -1166,7 +1166,7 @@ public:
         // 4. --- OVERLAY GRADIENT EDGE FADERS ---
         float viewWidth = Bounds().Width();
         float viewHeight = Bounds().Height();
-        float fadeWidth = 12.0f; // Width of the fade zone in pixels (Adjust for wider/narrower fade)
+        float fadeWidth = 3.0f; // Width of the fade zone in pixels (Adjust for wider/narrower fade)
 
         // Set up the drawing mode for alpha channel opacity blending overrides
         SetDrawingMode(B_OP_ALPHA);
@@ -2282,9 +2282,10 @@ void SuperMusicWindow::UpdateTrayState(bool enabled, bool hideWindow) {
 
 SuperMusicWindow::SuperMusicWindow()
     : BWindow(BRect(100, 100, 575, 250), "SuperMusicThingy", B_TITLED_WINDOW, 
-              B_ASYNCHRONOUS_CONTROLS | B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE)
+    B_ASYNCHRONOUS_CONTROLS | B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE)
+    
 {
-	
+
 	SetPulseRate(50000); 
     fAlbumArt = nullptr;
     #ifdef USE_PROJECTM
@@ -2386,7 +2387,7 @@ BLayoutBuilder::Group<>(fControlStack, B_VERTICAL, 5)
 
     .SetInsets(5)  
     .Add(fVolumeSlider)
-        .AddGroup(B_HORIZONTAL, 10)
+        .AddGroup(B_HORIZONTAL, 5)
         .AddGlue() 
         .Add(fStopBtn)
         .Add(fPauseBtn)
@@ -2394,17 +2395,29 @@ BLayoutBuilder::Group<>(fControlStack, B_VERTICAL, 5)
         .Add(fShuffleBtn)
       .End();
 
-BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 0)
+// 1. Declare a new view pointer at the top of your layout layout section:
+BGroupView* fMetaAndSpectrumStack = new BGroupView(B_VERTICAL, 5);
+
+// 2. Build the vertical stack for the song title and spectrum visualizer
+BLayoutBuilder::Group<>(fMetaAndSpectrumStack, B_VERTICAL, 5)
+    .SetInsets(4)
+    .AddStrut(6)
+    .Add(fSongView)
+    .Add(fSpectrum)
+    .AddStrut(1) 
+.End();
+
+// 3. Assemble the unified fPlayerGroup layout hierarchy
+BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     .SetInsets(20)
     .Add(fArtView) 
     
-    // FIX: Meta information section added directly to root stack
-    // By providing an alignment parameter, Haiku constrains the vertical box boundaries tightly
+    // Station description/metadata header lines
     .Add(fDescView, B_ALIGN_HORIZONTAL_CENTER) 
-    .Add(fSongView, B_ALIGN_HORIZONTAL_CENTER)
     
-    // Spectrum visualizer track
-    .Add(fSpectrum)  
+    // FIX: Inject the combined text-and-spectrum stack here.
+    // This forces the spectrum to stay underneath fSongView in horizontal compact mode!
+    .Add(fMetaAndSpectrumStack) 
     
     .AddGlue()
     
@@ -3174,7 +3187,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
     		// 5. Apply Layout orientations
     		fPlayerGroup->GroupLayout()->SetOrientation(cfg.compactMode ? B_HORIZONTAL : B_VERTICAL);
-    		fPlayerGroup->GroupLayout()->SetSpacing(cfg.compactMode ? 3 : 10);
+    		fPlayerGroup->GroupLayout()->SetSpacing(cfg.compactMode ? 5 : 10);
     		fControlStack->GroupLayout()->SetOrientation(B_VERTICAL); 
     
     		// 6. Update Widget Sizes
@@ -3184,17 +3197,36 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             if (fSongView) {
                 ((SongLabel*)fSongView)->SetCompactMode(cfg.compactMode);
                 
-                // FIX: Force the layout container box to be 25% wider in compact mode
                 if (cfg.compactMode) {
-                    float expandedWidth = 220.0f * scale; // Set a generous explicit layout width track
+                    float expandedWidth = 220.0f * scale; 
                     fSongView->SetExplicitMinSize(BSize(expandedWidth, B_SIZE_UNSET));
                     fSongView->SetExplicitPreferredSize(BSize(expandedWidth, B_SIZE_UNSET));
                     fSongView->SetExplicitMaxSize(BSize(expandedWidth, 24.0f * scale));
+                    
+                    if (fSpectrum) {
+                        fSpectrum->SetExplicitMinSize(BSize(expandedWidth, 50.0f * scale));
+                        fSpectrum->SetExplicitMaxSize(BSize(expandedWidth, 50.0f * scale));
+                    }
+                    
+                    // FIX: Ensure pointer validation includes an explicit greater-than-pointer boundary limit trap
+                    if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {               
+                        fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+                    }   
+                    
                 } else {
-                    // Restore native unrestricted multi-line sizes when returning to vertical mode
                     fSongView->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
                     fSongView->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
                     fSongView->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED));
+                    
+                    if (fSpectrum) {
+                        fSpectrum->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+                        fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED));
+                        fSpectrum->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+                    }
+
+                    if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {
+                        fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED));
+                    }
                 }
             }
 
@@ -3213,10 +3245,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		fPauseBtn->SetExplicitSize(BSize(btnSize, btnSize));
     		fShuffleBtn->SetExplicitSize(BSize(btnSize, btnSize));
 
-
     		// 7. Toggle Tabs and Extra Info
     		if (cfg.compactMode) {
-    			
     			fPlayerGroup->GroupLayout()->SetInsets(5);
         		fControlStack->GroupLayout()->SetInsets(2);
         		
@@ -3225,7 +3255,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		fSongView->Show();      
         		fquality->Show();
         		fListenersView->Show();
-        		fSpectrum->Hide();
+        		fSpectrum->Show();
 
         		for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
             		BTab* tab = fTabView->TabAt(i);
@@ -3244,36 +3274,36 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		fListenersView->Show();
         		fSpectrum->Show();
         
-  	
         		if (fVolumeSlider) fVolumeSlider->SetTarget(this);
     	
         		for (int i = 0; i < 15; i++) {
             		if (fEQSliders[i]) fEQSliders[i]->SetTarget(this);
         		}
         
-        
-        		BTab* tabsToAdd[] = { fRadioTab, fStationTab, fFavTab, fConfigTab, fAboutTab };
-        		BGroupView* groups[] = { fRadioGroup, fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
-        		const char* labels[] = { "Radio", "Stations", "Fav", "Config", "About" };
+                // --- CRASH-FREE REMOVED TAB RESTORATION LOOP ---
+                // The Radio tab is omitted completely to protect its bound view references
+                BGroupView* groups[] = { fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
+                const char* labels[] = { "Stations", "Fav", "Config", "About" };
+                BTab** dynamicTabs[] = { &fStationTab, &fFavTab, &fConfigTab, &fAboutTab };
 
-        		for (int i = 0; i < 5; i++) { // Clear loop range processing up to 5 elements
-            		if (tabsToAdd[i] == nullptr || groups[i] == nullptr) continue;
+                for (int i = 0; i < 4; i++) { 
+                    if (groups[i] == nullptr || dynamicTabs[i] == nullptr) continue;
 
-            		bool found = false;
-            		for (int32 j = 0; j < fTabView->CountTabs(); j++) {
-                		if (fTabView->TabAt(j) == tabsToAdd[i]) {
-                    		found = true;
-                    		break;
-                		}
-            		}
+                    bool found = false;
+                    for (int32 j = 0; j < fTabView->CountTabs(); j++) {
+                        if (fTabView->TabAt(j) == *dynamicTabs[i]) {
+                            found = true;
+                            break;
+                        }
+                    }
 
-            		if (!found) {
-                		tabsToAdd[i]->SetLabel(labels[i]);
-                		fTabView->AddTab(groups[i], tabsToAdd[i]);
-            		}
-        		}
+                    if (!found) {
+                        *dynamicTabs[i] = new BTab();
+                        (*dynamicTabs[i])->SetLabel(labels[i]);
+                        fTabView->AddTab(groups[i], *dynamicTabs[i]);
+                    }
+                }
     		}
-
 
     		fArtView->InvalidateLayout();
     		fPlayerGroup->InvalidateLayout();
@@ -3286,6 +3316,16 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             if (fSongView) {
                 ((SongLabel*)fSongView)->SetCompactMode(cfg.compactMode);
             }
+
+            // Spectrum Size Recalculation Fix
+            if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {
+                fMetaAndSpectrumStack->InvalidateLayout();
+                fMetaAndSpectrumStack->Layout(true);
+            }
+            if (fSpectrum) {
+                fSpectrum->InvalidateLayout();
+            }
+
     		
 
     		BString deferredSelect;
@@ -3989,6 +4029,14 @@ void SuperMusicWindow::UpdateFavButtons() {
 
 SuperMusicWindow::~SuperMusicWindow()
 {
+	
+	if (cfg.compactMode) {
+        // Delete only the tabs that were unlinked and hidden from fTabView
+        delete fStationTab;
+        delete fFavTab;
+        delete fConfigTab;
+        delete fAboutTab;
+    }
     for (auto& [id, bitmap] : fIconCache) {
         if (bitmap) {
             delete bitmap;
@@ -4008,21 +4056,22 @@ SuperMusicWindow::~SuperMusicWindow()
     delete fSleepRunner;
     fAlbumArt = nullptr; 
 
-    #if ENABLE_VISUALIZER
-    cleanup_capture_device();
-    
-    if (glContext) { 
-        SDL_GL_MakeCurrent(visualWin, NULL); 
-        SDL_GL_DeleteContext(glContext); 
-        glContext = nullptr; 
-    }
-    if (visualWin) { 
-        SDL_DestroyWindow(visualWin); 
-        visualWin = nullptr; 
-    }
+    #ifdef USE_PROJECTM
     if (pm) {
-        projectm_destroy(pm);
-        pm = nullptr;
+    	cleanup_capture_device();
+    
+    	if (glContext) { 
+        	SDL_GL_MakeCurrent(visualWin, NULL); 
+        	SDL_GL_DeleteContext(glContext); 
+        	glContext = nullptr; 
+    	}
+    	if (visualWin) { 
+        	SDL_DestroyWindow(visualWin); 
+        	visualWin = nullptr; 
+    	}
+    
+        	projectm_destroy(pm);
+        	pm = nullptr;
     }
     #endif
 }

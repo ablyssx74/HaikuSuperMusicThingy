@@ -135,8 +135,12 @@ public:
 	
 	  
 private:
-
-
+	BGroupView* fMetaAndSpectrumStack = nullptr; 
+	BTab* fRadioTab = nullptr; 
+    BTab* fStationTab = nullptr; 
+    BTab* fFavTab = nullptr; 
+    BTab* fConfigTab = nullptr; 
+    BTab* fAboutTab = nullptr; 
 
     BStringView*    fSleepLabel;
     BMenuField*     fSleepField;
@@ -147,13 +151,8 @@ private:
     IconButton* fPlayBtn;
     IconButton* fStopBtn;
     IconButton* fPauseBtn;
-    BGroupView* fPlayerGroup;
-    
-	BTab* fRadioTab;
-    BTab* fStationTab;
-    BTab* fFavTab;
-    BTab* fConfigTab;
-    BTab* fAboutTab;
+    BGroupView* fPlayerGroup;   
+
     
     BGroupView* fRadioGroup;
     BGroupView* fStationGroup;
