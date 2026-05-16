@@ -1630,13 +1630,28 @@ public:
                 drawWinStartTime = 0;
             }
 
-
-            // Draw left paddle (Using physics calculations calculated cleanly by Pulse)
-            SetHighColor(fArtworkPalette[4]);
+            // --- DRAW LEFT PADDLE WITH SAFETY CONTRAST CHECK ---
+            rgb_color leftPaddleCol = fArtworkPalette[4];
+            float leftPaddleBrightness = (leftPaddleCol.red * 0.299f) + 
+                                         (leftPaddleCol.green * 0.587f) + 
+                                         (leftPaddleCol.blue * 0.114f);
+            if (leftPaddleBrightness < 80.0f) {
+                SetHighColor(50, 230, 100, 255); // Vibrant neon green fallback
+            } else {
+                SetHighColor(leftPaddleCol);
+            }
             FillRect(BRect(startX, fLeftPaddlePos - (paddleH / 2.0f), startX + 5.0f, fLeftPaddlePos + (paddleH / 2.0f)));
 
-            // Draw right paddle (Directly tracking mouse-driven coordinates from Pulse)
-            SetHighColor(fArtworkPalette[58]);
+            // --- DRAW RIGHT PADDLE WITH SAFETY CONTRAST CHECK ---
+            rgb_color rightPaddleCol = fArtworkPalette[58];
+            float rightPaddleBrightness = (rightPaddleCol.red * 0.299f) + 
+                                          (rightPaddleCol.green * 0.587f) + 
+                                          (rightPaddleCol.blue * 0.114f);
+            if (rightPaddleBrightness < 80.0f) {
+                SetHighColor(50, 230, 100, 255); // Vibrant neon green fallback
+            } else {
+                SetHighColor(rightPaddleCol);
+            }
             FillRect(BRect(startX + artworkWidth - 5.0f, fRightPaddlePos - (paddleH / 2.0f), startX + artworkWidth, fRightPaddlePos + (paddleH / 2.0f)));
 
             // REMOVED THE WRONG BOUNDARY OVERRIDES FROM THIS HOLE
@@ -1651,7 +1666,8 @@ public:
                 SetHighColor(255, 255, 255, 255);
                 FillEllipse(BPoint(fBallX[k], fBallY[k]), fBallSize[k] / 2.0f, fBallSize[k] / 2.0f);
             }
-			SetDrawingMode(B_OP_COPY);
+            
+            SetDrawingMode(B_OP_COPY);
             SetPenSize(1.0f);
         }
 
@@ -4129,6 +4145,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                         fSpectrum->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
                         fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED));
                         fSpectrum->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+                        
                     }
 
                     if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {
@@ -4175,6 +4192,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
      			fPlayerGroup->GroupLayout()->SetInsets(20);
         		fControlStack->GroupLayout()->SetInsets(5);        
        			fSongView->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+       			fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
        			
         		fCompactModeRadio->Show();
         		fDescView->Show();
