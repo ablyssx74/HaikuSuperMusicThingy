@@ -691,8 +691,7 @@ public:
     SpectrumView(BRect frame, const char* name)
         : BView(frame, name, B_FOLLOW_ALL, B_WILL_DRAW | B_FRAME_EVENTS | B_PULSE_NEEDED) {
         SetViewColor(B_TRANSPARENT_COLOR); 
-        fCurrentLevel = -60.0;
-       
+        fCurrentLevel = -60.0;       
         memset(frequencyData, 0, 64);
         
         for (int i = 0; i < 64; i++) {
@@ -720,15 +719,12 @@ public:
 
 
     void AdaptToAlbumArt(BBitmap* artBitmap) {
-        if (artBitmap == nullptr || artBitmap->InitCheck() != B_OK) return;
-        
+        if (artBitmap == nullptr || artBitmap->InitCheck() != B_OK) return;        
         color_space space = artBitmap->ColorSpace();
         if (space != B_RGBA32 && space != B_RGB32) return;
-
         BRect bounds = artBitmap->Bounds();
         int32 width = (int32)bounds.Width() + 1;
-        int32 height = (int32)bounds.Height() + 1;
-        
+        int32 height = (int32)bounds.Height() + 1;        
         uint8* bitsBase = (uint8*)artBitmap->Bits();
         int32 bpr = artBitmap->BytesPerRow();
         if (!bitsBase) return;
@@ -744,7 +740,6 @@ public:
             float horizontalPercent = (float)i / 64.0f;
             int32 targetPixelX = (int32)(horizontalPercent * width);
             int32 byteOffset = targetPixelX * 4; 
-
             uint32 sumRed = 0, sumGreen = 0, sumBlue = 0;
 
             // Sample across all three vertical coordinate zones
@@ -759,7 +754,6 @@ public:
             uint8 finalRed   = (uint8)(sumRed / 3);
             uint8 finalGreen = (uint8)(sumGreen / 3);
             uint8 finalBlue  = (uint8)(sumBlue / 3);
-
 
 			if (finalRed < 35 && finalGreen < 35 && finalBlue < 35) {
     			uint8 maxChannel = max_c(finalRed, max_c(finalGreen, finalBlue));
@@ -779,19 +773,16 @@ public:
 			} else {
     		fArtworkPalette[i] = { finalRed, finalGreen, finalBlue, 255 };
 		}
-
         	}
         	Invalidate();
     }
 
 virtual void AttachedToWindow() override {
-    BView::AttachedToWindow(); // Essential: calls the base class setup
-    
+    BView::AttachedToWindow(); // Essential: calls the base class setup    
     if (Window() != nullptr) {
         Window()->SetPulseRate(50000); // 50ms interval (20Hz ticks)
     }
 }
-
 
 virtual void Pulse() {
     // 100,000 microseconds = 100ms timeout
@@ -804,7 +795,6 @@ virtual void Pulse() {
             fCurrentLevel = (fCurrentLevel * 0.80) + (floor * 0.20);
             changesRemaining = true;
         }
-
         // Decay the spring simulations for individual bars
         for (int i = 0; i < 64; i++) {
             if (fBarHeights[i] > 0.05f) {
@@ -830,10 +820,7 @@ virtual void Pulse() {
     }
 }
 
-
-
-    virtual void Draw(BRect updateRect) {
-    	
+    virtual void Draw(BRect updateRect) {    	
     if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) {
         if (Parent() != nullptr) {
             SetHighColor(Parent()->ViewColor());
@@ -842,19 +829,13 @@ virtual void Pulse() {
         }
         FillRect(Bounds());
         return;
-    }
-
-    	
+    }    	
         BRect b = Bounds();        
         float floor = -45.0f;
-        float peak = (float)fCurrentLevel;
-        
+        float peak = (float)fCurrentLevel;        
         if (peak < floor) peak = floor;
         if (peak > 0.0f) peak = 0.0f;
-
         float masterMagnitude = (peak - floor) / (0.0f - floor);
-
-        // Dynamically locate the slider pointer
         float currentInputDb = 0.0f;
         if (Window() != nullptr) {
             BSlider* inputSlider = dynamic_cast<BSlider*>(Window()->FindView("LimitInput"));
@@ -867,29 +848,15 @@ virtual void Pulse() {
             }
         }
 
-        // --- MASTER ACCELERATION SENSITIVITY DAMPENER ---
-        // 1. Force a strict global reduction right out of the gate
         float masterSensitivityMultiplier = 0.87f;
-
-        // 2. Apply a quadratic divisor curve to counteract high limiter gain settings.
-        // As currentInputDb climbs from 0 to +20dB, this divisor smoothly expands, 
-        // dynamically pulling the top peaks down from the screen ceiling.
         float limiterDivisor = 1.0f + (currentInputDb * 0.065f);
-
-        // Compute the highly attenuated final rendering magnitude
         masterMagnitude = (powf(masterMagnitude, 2.0f) * masterSensitivityMultiplier) / limiterDivisor;
-
 		float height = b.Height();
 		int numBars = 64;
-
-		// Track the dimensions of the artwork frame above it
 		float artworkWidth = 325.0f; 
 		float totalViewWidth = b.Width();
-
 		float startX = (totalViewWidth - artworkWidth) / 2.0f;
 		float barWidth = artworkWidth / numBars;
-
-
         const float springStiffness = 0.28f; 
         const float springDamping = 0.74f;   
 
@@ -908,7 +875,6 @@ virtual void Pulse() {
             float springForce = displacement * springStiffness;
             fBarVelocities[i] = (fBarVelocities[i] + springForce) * springDamping;
             fBarHeights[i] += fBarVelocities[i];
-
             float finalBarHeight = fBarHeights[i];
             if (finalBarHeight > height) finalBarHeight = height;
             if (finalBarHeight < 0.0f) {
@@ -972,8 +938,7 @@ public:
         SetWordWrap(true);
         SetAlignment(B_ALIGN_CENTER);
         SetInsets(2, 2, 2, 2); 
-        SetExplicitMinSize(BSize(B_SIZE_UNSET, 50));
-        
+        SetExplicitMinSize(BSize(B_SIZE_UNSET, 50));        
         fScrollOffset = 0.0f;
         fWaitTicks = 0;
         fIsWrapped = true;
@@ -1001,8 +966,6 @@ public:
         return BSize(B_SIZE_UNLIMITED, 24.0f); 
     }
 
-
-
     void SetText(const char* text, const text_run_array* runs = nullptr) {
         if (text == nullptr) {
             fRawText = "";
@@ -1029,8 +992,7 @@ public:
             fWaitTicks = 0;
             fIsWrapped = true;
             SetWordWrap(true);
-            SetAlignment(B_ALIGN_CENTER);
-            
+            SetAlignment(B_ALIGN_CENTER);            
             BRect r = Bounds();
             r.InsetBy(2, 2);
             SetTextRect(r);
@@ -1039,15 +1001,12 @@ public:
             fWaitTicks = 0;
             fIsWrapped = false;
             SetWordWrap(false);
-            SetAlignment(B_ALIGN_LEFT);
-            
+            SetAlignment(B_ALIGN_LEFT);            
             BRect r = Bounds();
             r.left = 2; 
             r.right = 99999.0f; // Expand clipping plane
             SetTextRect(r);
         }
-
-        // Force a synchronous line calculation sweep matching current constraints
         BTextView::SetText(""); 
    		BTextView::SetText(currentText.String()); 
         Invalidate();
@@ -1070,29 +1029,22 @@ public:
             }
             return;
         }
-
-        // Measure text width using the raw cached string
         BFont currentFont;
         GetFontAndColor(0, &currentFont);
         float textWidth = currentFont.StringWidth(fRawText.String());
-
         // Read the actual layout width constraint assigned by the container
         float viewWidth = Bounds().Width();
-
         // If the text fits inside the active layout box, do not scroll
         if (textWidth <= viewWidth) {
             fScrollOffset = 0.0f;
             return;
         }
-
         // Delay starting the scroll animation for 30 ticks (~1.5s)
         if (fScrollOffset == 0.0f && fWaitTicks < 30) {
             fWaitTicks++;
             return;
         }
-
         fScrollOffset += 1.2f; // Marquee speed adjustment
-
         // Loop the marquee smoothly once the text scrolls past the view boundary
         if (fScrollOffset > (textWidth + 30.0f)) {
             fScrollOffset = -viewWidth;
@@ -1101,8 +1053,6 @@ public:
 
         Invalidate();
     }
-
-
     void AttachedToWindow() override {
         BTextView::AttachedToWindow();
         SetViewColor(Parent()->ViewColor());
@@ -1110,7 +1060,6 @@ public:
         r.InsetBy(2, 2); 
         SetTextRect(r);
     }
-
     void FrameResized(float width, float height) override {
         BTextView::FrameResized(width, height);
         BRect r = Bounds();
@@ -1121,19 +1070,16 @@ public:
             r.right = 99999;
             SetTextRect(r);
         }
-    }
-    
+    }    
     void SetCustomFont(const BFont* font) {
         SetFontAndColor(font); 
         Invalidate();
     }
-
     void Draw(BRect updateRect) override {
         if (!cfg.compactMode) {
             BTextView::Draw(updateRect);
             return;
         }
-
         PushState();
         BRegion clipRegion(Bounds());
         ConstrainClippingRegion(&clipRegion);
@@ -1194,9 +1140,7 @@ public:
 
         PopState();
     }
-
-
-
+    
 private:
     float   fScrollOffset;
     int32   fWaitTicks;
@@ -1595,7 +1539,7 @@ void play_favorite() {
 
     double original_vol;
     mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &original_vol);
-    fade_volume(mpv, 0, 300);
+    fade_volume(mpv, 0, 200);
     currentSong = "Loading Favorite...";
     if (gGuiWindow && gGuiWindow->Lock()) {
         gGuiWindow->UpdateStatus(currentDesc.c_str(), currentSong.c_str());
@@ -1701,7 +1645,7 @@ void play_random() {
 
     double original_vol;        
     mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &original_vol);
-    fade_volume(mpv, 0, 300);
+    fade_volume(mpv, 0, 200);
 
     int idx = rand() % channels.size();
     Channel& chan = channels[idx];
@@ -2526,6 +2470,7 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     fSleepMenu = new BPopUpMenu("Disabled");
     fSleepMenu->SetExplicitAlignment(BAlignment(B_ALIGN_LEFT, B_ALIGN_TOP));
     BMessage* msgSleep0   = new BMessage(MSG_SLEEP_CHANGED); msgSleep0->AddInt32("minutes", 0);
+    //BMessage* msgSleep1   = new BMessage(MSG_SLEEP_CHANGED); msgSleep1->AddInt32("minutes", 1);
     BMessage* msgSleep15  = new BMessage(MSG_SLEEP_CHANGED); msgSleep15->AddInt32("minutes", 15);
     BMessage* msgSleep30  = new BMessage(MSG_SLEEP_CHANGED); msgSleep30->AddInt32("minutes", 30);
     BMessage* msgSleep1h  = new BMessage(MSG_SLEEP_CHANGED); msgSleep1h->AddInt32("minutes", 60);
@@ -2534,6 +2479,7 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     BMessage* msgSleep8h  = new BMessage(MSG_SLEEP_CHANGED); msgSleep8h->AddInt32("minutes", 480);
 
     fSleepMenu->AddItem(new BMenuItem("Disabled", msgSleep0));
+    //fSleepMenu->AddItem(new BMenuItem("1 Minute", msgSleep1));
     fSleepMenu->AddItem(new BMenuItem("15 Minutes", msgSleep15));
     fSleepMenu->AddItem(new BMenuItem("30 Minutes", msgSleep30));
     fSleepMenu->AddItem(new BMenuItem("1 Hour", msgSleep1h));
@@ -3130,11 +3076,10 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             		newState = (fCompactModeRadio->Value() == B_CONTROL_ON);
         		}
 
-        		// Only update and save config if changed by explicit user interaction
         		cfg.compactMode = newState;
         		save_config();
 
-                // Sync the UI controls if we aren't restarting (e.g., turning compact mode ON)
+                // Sync the UI controls
                 if (fCompactModeRadio) fCompactModeRadio->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
                 if (fCompactModeConfig) fCompactModeConfig->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
     		}
@@ -3638,7 +3583,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                     if (fArtView) {
                         ((AlbumArtView*)fArtView)->SetBitmap(fAlbumArt);
                     }
-
   
                     BBitmap* targetArt = fAlbumArt;
                     if (targetArt == nullptr && fIconCache.count(currentStationID) > 0) {
@@ -3648,9 +3592,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                     if (targetArt != nullptr && this->fSpectrum != nullptr) {
                         this->fSpectrum->AdaptToAlbumArt(targetArt);
                     }
-                    // ----------------------------------------------
-
-                    Unlock();
+                 Unlock();
                 }
             }
             break;
@@ -3747,7 +3689,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         }
   
   
-//--------------------------------- Proectm         
+//--------------------------------- Projectm         
         #ifdef USE_PROJECTM
         case MSG_TOGGLE_VISUALS:
         {
@@ -3763,7 +3705,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             break;
         }       
         
-//--------------------------------- Proectm           
+//--------------------------------- Projectm           
 		case MSG_REFRESH_PRESETS: {
     		const char* home = getenv("HOME");
     		if (home && fPresetList) {
@@ -3774,7 +3716,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		}
 		
 		
-//--------------------------------- Proectm   		
+//--------------------------------- Projectm   		
 		case MSG_PRESET_SELECTED: {
     		int32 index = fPresetList->CurrentSelection();
     		if (index >= 0) {
@@ -3789,7 +3731,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		break;
 		}
 		
-//--------------------------------- Proectm   
+//--------------------------------- Projectm   
 		case MSG_TOGGLE_PRESETS: {
     		bool show = (fPresetToggle->Value() == B_CONTROL_ON);    
     		if (show) {
@@ -3802,7 +3744,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		break;
 		}
 		#endif
-//--------------------------------- Proectm     
+//--------------------------------- Projectm     
 
 		case MSG_EQ_RESET:
 		{
