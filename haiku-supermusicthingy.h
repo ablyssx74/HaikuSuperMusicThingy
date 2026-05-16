@@ -106,6 +106,7 @@ enum {
     MODE_LONG_WAVE, 
     MODE_PONG_BALLS, 
     MODE_RAINDROPS, 
+    MODE_MOTO_RIDER,
     MODE_COUNT
  
 };
