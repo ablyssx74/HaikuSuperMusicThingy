@@ -100,7 +100,13 @@ enum {
 	MSG_SLEEP_TIMER_TICK = 'slpt',
     MSG_SLEEP_CHANGED    = 'slpc',
     MSG_TOGGLE_Spectrum  = 'tsmb',
-    MSG_SHUFFLE_FAVS_CHANGED = 'sfch' 
+    MSG_SHUFFLE_FAVS_CHANGED = 'sfch',
+    MODE_BARS = 0,
+    MODE_LINE_WAVE,
+    MODE_LONG_WAVE, 
+    MODE_PONG_BALLS, 
+    MODE_RAINDROPS, 
+    MODE_COUNT
  
 };
 
@@ -135,6 +141,8 @@ public:
 	
 	  
 private:
+
+
 	BGroupView* fMetaAndSpectrumStack = nullptr; 
 	BTab* fRadioTab = nullptr; 
     BTab* fStationTab = nullptr; 

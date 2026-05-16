@@ -29,6 +29,7 @@
 #include <MessageRunner.h>
 #include <InterfaceDefs.h>
 #include <Region.h>
+#include <Slider.h>
 
 
 // --- Haiku Storage Kit ---
@@ -685,6 +686,8 @@ void load_config() {
 
 
 
+
+
 class SpectrumView : public BView {
 public:
 
@@ -692,7 +695,11 @@ public:
         : BView(frame, name, B_FOLLOW_ALL, B_WILL_DRAW | B_FRAME_EVENTS | B_PULSE_NEEDED) {
         SetViewColor(B_TRANSPARENT_COLOR); 
         fCurrentLevel = -60.0;       
+        fVisualizerMode = MODE_BARS; 
+        fLastDataTime = 0;
         memset(frequencyData, 0, 64);
+        fLeftScore = 0; 
+        fRightScore = 0;
         
         for (int i = 0; i < 64; i++) {
             fBarHeights[i] = 0.0f;
@@ -702,21 +709,41 @@ public:
             fArtworkPalette[i] = { (uint8)(40 + i * 2), 210, (uint8)(255 - i * 3), 255 };
         }
         srand(time(nullptr));
+        
+        for (int r = 0; r < 75; r++) {
+    		fRainX[r] = (float)(rand() % 1000) / 1000.0f;
+    		fRainY[r] = (float)(rand() % 1000) / 1000.0f;
+    		fRainSpeed[r] = 0.01f + ((rand() % 100) / 10000.0f);
+		}
+		fRainInitNeedsPulse = false;
+
+        // Initialize Ball 1 (Bass Sphere)
+        fBallX[0] = frame.Width() * 0.25f;
+        fBallY[0] = frame.Height() * 0.50f;
+        fBallDX[0] = 3.5f;
+        fBallDY[0] = -2.5f;
+        fBallSize[0] = 12.0f;
+
+        // Initialize Ball 2 (Treble Sphere)
+        fBallX[1] = frame.Width() * 0.75f;
+        fBallY[1] = frame.Height() * 0.50f;
+        fBallDX[1] = -3.0f;
+        fBallDY[1] = 3.5f;
+        fBallSize[1] = 10.0f;
     }
     
-	void UpdateLevel(double level) {
-    	if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) return;
+    void UpdateLevel(double level) {
+        if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) return;
     
-    	fLastDataTime = system_time(); 
+        fLastDataTime = system_time(); 
     
-    	if (level > fCurrentLevel) {
-        fCurrentLevel = level;
-    	} else {
-        	fCurrentLevel = (fCurrentLevel * 0.88) + (level * 0.12);
-    	}
-    	Invalidate();
-	}
-
+        if (level > fCurrentLevel) {
+            fCurrentLevel = level;
+        } else {
+            fCurrentLevel = (fCurrentLevel * 0.88) + (level * 0.12);
+        }
+        Invalidate();
+    }
 
     void AdaptToAlbumArt(BBitmap* artBitmap) {
         if (artBitmap == nullptr || artBitmap->InitCheck() != B_OK) return;        
@@ -729,11 +756,10 @@ public:
         int32 bpr = artBitmap->BytesPerRow();
         if (!bitsBase) return;
 
-        // MULTI-ROW MATRIX: Define three distinct vertical zones to sample
-        int32 rows[3] = {
-            (int32)(height * 0.30f),  // Upper Zone: Captures sunset yellow & palm trees
-            (int32)(height * 0.55f),  // Middle Zone: Captures bridge neon purples & pinks
-            (int32)(height * 0.75f)   // Lower Zone: Captures blue/cyan grid lines & text glow
+        int32 rows[] = {
+            (int32)(height * 0.30f),  
+            (int32)(height * 0.55f),  
+            (int32)(height * 0.75f)   
         };
 
         for (int i = 0; i < 64; i++) {
@@ -742,7 +768,6 @@ public:
             int32 byteOffset = targetPixelX * 4; 
             uint32 sumRed = 0, sumGreen = 0, sumBlue = 0;
 
-            // Sample across all three vertical coordinate zones
             for (int r = 0; r < 3; r++) {
                 uint8* rowPtr = bitsBase + (rows[r] * bpr);
                 sumBlue  += rowPtr[byteOffset + 0];
@@ -750,99 +775,74 @@ public:
                 sumRed   += rowPtr[byteOffset + 2];
             }
 
-            // Calculate the blended average for this spectrum column slice
             uint8 finalRed   = (uint8)(sumRed / 3);
             uint8 finalGreen = (uint8)(sumGreen / 3);
             uint8 finalBlue  = (uint8)(sumBlue / 3);
 
-			if (finalRed < 35 && finalGreen < 35 && finalBlue < 35) {
-    			uint8 maxChannel = max_c(finalRed, max_c(finalGreen, finalBlue));
+            if (finalRed < 35 && finalGreen < 35 && finalBlue < 35) {
+                uint8 maxChannel = max_c(finalRed, max_c(finalGreen, finalBlue));
     
-    		if (maxChannel == 0) {
-        		fArtworkPalette[i] = { 40, 50, 60, 255 }; 
-    			} else {
-        		// Amplify the existing subtle tint to a visible baseline floor (e.g., scale up to 60)
-        		float boostFactor = 60.0f / (float)maxChannel;
-        		fArtworkPalette[i] = {
-            		(uint8)min_c(255, (int)(finalRed * boostFactor)),
-            		(uint8)min_c(255, (int)(finalGreen * boostFactor)),
-            		(uint8)min_c(255, (int)(finalBlue * boostFactor)),
-            		255
-        	};
-    	}
-			} else {
-    		fArtworkPalette[i] = { finalRed, finalGreen, finalBlue, 255 };
-		}
-        	}
-        	Invalidate();
-    }
-
-virtual void AttachedToWindow() override {
-    BView::AttachedToWindow(); // Essential: calls the base class setup    
-    if (Window() != nullptr) {
-        Window()->SetPulseRate(50000); // 50ms interval (20Hz ticks)
-    }
-}
-
-virtual void Pulse() {
-    // 100,000 microseconds = 100ms timeout
-    if ((system_time() - fLastDataTime) > 100000) { 
-        float floor = -45.0f;
-        bool changesRemaining = false;
-
-        // Smoothly decay the master volume tracker floor
-        if (fCurrentLevel > floor) {
-            fCurrentLevel = (fCurrentLevel * 0.80) + (floor * 0.20);
-            changesRemaining = true;
-        }
-        // Decay the spring simulations for individual bars
-        for (int i = 0; i < 64; i++) {
-            if (fBarHeights[i] > 0.05f) {
-                fBarHeights[i] *= 0.75f; // Pull down exponentially
-                fBarVelocities[i] *= 0.50f;
-                changesRemaining = true;
+                if (maxChannel == 0) {
+                    fArtworkPalette[i] = { 40, 50, 60, 255 }; 
+                } else {
+                    float boostFactor = 60.0f / (float)maxChannel;
+                    fArtworkPalette[i] = {
+                        (uint8)min_c(255, (int)(finalRed * boostFactor)),
+                        (uint8)min_c(255, (int)(finalGreen * boostFactor)),
+                        (uint8)min_c(255, (int)(finalBlue * boostFactor)),
+                        255
+                    };
+                }
             } else {
-                fBarHeights[i] = 0.0f;
-                fBarVelocities[i] = 0.0f;
-            }
-            
-            // Bring peak bars down too
-            if (fPeakHeights[i] > 0.0f) {
-                fPeakHeights[i] -= 1.5f;
-                if (fPeakHeights[i] < 0.0f) fPeakHeights[i] = 0.0f;
-                changesRemaining = true;
+                fArtworkPalette[i] = { finalRed, finalGreen, finalBlue, 255 };
             }
         }
+        Invalidate();
+    }
 
-        if (changesRemaining) {
-            Invalidate();
+    virtual void AttachedToWindow() override {
+        BView::AttachedToWindow();    
+        if (Window() != nullptr) {
+            Window()->SetPulseRate(50000); 
         }
     }
-}
 
-    virtual void Draw(BRect updateRect) {    	
-    if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) {
-        if (Parent() != nullptr) {
-            SetHighColor(Parent()->ViewColor());
-        } else {
-            SetHighColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+    virtual void MouseDown(BPoint point) override {
+        BMessage* message = Window()->CurrentMessage();
+        int32 buttons = 0;
+        
+        if (message != nullptr && message->FindInt32("buttons", &buttons) == B_OK) {
+            if (buttons & B_PRIMARY_MOUSE_BUTTON) {
+                fVisualizerMode = (fVisualizerMode + 1) % MODE_COUNT;
+                Invalidate();
+                return; 
+            }
         }
-        FillRect(Bounds());
-        return;
-    }    	
-        BRect b = Bounds();        
-        float floor = -45.0f;
+        BView::MouseDown(point);
+    }
+
+    virtual void Pulse() override {
+        BRect b = Bounds();
+        float w = b.Width();
+        float viewHeight = b.Height();
+
+        if (viewHeight <= 0 || w <= 0) return;
+
+        // ====================================================================
+        // 1. MASTER AUDIO MAGNITUDE & SPRING PHYSICS CALCULATIONS
+        // ====================================================================
+        float floorDb = -45.0f;
         float peak = (float)fCurrentLevel;        
-        if (peak < floor) peak = floor;
+        if (peak < floorDb) peak = floorDb;
         if (peak > 0.0f) peak = 0.0f;
-        float masterMagnitude = (peak - floor) / (0.0f - floor);
+        float masterMagnitude = (peak - floorDb) / (0.0f - floorDb);
         float currentInputDb = 0.0f;
+        
         if (Window() != nullptr) {
             BSlider* inputSlider = dynamic_cast<BSlider*>(Window()->FindView("LimitInput"));
             if (inputSlider == nullptr) {
                 inputSlider = dynamic_cast<BSlider*>(Window()->FindView("input_gain"));
             }
-
             if (inputSlider != nullptr) {
                 currentInputDb = (float)inputSlider->Value();
             }
@@ -851,14 +851,213 @@ virtual void Pulse() {
         float masterSensitivityMultiplier = 0.87f;
         float limiterDivisor = 1.0f + (currentInputDb * 0.065f);
         masterMagnitude = (powf(masterMagnitude, 2.0f) * masterSensitivityMultiplier) / limiterDivisor;
-		float height = b.Height();
-		int numBars = 64;
-		float artworkWidth = 325.0f; 
-		float totalViewWidth = b.Width();
-		float startX = (totalViewWidth - artworkWidth) / 2.0f;
-		float barWidth = artworkWidth / numBars;
+
         const float springStiffness = 0.28f; 
         const float springDamping = 0.74f;   
+
+        for (int i = 0; i < 64; i++) {
+            float frequencyScale = 1.0f;
+            if (i < 12) {
+                frequencyScale = 1.15f + ((12 - i) * 0.03f); 
+            } else if (i > 45) {
+                frequencyScale = 0.85f - ((i - 45) * 0.02f); 
+            }
+
+            float punchFactor = 0.80f + ((rand() % 40) / 100.0f); 
+            float targetHeight = masterMagnitude * viewHeight * frequencyScale * punchFactor;
+
+            float displacement = targetHeight - fBarHeights[i];
+            float springForce = displacement * springStiffness;
+            fBarVelocities[i] = (fBarVelocities[i] + springForce) * springDamping;
+            fBarHeights[i] += fBarVelocities[i];
+            
+            if (fBarHeights[i] > viewHeight) fBarHeights[i] = viewHeight;
+            if (fBarHeights[i] < 0.0f) {
+                fBarHeights[i] = 0.0f;
+                fBarVelocities[i] = 0.0f; 
+            }
+
+            if (fBarHeights[i] >= fPeakHeights[i]) {
+                fPeakHeights[i] = fBarHeights[i];
+                fPeakHold[i] = 6; 
+            } else {
+                if (fPeakHold[i] > 0) {
+                    fPeakHold[i]--;
+                } else {
+                    fPeakHeights[i] -= (viewHeight * 0.025f); 
+                    if (fPeakHeights[i] < 0.0f) fPeakHeights[i] = 0.0f;
+                }
+            }
+        }
+
+        // ====================================================================
+        // 2. TIMEOUT SMOOTHING DECAYS
+        // ====================================================================
+        if ((system_time() - fLastDataTime) > 100000) { 
+            if (fCurrentLevel > floorDb) {
+                fCurrentLevel = (fCurrentLevel * 0.80) + (floorDb * 0.20);
+            }
+            for (int i = 0; i < 64; i++) {
+                if (fBarHeights[i] > 0.05f) {
+                    fBarHeights[i] *= 0.75f; 
+                    fBarVelocities[i] *= 0.50f;
+                } else {
+                    fBarHeights[i] = 0.0f;
+                    fBarVelocities[i] = 0.0f;
+                }
+                if (fPeakHeights[i] > 0.0f) {
+                    fPeakHeights[i] -= 1.5f;
+                    if (fPeakHeights[i] < 0.0f) fPeakHeights[i] = 0.0f;
+                }
+            }
+        }
+
+        // ====================================================================
+        // 3. AUTOPILOT PONG PHYSICS ENGINE 
+        // ====================================================================
+        if (fVisualizerMode == MODE_PONG_BALLS) {
+            float bassImpact   = (fBarHeights[2] + fBarHeights[6] + fBarHeights[12]) / 3.0f;
+            float trebleImpact = (fBarHeights[48] + fBarHeights[54] + fBarHeights[60]) / 3.0f;
+
+            float paddleH = 26.0f; 
+
+            float leftTargetY = viewHeight / 2.0f;
+            float rightTargetY = viewHeight / 2.0f;
+            float closestLeftDist = 99999.0f;
+            float closestRightDist = 99999.0f;
+
+            for (int k = 0; k < 2; k++) {
+                if (fBallDX[k] < 0 && fBallX[k] < closestLeftDist) {
+                    closestLeftDist = fBallX[k];
+                    leftTargetY = fBallY[k];
+                }
+                if (fBallDX[k] > 0 && fBallX[k] > closestRightDist) {
+                    closestRightDist = fBallX[k];
+                    rightTargetY = fBallY[k];
+                }
+            }
+
+            leftTargetY += fLeftPaddleTargetOffset;
+            rightTargetY += fRightPaddleTargetOffset;
+
+            if (leftTargetY < paddleH / 2.0f) leftTargetY = paddleH / 2.0f;
+            if (leftTargetY > viewHeight - (paddleH / 2.0f)) leftTargetY = viewHeight - (paddleH / 2.0f);
+            if (rightTargetY < paddleH / 2.0f) rightTargetY = paddleH / 2.0f;
+            if (rightTargetY > viewHeight - (paddleH / 2.0f)) rightTargetY = viewHeight - (paddleH / 2.0f);
+
+            fLeftPaddlePos += (leftTargetY - fLeftPaddlePos) * (0.18f + bassImpact * 0.02f);
+            //fRightPaddlePos += (rightTargetY - fRightPaddlePos) * (0.18f + trebleImpact * 0.02f);
+			fRightPaddlePos += (rightTargetY - fRightPaddlePos) * 0.38f;
+
+
+            for (int k = 0; k < 2; k++) {
+                float currentImpact = (k == 0) ? bassImpact : trebleImpact;
+                float audioSpeedBoost = 1.0f + (currentImpact * 0.05f);
+
+                fBallX[k] += fBallDX[k] * audioSpeedBoost;
+                fBallY[k] += fBallDY[k] * audioSpeedBoost;
+                
+                // RESTORED DESIGN TRACK: Reverted to static dimensions
+                fBallSize[k] = (k == 0) ? 12.0f : 10.0f;
+
+                float radius = fBallSize[k] / 2.0f;
+
+                if (fBallY[k] - radius < 0) { fBallY[k] = radius; fBallDY[k] = -fBallDY[k]; }
+                else if (fBallY[k] + radius > viewHeight) { fBallY[k] = viewHeight - radius; fBallDY[k] = -fBallDY[k]; }
+
+                float leftPaddleRightEdge = startX_cached + 5.0f;
+                if (fBallX[k] - radius <= leftPaddleRightEdge && fBallX[k] + radius >= startX_cached && fBallDX[k] < 0) {
+                    if (fBallY[k] >= fLeftPaddlePos - (paddleH / 2.0f) - 2.0f && fBallY[k] <= fLeftPaddlePos + (paddleH / 2.0f) + 2.0f) {
+                        fBallX[k] = leftPaddleRightEdge + radius;
+                        fBallDX[k] = -fBallDX[k];
+                        fLeftScore++; 
+                        fLeftPaddleTargetOffset = (float)((rand() % 20) - 10); 
+                    }
+                }
+
+                float rightPaddleLeftEdge = startX_cached + artworkWidth_cached - 5.0f;
+                if (fBallX[k] + radius >= rightPaddleLeftEdge && fBallX[k] - radius <= startX_cached + artworkWidth_cached && fBallDX[k] > 0) {
+                    if (fBallY[k] >= fRightPaddlePos - (paddleH / 2.0f) - 2.0f && fBallY[k] <= fRightPaddlePos + (paddleH / 2.0f) + 2.0f) {
+                        fBallX[k] = rightPaddleLeftEdge - radius;
+                        fBallDX[k] = -fBallDX[k];
+                         fRightScore++;
+                        fRightPaddleTargetOffset = (float)((rand() % 20) - 10);
+                    }
+                }
+
+                if (fBallX[k] < startX_cached || fBallX[k] > startX_cached + artworkWidth_cached) {
+                    fBallX[k] = startX_cached + (artworkWidth_cached / 2.0f);
+                    fBallY[k] = viewHeight / 2.0f;
+                    fBallDX[k] = (k == 0) ? 3.5f : -3.0f;
+                }
+            }
+        }
+
+        // ====================================================================
+        // 4. MODE 5 RAINDROPS PHYSICS UPDATES
+        // ====================================================================
+        if (fVisualizerMode == MODE_RAINDROPS) {
+            for (int r = 0; r < 75; r++) {
+                int freqIdx = (int)(fRainX[r] * 63.0f);
+                fRainY[r] += fRainSpeed[r] * (1.0f + (fBarHeights[freqIdx] / viewHeight) * 2.5f);
+                if (fRainY[r] > 1.0f) {
+                    fRainY[r] = 0.0f;
+                    fRainX[r] = (float)(rand() % 1000) / 1000.0f;
+                    fRainSpeed[r] = 0.01f + ((rand() % 100) / 10000.0f);
+                }
+            }
+        }
+
+        Invalidate(); 
+    }
+
+
+
+    virtual void Draw(BRect updateRect) override {       
+        if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) {
+            if (Parent() != nullptr) {
+                SetHighColor(Parent()->ViewColor());
+            } else {
+                SetHighColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+            }
+            FillRect(Bounds());
+            return;
+        }       
+        
+        BRect b = Bounds();        
+        float floor = -45.0f;
+        float peak = (float)fCurrentLevel;        
+        if (peak < floor) peak = floor;
+        if (peak > 0.0f) peak = 0.0f;
+        float masterMagnitude = (peak - floor) / (0.0f - floor);
+        float currentInputDb = 0.0f;
+        
+        if (Window() != nullptr) {
+            BSlider* inputSlider = dynamic_cast<BSlider*>(Window()->FindView("LimitInput"));
+            if (inputSlider == nullptr) {
+                inputSlider = dynamic_cast<BSlider*>(Window()->FindView("input_gain"));
+            }
+            if (inputSlider != nullptr) {
+                currentInputDb = (float)inputSlider->Value();
+            }
+        }
+
+        float masterSensitivityMultiplier = 0.87f;
+        float limiterDivisor = 1.0f + (currentInputDb * 0.065f);
+        masterMagnitude = (powf(masterMagnitude, 2.0f) * masterSensitivityMultiplier) / limiterDivisor;
+        
+        float height = b.Height();
+        int numBars = 64;
+        float artworkWidth = 325.0f; 
+        float totalViewWidth = b.Width();
+        float startX = (totalViewWidth - artworkWidth) / 2.0f;
+        float barWidth = artworkWidth / numBars;
+        const float springStiffness = 0.28f; 
+        const float springDamping = 0.74f;   
+
+        // Cache view limits into loop dimensions for Pulse() engine threads
+        artworkWidth_cached = artworkWidth;
+        startX_cached = startX;
 
         for (int i = 0; i < numBars; i++) {
             float frequencyScale = 1.0f;
@@ -875,15 +1074,15 @@ virtual void Pulse() {
             float springForce = displacement * springStiffness;
             fBarVelocities[i] = (fBarVelocities[i] + springForce) * springDamping;
             fBarHeights[i] += fBarVelocities[i];
-            float finalBarHeight = fBarHeights[i];
-            if (finalBarHeight > height) finalBarHeight = height;
-            if (finalBarHeight < 0.0f) {
-                finalBarHeight = 0.0f;
+            
+            if (fBarHeights[i] > height) fBarHeights[i] = height;
+            if (fBarHeights[i] < 0.0f) {
+                fBarHeights[i] = 0.0f;
                 fBarVelocities[i] = 0.0f; 
             }
 
-            if (finalBarHeight >= fPeakHeights[i]) {
-                fPeakHeights[i] = finalBarHeight;
+            if (fBarHeights[i] >= fPeakHeights[i]) {
+                fPeakHeights[i] = fBarHeights[i];
                 fPeakHold[i] = 6; 
             } else {
                 if (fPeakHold[i] > 0) {
@@ -893,27 +1092,285 @@ virtual void Pulse() {
                     if (fPeakHeights[i] < 0.0f) fPeakHeights[i] = 0.0f;
                 }
             }
+        }
 
-            SetHighColor(fArtworkPalette[i]);             
-            FillRect(BRect(startX + (i * barWidth), height - finalBarHeight, 
-               startX + ((i + 1) * barWidth) - 1, height));
+        // Fetch parent panel color
+        rgb_color bgCol = (Parent() != nullptr) ? Parent()->ViewColor() : ui_color(B_PANEL_BACKGROUND_COLOR);
+        SetHighColor(bgCol);
+        FillRect(b);
 
-            if (fPeakHeights[i] > finalBarHeight && fPeakHeights[i] > 2.0f) {
-                rgb_color peakColor = fArtworkPalette[i];
-                peakColor.red   = (uint8)min_c(255, peakColor.red + 50);
-                peakColor.green = (uint8)min_c(255, peakColor.green + 50);
-                peakColor.blue  = (uint8)min_c(255, peakColor.blue + 50);
+        // --- RENDER MODES ---
+        if (fVisualizerMode == MODE_BARS) {
+            for (int i = 0; i < numBars; i++) {
+                float finalBarHeight = fBarHeights[i];
                 
-                SetHighColor(peakColor); 
-                StrokeLine(BPoint(startX + (i * barWidth), height - fPeakHeights[i]),
-           			BPoint(startX + ((i + 1) * barWidth) - 1, height - fPeakHeights[i]));
+                SetHighColor(fArtworkPalette[i]);             
+                FillRect(BRect(startX + (i * barWidth), height - finalBarHeight, 
+                   startX + ((i + 1) * barWidth) - 1, height));
+
+                if (fPeakHeights[i] > finalBarHeight && fPeakHeights[i] > 2.0f) {
+                    rgb_color peakColor = fArtworkPalette[i];
+                    peakColor.red   = (uint8)min_c(255, peakColor.red + 50);
+                    peakColor.green = (uint8)min_c(255, peakColor.green + 50);
+                    peakColor.blue  = (uint8)min_c(255, peakColor.blue + 50);
+                    
+                    SetHighColor(peakColor); 
+                    StrokeLine(BPoint(startX + (i * barWidth), height - fPeakHeights[i]),
+                               BPoint(startX + ((i + 1) * barWidth) - 1, height - fPeakHeights[i]));
+                }
             }
+        } 
+        else if (fVisualizerMode == MODE_LINE_WAVE) {
+        	
+            SetPenSize(2.5f);
+            float midY = height / 2.0f;
+
+            BPoint points[64];
+            for (int i = 0; i < numBars; i++) {
+                float currentX = startX + (i * barWidth) + (barWidth / 2.0f);
+                
+                float fadeWindow = 1.0f;
+                if (i < 8)  fadeWindow = (float)i / 8.0f;
+                if (i > 55) fadeWindow = (float)(63 - i) / 8.0f;
+                
+                float offset = fBarHeights[i] * 0.5f * fadeWindow; 
+                float currentY = (i % 2 == 0) ? (midY - offset) : (midY + offset);
+                points[i] = BPoint(currentX, currentY);
+            }
+
+            for (int i = 0; i < numBars - 1; i++) {
+                SetHighColor(fArtworkPalette[i]);
+
+                int i0 = (i == 0) ? 0 : i - 1; int i1 = i; int i2 = i + 1; int i3 = (i + 2 >= numBars) ? numBars - 1 : i + 2;
+                BPoint p0 = points[i0]; BPoint p1 = points[i1]; BPoint p2 = points[i2]; BPoint p3 = points[i3];
+
+                const int steps = 4; BPoint prevSegmentPoint = p1;
+
+                for (int s = 1; s <= steps; s++) {
+                    float t = (float)s / (float)steps; float t2 = t * t; float t3 = t2 * t;
+                    float f1 = -0.5f * t3 + t2 - 0.5f * t; float f2 = 1.5f * t3 - 2.5f * t2 + 1.0f; float f3 = -1.5f * t3 + 2.0f * t2 + 0.5f * t; float f4 = 0.5f * t3 - 0.5f * t2;
+                    BPoint currSegmentPoint(p0.x * f1 + p1.x * f2 + p2.x * f3 + p3.x * f4, p0.y * f1 + p1.y * f2 + p2.y * f3 + p3.y * f4);
+                    StrokeLine(prevSegmentPoint, currSegmentPoint);
+                    prevSegmentPoint = currSegmentPoint;
+                }
+            }
+            
+            SetPenSize(1.0f); 
+        }
+        else if (fVisualizerMode == MODE_LONG_WAVE) {
+            float midY = height / 2.0f;
+            const int numNodes = 10; BPoint nodes[10];
+            
+            // INSET BOUNDS: Margins pull endpoints safely inside the clipping region
+            float innerWidth = artworkWidth - 4.0f;
+            float adjustedStartX = startX + 2.0f;
+
+            for (int i = 0; i < numNodes; i++) {
+                nodes[i].x = adjustedStartX + (innerWidth * ((float)i / (float)(numNodes - 1)));
+            }
+
+
+            float peakAmplitudes[8] = { 0.0f };
+            for (int chunk = 0; chunk < 8; chunk++) {
+                float sum = 0.0f; int startBar = chunk * 8;
+                for (int sub = 0; sub < 8; sub++) { sum += fBarHeights[startBar + sub]; }
+                peakAmplitudes[chunk] = (sum / 8.0f) * 0.45f; 
+            }
+
+            nodes[0].y = midY; nodes[9].y = midY;
+            nodes[1].y = midY - peakAmplitudes[0]; nodes[2].y = midY + peakAmplitudes[1]; 
+            nodes[3].y = midY - peakAmplitudes[2]; nodes[4].y = midY + peakAmplitudes[3]; 
+            nodes[5].y = midY - peakAmplitudes[4]; nodes[6].y = midY + peakAmplitudes[5]; 
+            nodes[7].y = midY - peakAmplitudes[6]; nodes[8].y = midY + peakAmplitudes[7]; 
+
+            // --- PASS 1: GLOW SHADOW PASS ---
+            SetPenSize(6.0f); 
+            for (int glowMirror = 0; glowMirror < 2; glowMirror++) { 
+                for (int i = 0; i < numNodes - 1; i++) {
+                    int i0 = (i == 0) ? 0 : i - 1; int i1 = i; int i2 = i + 1; int i3 = (i + 2 >= numNodes) ? numNodes - 1 : i + 2;
+                    BPoint p0 = nodes[i0]; BPoint p1 = nodes[i1]; BPoint p2 = nodes[i2]; BPoint p3 = nodes[i3];
+                    
+                    if (glowMirror == 1) { 
+                        p0.y = midY + (midY - p0.y); p1.y = midY + (midY - p1.y); 
+                        p2.y = midY + (midY - p2.y); p3.y = midY + (midY - p3.y); 
+                    }
+                    
+                    rgb_color colStart = fArtworkPalette[(int)(((float)i / (float)(numNodes - 1)) * 63.0f)];
+                    rgb_color colEnd = fArtworkPalette[(int)(((float)(i + 1) / (float)(numNodes - 1)) * 63.0f)];
+                    
+                    BPoint prevSegmentPoint(p0.x * 0.0f + p1.x * 1.0f + p2.x * 0.0f + p3.x * 0.0f, p0.y * 0.0f + p1.y * 1.0f + p2.y * 0.0f + p3.y * 0.0f);
+                    
+                    const int steps = 24;
+                    for (int s = 1; s <= steps; s++) {
+                        float t = (float)s / (float)steps; float t2 = t * t; float t3 = t2 * t;
+                        float f1 = -0.5f * t3 + t2 - 0.5f * t; float f2 = 1.5f * t3 - 2.5f * t2 + 1.0f; float f3 = -1.5f * t3 + 2.0f * t2 + 0.5f * t; float f4 = 0.5f * t3 - 0.5f * t2;
+                        
+                        rgb_color glowColor; 
+                        float rR = (colStart.red + (colEnd.red - colStart.red) * t) * 0.4f; 
+                        float rG = (colStart.green + (colEnd.green - colStart.green) * t) * 0.4f; 
+                        float rB = (colStart.blue + (colEnd.blue - colStart.blue) * t) * 0.4f;
+                        
+                        if (glowMirror == 1) { glowColor = { (uint8)(rR * 0.5f + bgCol.red * 0.5f), (uint8)(rG * 0.5f + bgCol.green * 0.5f), (uint8)(rB * 0.5f + bgCol.blue * 0.5f), 255 }; }
+                        else { glowColor = { (uint8)rR, (uint8)rG, (uint8)rB, 255 }; }
+                        
+                        SetHighColor(glowColor);
+                        BPoint curr(p0.x * f1 + p1.x * f2 + p2.x * f3 + p3.x * f4, p0.y * f1 + p1.y * f2 + p2.y * f3 + p3.y * f4);
+                        StrokeLine(prevSegmentPoint, curr); prevSegmentPoint = curr;
+                    }
+                }
+            }
+
+            // --- PASS 2: CRISP FOREGROUND PASS ---
+            SetPenSize(3.0f); 
+            for (int fgMirror = 0; fgMirror < 2; fgMirror++) { 
+                for (int i = 0; i < numNodes - 1; i++) {
+                    int i0 = (i == 0) ? 0 : i - 1; int i1 = i; int i2 = i + 1; int i3 = (i + 2 >= numNodes) ? numNodes - 1 : i + 2;
+                    BPoint p0 = nodes[i0]; BPoint p1 = nodes[i1]; BPoint p2 = nodes[i2]; BPoint p3 = nodes[i3];
+                    
+                    if (fgMirror == 1) { 
+                        p0.y = midY + (midY - p0.y); p1.y = midY + (midY - p1.y); 
+                        p2.y = midY + (midY - p2.y); p3.y = midY + (midY - p3.y); 
+                    }
+                    
+                    rgb_color colStart = fArtworkPalette[(int)(((float)i / (float)(numNodes - 1)) * 63.0f)];
+                    rgb_color colEnd = fArtworkPalette[(int)(((float)(i + 1) / (float)(numNodes - 1)) * 63.0f)];
+                    
+                    BPoint prevSegmentPoint(p0.x * 0.0f + p1.x * 1.0f + p2.x * 0.0f + p3.x * 0.0f, p0.y * 0.0f + p1.y * 1.0f + p2.y * 0.0f + p3.y * 0.0f);
+                    
+                    const int steps = 24;
+                    for (int s = 1; s <= steps; s++) {
+                        float t = (float)s / (float)steps; float t2 = t * t; float t3 = t2 * t;
+                        float f1 = -0.5f * t3 + t2 - 0.5f * t; float f2 = 1.5f * t3 - 2.5f * t2 + 1.0f; float f3 = -1.5f * t3 + 2.0f * t2 + 0.5f * t; float f4 = 0.5f * t3 - 0.5f * t2;
+                        
+                        rgb_color blendedColor; 
+                        float rR = colStart.red + (colEnd.red - colStart.red) * t; 
+                        float rG = colStart.green + (colEnd.green - colStart.green) * t; 
+                        float rB = colStart.blue + (colEnd.blue - colStart.blue) * t;
+                        
+                        if (fgMirror == 1) { blendedColor = { (uint8)(rR * 0.5f + bgCol.red * 0.5f), (uint8)(rG * 0.5f + bgCol.green * 0.5f), (uint8)(rB * 0.5f + bgCol.blue * 0.5f), 255 }; }
+                        else { blendedColor = { (uint8)rR, (uint8)rG, (uint8)rB, 255 }; }
+                        
+                        SetHighColor(blendedColor);
+                        BPoint curr(p0.x * f1 + p1.x * f2 + p2.x * f3 + p3.x * f4, p0.y * f1 + p1.y * f2 + p2.y * f3 + p3.y * f4);
+                        StrokeLine(prevSegmentPoint, curr); prevSegmentPoint = curr;
+                    }
+                }
+            }
+            SetDrawingMode(B_OP_COPY);
+            SetPenSize(1.0f); 
+        }
+
+        else if (fVisualizerMode == MODE_PONG_BALLS) {
+           
+            float paddleH = 21.0f; // Matches shorter design specification constraints
+
+            // Draw center dash partition line 
+            float bgBrightness = (bgCol.red * 0.299f) + (bgCol.green * 0.587f) + (bgCol.blue * 0.114f);
+            if (bgBrightness < 100.0f) { SetHighColor(50, 230, 100, 140); } 
+            else { SetHighColor(160, 165, 170, 120); }
+
+            SetPenSize(1.5f);
+            float verticalPadding = 6.0f; 
+            for (float dY = verticalPadding; dY < (height - verticalPadding); dY += 12.0f) {
+                StrokeLine(BPoint(startX + (artworkWidth / 2.0f), dY), 
+                           BPoint(startX + (artworkWidth / 2.0f), dY + 6.0f));
+            }
+            
+                        // --- RETRO ARCADE SCORE TRACKING DISPLAY ---
+            BFont scoreFont;
+            GetFont(&scoreFont);
+            scoreFont.SetSize(14.0f); // Make it large and readable
+            SetFont(&scoreFont);
+
+            BString leftScoreStr, rightScoreStr;
+            leftScoreStr.SetToFormat("%" B_PRId32, fLeftScore);
+            rightScoreStr.SetToFormat("%" B_PRId32, fRightScore);
+
+            // Calculate centered offsets for left and right scoreboard text blocks
+            float midPointX = startX + (artworkWidth / 2.0f);
+            float scoreY = 18.0f; // Position safely near the top ceiling margin
+
+            DrawString(leftScoreStr.String(), BPoint(midPointX - 35.0f, scoreY));
+            DrawString(rightScoreStr.String(), BPoint(midPointX + 22.0f, scoreY));
+
+
+            // Draw left paddle (Using physics calculations calculated cleanly by Pulse)
+            SetHighColor(fArtworkPalette[4]);
+            FillRect(BRect(startX, fLeftPaddlePos - (paddleH / 2.0f), startX + 5.0f, fLeftPaddlePos + (paddleH / 2.0f)));
+         
+
+            // Draw left paddle (Using physics calculations calculated cleanly by Pulse)
+            SetHighColor(fArtworkPalette[4]);
+            FillRect(BRect(startX, fLeftPaddlePos - (paddleH / 2.0f), startX + 5.0f, fLeftPaddlePos + (paddleH / 2.0f)));
+
+            // Draw right paddle (Using physics calculations calculated cleanly by Pulse)
+            SetHighColor(fArtworkPalette[58]);
+            FillRect(BRect(startX + artworkWidth - 5.0f, fRightPaddlePos - (paddleH / 2.0f), startX + artworkWidth, fRightPaddlePos + (paddleH / 2.0f)));
+
+            // Render the two spheres
+            for (int k = 0; k < 2; k++) {
+                rgb_color glowColor = (k == 0) ? fArtworkPalette[10] : fArtworkPalette[50];
+                SetHighColor(glowColor.red, glowColor.green, glowColor.blue, 120);
+                FillEllipse(BPoint(fBallX[k], fBallY[k]), (fBallSize[k] / 2.0f) + 3.0f, (fBallSize[k] / 2.0f) + 3.0f);
+
+                SetHighColor(255, 255, 255, 255);
+                FillEllipse(BPoint(fBallX[k], fBallY[k]), fBallSize[k] / 2.0f, fBallSize[k] / 2.0f);
+            }
+            SetPenSize(1.0f);
+        }
+
+        else if (fVisualizerMode == MODE_RAINDROPS) {
+            // Mode 5: Audio-Reactive Falling Particle Rain Drops
+            SetPenSize(1.8f);
+
+            // Compute a smooth sine-wave transparency multiplier linked to system clocks
+            float systemTimeSec = (float)system_time() / 1000000.0f;
+            float pulseWave = (sinf(systemTimeSec * 4.5f) + 1.0f) / 2.0f; 
+            float dynamicOpacityPct = 0.35f + (pulseWave * 0.50f); // Fluctuates smoothly between 35% and 85%
+
+            for (int i = 0; i < 75; i++) {
+                // Read underlying frequency data based on where the raindrop is horizontally
+                int frequencyIndex = (int)(fRainX[i] * 63.0f);
+                float audioDrive = fBarHeights[frequencyIndex] / height; // Normalized 0.0 to 1.0 energy
+
+                // Accelerate the drop downwards based on local frequency engine pressure
+                fRainY[i] += fRainSpeed[i] * (1.0f + audioDrive * 2.5f);
+
+                // Recycle drop back to the top once it hits the floor bounds
+                if (fRainY[i] > 1.0f) {
+                    fRainY[i] = 0.0f;
+                    fRainX[i] = (float)(rand() % 1000) / 1000.0f;
+                    fRainSpeed[i] = 0.01f + ((rand() % 100) / 10000.0f);
+                }
+
+                // Map the 0.0-1.0 relative floats to actual window coordinates
+                float currentX = startX + (fRainX[i] * artworkWidth);
+                float currentY = fRainY[i] * height;
+
+                // Grab color mapping based on horizontal string position keys
+                rgb_color dropColor = fArtworkPalette[frequencyIndex];
+
+                // Fake transparency color mixing engine: (DropColor * Opacity) + (BGColor * TransparentInverse)
+                rgb_color transparentBlendedColor;
+                transparentBlendedColor.red   = (uint8)(dropColor.red   * dynamicOpacityPct + bgCol.red   * (1.0f - dynamicOpacityPct));
+                transparentBlendedColor.green = (uint8)(dropColor.green * dynamicOpacityPct + bgCol.green * (1.0f - dynamicOpacityPct));
+                transparentBlendedColor.blue  = (uint8)(dropColor.blue  * dynamicOpacityPct + bgCol.blue  * (1.0f - dynamicOpacityPct));
+                transparentBlendedColor.alpha = 255;
+
+                // Draw raindrop trailing speed filament streaks
+                float tailLength = 4.0f + (audioDrive * 12.0f); // Rain streaks grow longer during high volume spikes
+                SetHighColor(transparentBlendedColor);
+                StrokeLine(BPoint(currentX, currentY - tailLength), BPoint(currentX, currentY));
+            }
+
+            // Force constant redraw frame looping to update physics positions inside Pulse() threads
+            fRainInitNeedsPulse = true;
+            SetPenSize(1.0f);
         }
     }
 
-
     void UpdateData(const uint8* data, size_t size) {
-    	if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) return;
+        if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) return;
         memcpy(frequencyData, data, size > 64 ? 64 : size);
         Invalidate();
     }
@@ -927,7 +1384,32 @@ private:
     int       fPeakHold[64];     
     rgb_color fArtworkPalette[64];
     bigtime_t fLastDataTime;    
+    int32     fVisualizerMode; 
+
+    // Pong Engine State Storage Values
+    float     fBallX[2];
+    float     fBallY[2];
+    float     fBallDX[2];
+    float     fBallDY[2];
+    float     fBallSize[2];
+    float     startX_cached;
+    float     artworkWidth_cached;
+
+    // Rain Drop State Arrays (Added explicit internal storage limits)
+    float     fRainX[75];
+    float     fRainY[75];
+    float     fRainSpeed[75];
+    bool      fRainInitNeedsPulse;
+    
+    float fLeftPaddlePos;
+    float fRightPaddlePos;
+    float fLeftPaddleTargetOffset;
+    float fRightPaddleTargetOffset;
+    
+    int32 fLeftScore;
+    int32 fRightScore;
 };
+
 
 
 class SongLabel : public BTextView {
@@ -977,7 +1459,6 @@ public:
         ResetMarquee();
     }
 
-
     void ResetMarquee() {
         fScrollOffset = 0.0f;
         fWaitTicks = 0;
@@ -985,7 +1466,7 @@ public:
     }
     
     void SetCompactMode(bool enabled) {
-    	BString currentText(fRawText.String());
+        BString currentText(fRawText.String());
     	
         if (!enabled) {
             fScrollOffset = 0.0f;
@@ -1001,14 +1482,16 @@ public:
             fWaitTicks = 0;
             fIsWrapped = false;
             SetWordWrap(false);
-            SetAlignment(B_ALIGN_LEFT);            
+            
+            // CHANGE THIS: Keep alignment centered by default in compact layout setup
+            SetAlignment(B_ALIGN_CENTER);            
             BRect r = Bounds();
             r.left = 2; 
-            r.right = 99999.0f; // Expand clipping plane
+            r.right = 99999.0f; 
             SetTextRect(r);
         }
         BTextView::SetText(""); 
-   		BTextView::SetText(currentText.String()); 
+        BTextView::SetText(currentText.String()); 
         Invalidate();
     }
 
@@ -1032,20 +1515,19 @@ public:
         BFont currentFont;
         GetFontAndColor(0, &currentFont);
         float textWidth = currentFont.StringWidth(fRawText.String());
-        // Read the actual layout width constraint assigned by the container
         float viewWidth = Bounds().Width();
-        // If the text fits inside the active layout box, do not scroll
+
         if (textWidth <= viewWidth) {
             fScrollOffset = 0.0f;
             return;
         }
-        // Delay starting the scroll animation for 30 ticks (~1.5s)
+
         if (fScrollOffset == 0.0f && fWaitTicks < 30) {
             fWaitTicks++;
             return;
         }
-        fScrollOffset += 1.2f; // Marquee speed adjustment
-        // Loop the marquee smoothly once the text scrolls past the view boundary
+        fScrollOffset += 1.2f; 
+
         if (fScrollOffset > (textWidth + 30.0f)) {
             fScrollOffset = -viewWidth;
             fWaitTicks = 0;
@@ -1053,6 +1535,7 @@ public:
 
         Invalidate();
     }
+
     void AttachedToWindow() override {
         BTextView::AttachedToWindow();
         SetViewColor(Parent()->ViewColor());
@@ -1060,6 +1543,7 @@ public:
         r.InsetBy(2, 2); 
         SetTextRect(r);
     }
+
     void FrameResized(float width, float height) override {
         BTextView::FrameResized(width, height);
         BRect r = Bounds();
@@ -1071,10 +1555,12 @@ public:
             SetTextRect(r);
         }
     }    
+
     void SetCustomFont(const BFont* font) {
         SetFontAndColor(font); 
         Invalidate();
     }
+
     void Draw(BRect updateRect) override {
         if (!cfg.compactMode) {
             BTextView::Draw(updateRect);
@@ -1084,12 +1570,10 @@ public:
         BRegion clipRegion(Bounds());
         ConstrainClippingRegion(&clipRegion);
 
-        // 1. Wipe the baseline view background space completely clean
         rgb_color bgColor = ViewColor();
         SetLowColor(bgColor);
         FillRect(Bounds(), B_SOLID_LOW);
 
-        // 2. Fetch the active font geometry metrics definitions
         BFont currentFont;
         rgb_color fontColor;
         GetFontAndColor(0, &currentFont, &fontColor);
@@ -1101,39 +1585,39 @@ public:
         SetHighColor(fontColor);
         SetFont(&currentFont);
 
-        // 3. Render the continuous raw text horizontal marquee tracking line
-        DrawString(fRawText.String(), BPoint(-fScrollOffset, textY));
-
-        // 4. --- OVERLAY GRADIENT EDGE FADERS ---
         float viewWidth = Bounds().Width();
-        
-        // ONLY APPLY FADE EFFECTS IF TEXT EXCEEDS THE VIEW WIDTH
         float textWidth = currentFont.StringWidth(fRawText.String());
+
+        // CHANGE THIS: Calculate centered position vs marquee scroll path dynamically
+        float startX = 0.0f;
+        if (textWidth <= viewWidth) {
+            // Text fits cleanly! Center it horizontally in the white space gap
+            startX = (viewWidth - textWidth) / 2.0f;
+        } else {
+            // Text overflows, fall back to moving marquee tracking offset coordinates
+            startX = -fScrollOffset;
+        }
+
+        // Render the calculated position
+        DrawString(fRawText.String(), BPoint(startX, textY));
+
+        // --- OVERLAY GRADIENT EDGE FADERS ---
         if (textWidth > viewWidth) {
             float viewHeight = Bounds().Height();
             float fadeWidth = 9.0f; 
 
-            // Set up the drawing mode for alpha channel opacity blending overrides
             SetDrawingMode(B_OP_ALPHA);
             SetBlendingMode(B_CONSTANT_ALPHA, B_ALPHA_OVERLAY);
 
-            // Render 1-pixel wide vertical lines with changing transparency levels
             for (int x = 0; x < (int)fadeWidth; x++) {
-                // Compute percentage factor spanning across the gradient edge scale
                 float factor = (float)x / fadeWidth; 
-                
-                // Map alpha density value (interpolate cleanly from solid background to transparent)
                 uint8 alphaVal = (uint8)((1.0f - factor) * 255);
                 
-                // Configure composite blending color to match your active app theme backdrop
                 rgb_color fadeColor = bgColor;
                 fadeColor.alpha = alphaVal;
                 SetHighColor(fadeColor);
 
-                // Draw Left Edge Fade Line (Smoothly hiding text as it enters from the left margin)
                 StrokeLine(BPoint((float)x, 0.0f), BPoint((float)x, viewHeight));
-
-                // Draw Right Edge Fade Line (Smoothly hiding text as it scrolls out the right margin)
                 StrokeLine(BPoint(viewWidth - 1.0f - x, 0.0f), BPoint(viewWidth - 1.0f - x, viewHeight));
             }
         }
@@ -1145,7 +1629,7 @@ private:
     float   fScrollOffset;
     int32   fWaitTicks;
     bool    fIsWrapped;
-    BString fRawText; // FIX: Caches the unedited string across layout changes
+    BString fRawText; 
 };
 
 
@@ -2262,6 +2746,8 @@ SuperMusicWindow::SuperMusicWindow()
     fSongView = new SongLabel("song_view");
     fSongView->SetFontAndColor(&smallFont);
     fSongView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+    fSongView->SetAlignment(B_ALIGN_CENTER);
+
     
     fquality = new BStringView("quality", "");
     fquality->SetFont(&smallFont);
@@ -2284,9 +2770,9 @@ SuperMusicWindow::SuperMusicWindow()
     fArtView->SetExplicitMinSize(BSize(325 * scale, 325 * scale));
 	fArtView->SetExplicitMaxSize(BSize(325 * scale, 325 * scale));
 
-	fSpectrum = new SpectrumView(BRect(0, 0, 200, 50), "spectrum"); 
-	fSpectrum->SetExplicitMinSize(BSize(200, 50));
-	fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 50)); 
+	fSpectrum = new SpectrumView(BRect(0, 0, 350, 75), "spectrum"); 
+	fSpectrum->SetExplicitMinSize(BSize(350, 75));
+	fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 75)); 
     
     BBitmap* heartIcon = GetVectorIcon(kIconFav, kIconFavSize, 40);
 	fBtnAddFav = new IconButton("btn_add_fav", heartIcon, new BMessage(MSG_ADD_FAV));
@@ -2336,7 +2822,7 @@ BGroupView* fMetaAndSpectrumStack = new BGroupView(B_VERTICAL, 5);
 BLayoutBuilder::Group<>(fMetaAndSpectrumStack, B_VERTICAL, 5)
     .SetInsets(4)
     .AddStrut(7)
-    .Add(fSongView)
+    .Add(fSongView, 1.0f) 
     .Add(fSpectrum)
     .AddStrut(1) 
 .End();
@@ -3090,9 +3576,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
     		// 4. Setup sizes based on current state
     		float scale = be_plain_font->Size() / 12.0f; 
-    		float artSize = cfg.compactMode ? (96 * scale) : (325 * scale);
+    		float artSize = cfg.compactMode ? (98 * scale) : (325 * scale);
     		float btnSize = cfg.compactMode ? (40 * scale) : (75 * scale);
-    		float favSize = cfg.compactMode ? (40 * scale) : (40 * scale);
+    		float favSize = cfg.compactMode ? (40 * scale) : (75 * scale);
 
     		// 5. Apply Layout orientations
     		fPlayerGroup->GroupLayout()->SetOrientation(cfg.compactMode ? B_HORIZONTAL : B_VERTICAL);
@@ -3110,7 +3596,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                     float expandedWidth = 220.0f * scale; 
                     fSongView->SetExplicitMinSize(BSize(expandedWidth, B_SIZE_UNSET));
                     fSongView->SetExplicitPreferredSize(BSize(expandedWidth, B_SIZE_UNSET));
-                    fSongView->SetExplicitMaxSize(BSize(expandedWidth, 24.0f * scale));
+                   // fSongView->SetExplicitMaxSize(BSize(expandedWidth, 24.0f * scale));
+                    fSongView->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 24.0f * scale));
                     
                     float sliderWidth = (btnSize * 4) + (5 * 3); // Fits exactly over the 4 buttons + spacing
    					fVolumeSlider->SetExplicitMaxSize(BSize(sliderWidth, B_SIZE_UNSET));
@@ -3118,13 +3605,17 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                     
                     
                     if (fSpectrum) {
-                        fSpectrum->SetExplicitMinSize(BSize(expandedWidth, 50.0f * scale));
-                        fSpectrum->SetExplicitMaxSize(BSize(expandedWidth, 50.0f * scale));
+                       // fSpectrum->SetExplicitMinSize(BSize(expandedWidth, 50.0f * scale));
+                       // fSpectrum->SetExplicitMaxSize(BSize(expandedWidth, 50.0f * scale));
+                        fSpectrum->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+                        fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED));
+                        fSpectrum->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
                     }
                     
                     // FIX: Ensure pointer validation includes an explicit greater-than-pointer boundary limit trap
-                    if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {               
-                        fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+                    if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {  
+                     	fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED));             
+                       // fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
                     }   
                     
                 } else {
@@ -3186,7 +3677,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		fControlStack->GroupLayout()->SetInsets(5);        
        			fSongView->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
        			
-        		fCompactModeRadio->Hide();
+        		fCompactModeRadio->Show();
         		fDescView->Show();
         		fSongView->Show();
         		fquality->Show();
@@ -4077,8 +4568,15 @@ int32 mpv_loop_thread(void* data) {
             }
         }
 
-        mpv_event *event = mpv_wait_event(mpv, 0.02); 
-        if (event->event_id == MPV_EVENT_NONE) continue;
+        //mpv_event *event = mpv_wait_event(mpv, 0.02); 
+        mpv_event *event = mpv_wait_event(mpv, 0.01); 
+        
+       // if (event->event_id == MPV_EVENT_NONE) continue;
+        if (event->event_id == MPV_EVENT_NONE) {
+            snooze(15000); // Sleep for 15ms to pace the thread if MPV is idle
+            continue;
+        }
+        
         if (event->event_id == MPV_EVENT_SHUTDOWN) break;
         
         if (event->event_id == MPV_EVENT_PROPERTY_CHANGE) {
