@@ -1002,78 +1002,157 @@ public:
             }
         }
 
-        // ====================================================================
+     	// ====================================================================
         // 3. SINGLE-BALL PONG PHYSICS ENGINE (35% Velocity reduction)
         // ====================================================================
         if (fVisualizerMode == MODE_PONG_BALLS) {
             float bassImpact = (fBarHeights[2] + fBarHeights[6] + fBarHeights[12]) / 3.0f;
             float paddleH = 21.0f; 
 
-            // --- LEFT PADDLE AUTOMATED AUTOPILOT ---
+            // --- LEFT PADDLE AUTOMATED AUTOPILOT (IMPERFECT AI) ---
             float leftTargetY = viewHeight / 2.0f;
             
-            // FIXED SINGLE BALL TRACKING: Explicitly follow only Ball 0 (k = 0)
+            // Track the ball only if it is moving toward the left paddle
             if (fBallDX[0] < 0) {
-                leftTargetY = fBallY[0];
+                // If the ball just crossed mid-field, calculate a tracking error
+                static float currentAIError = 0.0f;
+                static bool errorCalculated = false;
+                
+                float midPointX = startX_cached + (artworkWidth_cached / 2.0f);
+                if (fBallX[0] > midPointX) {
+                    errorCalculated = false; // Reset when ball is on player's side
+                }
+                
+                if (fBallX[0] <= midPointX && !errorCalculated) {
+                    // 35% chance to make a noticeable error (up to 16 pixels off-center)
+                    if ((rand() % 100) < 35) {
+                        currentAIError = (float)((rand() % 32) - 16); 
+                    } else {
+                        currentAIError = 0.0f; // Perfect tracking this round
+                    }
+                    errorCalculated = true;
+                }
+
+                // Apply the tracking error to the destination target
+                leftTargetY = fBallY[0] + currentAIError;
             }
 
             leftTargetY += fLeftPaddleTargetOffset;
             if (leftTargetY < paddleH / 2.0f) leftTargetY = paddleH / 2.0f;
             if (leftTargetY > viewHeight - (paddleH / 2.0f)) leftTargetY = viewHeight - (paddleH / 2.0f);
 
-            fLeftPaddlePos += (leftTargetY - fLeftPaddlePos) * (0.18f + bassImpact * 0.02f);
+            // AI tracking speed (0.13f down from 0.18f slows down reaction to sharp angles)
+            fLeftPaddlePos += (leftTargetY - fLeftPaddlePos) * (0.13f + bassImpact * 0.02f);
 
             // --- RIGHT PADDLE MOUSE WHEEL DRIVEN BOUNDS ---
             if (fRightPaddlePos < paddleH / 2.0f) fRightPaddlePos = paddleH / 2.0f;
             if (fRightPaddlePos > viewHeight - (paddleH / 2.0f)) fRightPaddlePos = viewHeight - (paddleH / 2.0f);
 
-            // --- ADVANCE SPHERES & SOLVE COLLISIONS FOR ONE BALL ONLY (k = 0) ---
+            // --- SCORE WATCH & BALL PHYSICS WITH AUTO-RESET TIMER ---
             int k = 0; 
             
-            // FIXED LATENCY TUNING: Reduced velocity drive scaling by 35% (0.65f multiplier)
-            float audioSpeedBoost = 1.0f + (bassImpact * 0.05f * 0.65f);
+            // Static variables to track the victory timing state
+            static bigtime_t winStartTime = 0;
+            static bool timerStarted = false;
 
-            // Base vector velocities also balanced back down 35% for a lighter pacing profile
-            fBallX[k] += (fBallDX[k] * 0.65f) * audioSpeedBoost;
-            fBallY[k] += (fBallDY[k] * 0.65f) * audioSpeedBoost;
-            fBallSize[k] = 11.0f; // Solid unified mid-size format
-
-            float radius = fBallSize[k] / 2.0f;
-
-            // Ceiling / Floor bounces
-            if (fBallY[k] - radius < 0) { fBallY[k] = radius; fBallDY[k] = -fBallDY[k]; }
-            else if (fBallY[k] + radius > viewHeight) { fBallY[k] = viewHeight - radius; fBallDY[k] = -fBallDY[k]; }
-
-            // Left Paddle Collision check
-            float leftPaddleRightEdge = startX_cached + 5.0f;
-            if (fBallX[k] - radius <= leftPaddleRightEdge && fBallX[k] + radius >= startX_cached && fBallDX[k] < 0) {
-                if (fBallY[k] >= fLeftPaddlePos - (paddleH / 2.0f) - 3.0f && fBallY[k] <= fLeftPaddlePos + (paddleH / 2.0f) + 3.0f) {
-                    fBallX[k] = leftPaddleRightEdge + radius;
-                    fBallDX[k] = -fBallDX[k];
-                    fLeftScore++;
-                    fLeftPaddleTargetOffset = (float)((rand() % 16) - 8); 
-                }
-            }
-
-            // Right Paddle Collision check
-            float rightPaddleLeftEdge = startX_cached + artworkWidth_cached - 5.0f;
-            if (fBallX[k] + radius >= rightPaddleLeftEdge && fBallX[k] - radius <= startX_cached + artworkWidth_cached && fBallDX[k] > 0) {
-                if (fBallY[k] >= fRightPaddlePos - (paddleH / 2.0f) - 3.0f && fBallY[k] <= fRightPaddlePos + (paddleH / 2.0f) + 3.0f) {
-                    fBallX[k] = rightPaddleLeftEdge - radius;
-                    fBallDX[k] = -fBallDX[k];
-                    fRightScore++;
-                }
-            }
-
-            // Out of bounds reset path handler
-            if (fBallX[k] < startX_cached || fBallX[k] > startX_cached + artworkWidth_cached) {
+            if (fLeftScore >= 10 || fRightScore >= 10) {
+                // WIN STATE: Keep the ball frozen in the center
                 fBallX[k] = startX_cached + (artworkWidth_cached / 2.0f);
                 fBallY[k] = viewHeight / 2.0f;
-                // Randomized launch vector direction upon reset
-                fBallDX[k] = ((rand() % 100) > 50) ? 3.5f : -3.5f;
-                fBallDY[k] = ((rand() % 100) > 50) ? 2.5f : -2.5f;
+
+                // Start the clock on the very first frame a win is detected
+                if (!timerStarted) {
+                    winStartTime = system_time(); // Gets current system time in microseconds
+                    timerStarted = true;
+                }
+
+                // Check if 3 seconds (3,000,000 microseconds) have passed
+                if (system_time() - winStartTime >= 3000000) {
+                    // RESET THE GAME
+                    fLeftScore = 0;
+                    fRightScore = 0;
+                    timerStarted = false;
+                    winStartTime = 0;
+
+                    // Re-launch the ball with a fresh random direction vector
+                    fBallDX[k] = ((rand() % 100) > 50) ? 3.5f : -3.5f;
+                    fBallDY[k] = ((rand() % 100) > 50) ? 2.5f : -2.5f;
+                }
+            } else {
+                // ACTIVE GAME STATE: Run normal ball mechanics and collision paths
+                // (Make sure to reset the timer state variables just in case)
+                timerStarted = false;
+                winStartTime = 0;
+
+                // FIXED LATENCY TUNING: Reduced velocity drive scaling by x% (0.xf multiplier)
+                float audioSpeedBoost = 1.0f + (bassImpact * 0.05f * 0.65f);
+
+                // Base vector velocities also balanced back down x% for a lighter pacing profile
+                float moveX = (fBallDX[k] * 0.90f) * audioSpeedBoost;
+                float moveY = (fBallDY[k] * 0.90f) * audioSpeedBoost;
+                
+                // SPEED CAP LOGIC: Clamp horizontal step size to a maximum of 12.0 pixels per frame
+                const float MAX_SPEED_X = 12.0f;
+                if (moveX > MAX_SPEED_X) moveX = MAX_SPEED_X;
+                if (moveX < -MAX_SPEED_X) moveX = -MAX_SPEED_X;
+
+                // Apply capped movement to positions
+                fBallX[k] += moveX;
+                fBallY[k] += moveY;
+           
+                fBallSize[k] = 11.0f; // Solid unified mid-size format
+                float radius = fBallSize[k] / 2.0f;
+
+                // Ceiling / Floor bounces
+                if (fBallY[k] - radius < 0) { fBallY[k] = radius; fBallDY[k] = -fBallDY[k]; }
+                else if (fBallY[k] + radius > viewHeight) { fBallY[k] = viewHeight - radius; fBallDY[k] = -fBallDY[k]; }
+
+                // Left Paddle Collision check
+                float leftPaddleRightEdge = startX_cached + 5.0f;
+                if (fBallX[k] - radius <= leftPaddleRightEdge && fBallX[k] + radius >= startX_cached && fBallDX[k] < 0) {
+                    if (fBallY[k] >= fLeftPaddlePos - (paddleH / 2.0f) - 3.0f && fBallY[k] <= fLeftPaddlePos + (paddleH / 2.0f) + 3.0f) {
+                        fBallX[k] = leftPaddleRightEdge + radius;
+                        fBallDX[k] = -fBallDX[k];
+                        fBallDX[k] *= 1.10f;
+                        
+                        float relativeIntersectY = fLeftPaddlePos - fBallY[k];
+                        float normalizedIntersectY = relativeIntersectY / (paddleH / 2.0f);
+                        float randomFactor = ((rand() % 20) - 10) / 50.0f;
+                        fBallDY[k] = (-normalizedIntersectY * 3.5f) + randomFactor;
+
+                        fLeftScore++;
+                        fLeftPaddleTargetOffset = (float)((rand() % 16) - 8); 
+                    }
+                }
+
+                // Right Paddle Collision check
+                float rightPaddleLeftEdge = startX_cached + artworkWidth_cached - 5.0f;
+                if (fBallX[k] + radius >= rightPaddleLeftEdge && fBallX[k] - radius <= startX_cached + artworkWidth_cached && fBallDX[k] > 0) {
+                    if (fBallY[k] >= fRightPaddlePos - (paddleH / 2.0f) - 3.0f && fBallY[k] <= fRightPaddlePos + (paddleH / 2.0f) + 3.0f) {
+                        fBallX[k] = rightPaddleLeftEdge - radius;
+                        fBallDX[k] = -fBallDX[k];
+                        fBallDX[k] *= 1.10f;
+                        
+                        float relativeIntersectY = fRightPaddlePos - fBallY[k];
+                        float normalizedIntersectY = relativeIntersectY / (paddleH / 2.0f);
+                        float randomFactor = ((rand() % 20) - 10) / 50.0f;
+                        fBallDY[k] = (-normalizedIntersectY * 3.5f) + randomFactor;
+
+                        fRightScore++;
+                    }
+                }
+
+                // Out of bounds reset path handler
+                if (fBallX[k] < startX_cached || fBallX[k] > startX_cached + artworkWidth_cached) {
+                    fBallX[k] = startX_cached + (artworkWidth_cached / 2.0f);
+                    fBallY[k] = viewHeight / 2.0f;
+                    fBallDX[k] = ((rand() % 100) > 50) ? 3.5f : -3.5f;
+                    fBallDY[k] = ((rand() % 100) > 50) ? 2.5f : -2.5f;
+                }
             }
+
         }
+
 
         // ====================================================================
         // 4. MODE 5 RAINDROPS PHYSICS UPDATES
@@ -1090,7 +1169,7 @@ public:
             }
         }
 
-             // ====================================================================
+        // ====================================================================
         // 5. MODE 6: MULTI-OBSTACLE PHYSICS ENGINE, SCORE TRACKER & BACKFIRE
         // ====================================================================
         if (fVisualizerMode == MODE_MOTO_RIDER) {
@@ -1303,6 +1382,7 @@ public:
 
         // --- RENDER MODES ---
         if (fVisualizerMode == MODE_BARS) {
+        	SetDrawingMode(B_OP_ALPHA);
             for (int i = 0; i < numBars; i++) {
                 float finalBarHeight = fBarHeights[i];
                 
@@ -1319,11 +1399,12 @@ public:
                     SetHighColor(peakColor); 
                     StrokeLine(BPoint(startX + (i * barWidth), height - fPeakHeights[i]),
                                BPoint(startX + ((i + 1) * barWidth) - 1, height - fPeakHeights[i]));
+                                SetDrawingMode(B_OP_COPY);
                 }
             }
         } 
         else if (fVisualizerMode == MODE_LINE_WAVE) {
-        	
+        	SetDrawingMode(B_OP_ALPHA);
             SetPenSize(2.5f);
             float midY = height / 2.0f;
 
@@ -1356,10 +1437,11 @@ public:
                     prevSegmentPoint = currSegmentPoint;
                 }
             }
-            
+            SetDrawingMode(B_OP_COPY);
             SetPenSize(1.0f); 
         }
         else if (fVisualizerMode == MODE_LONG_WAVE) {
+        	SetDrawingMode(B_OP_ALPHA);
             float midY = height / 2.0f;
             const int numNodes = 10; BPoint nodes[10];
             
@@ -1418,6 +1500,7 @@ public:
                         SetHighColor(glowColor);
                         BPoint curr(p0.x * f1 + p1.x * f2 + p2.x * f3 + p3.x * f4, p0.y * f1 + p1.y * f2 + p2.y * f3 + p3.y * f4);
                         StrokeLine(prevSegmentPoint, curr); prevSegmentPoint = curr;
+                        SetDrawingMode(B_OP_COPY);
                     }
                 }
             }
@@ -1463,7 +1546,7 @@ public:
         }
 
          else if (fVisualizerMode == MODE_PONG_BALLS) {
-           
+            SetDrawingMode(B_OP_ALPHA);
             float paddleH = 21.0f; // Matches shorter design specification constraints
 
             // Draw center dash partition line 
@@ -1495,6 +1578,59 @@ public:
             DrawString(leftScoreStr.String(), BPoint(midPointX - 35.0f, scoreY));
             DrawString(rightScoreStr.String(), BPoint(midPointX + 22.0f, scoreY));
 
+            // --- VICTORY WIN MESSAGE SCREEN OVERLAY WITH COUNTDOWN ---
+            // Keep variables persistent across frames at function-level scope
+            static bigtime_t drawWinStartTime = 0;
+            static bool drawTimerStarted = false;
+
+            if (fLeftScore >= 10 || fRightScore >= 10) {
+                if (!drawTimerStarted) {
+                    drawWinStartTime = system_time();
+                    drawTimerStarted = true;
+                }
+                
+                // Calculate seconds remaining (from 3 down to 1)
+                bigtime_t elapsed = system_time() - drawWinStartTime;
+                int secondsLeft = 3 - (int)(elapsed / 1000000);
+                if (secondsLeft < 1) secondsLeft = 1; 
+
+                BFont winFont;
+                GetFont(&winFont);
+                winFont.SetSize(16.0f); 
+                winFont.SetFace(B_BOLD_FACE);
+                SetFont(&winFont);
+                
+                SetHighColor(255, 215, 0, 255); // Golden color text
+                
+                BString winStr;
+                if (fLeftScore >= 10) {
+                    winStr.SetTo("COMPUTER WINS!");
+                    DrawString(winStr.String(), BPoint(midPointX - 65.0f, (height / 2.0f) - 6.0f));
+                } else {
+                    winStr.SetTo("YOU WIN!");
+                    DrawString(winStr.String(), BPoint(midPointX - 35.0f, (height / 2.0f) - 6.0f));
+                }
+                
+                // Draw the countdown subtext
+                BFont subFont;
+                GetFont(&subFont);
+                subFont.SetSize(10.0f); 
+                SetFont(&subFont);
+                SetHighColor(200, 200, 200, 200); // Muted silver overlay
+                
+                BString countStr;
+                countStr.SetToFormat("Restarting in %d...", secondsLeft);
+                DrawString(countStr.String(), BPoint(midPointX - 42.0f, (height / 2.0f) + 12.0f));
+                
+                // Revert font adjustments back to defaults for remaining passes
+                SetFont(&scoreFont);
+            } else {
+                // Safely reset drawing timer flags when game is active
+                drawTimerStarted = false;
+                drawWinStartTime = 0;
+            }
+
+
             // Draw left paddle (Using physics calculations calculated cleanly by Pulse)
             SetHighColor(fArtworkPalette[4]);
             FillRect(BRect(startX, fLeftPaddlePos - (paddleH / 2.0f), startX + 5.0f, fLeftPaddlePos + (paddleH / 2.0f)));
@@ -1515,14 +1651,16 @@ public:
                 SetHighColor(255, 255, 255, 255);
                 FillEllipse(BPoint(fBallX[k], fBallY[k]), fBallSize[k] / 2.0f, fBallSize[k] / 2.0f);
             }
-
+			SetDrawingMode(B_OP_COPY);
             SetPenSize(1.0f);
         }
 
 
 
+
         else if (fVisualizerMode == MODE_RAINDROPS) {
             // Mode 5: Audio-Reactive Falling Particle Rain Drops
+            SetDrawingMode(B_OP_ALPHA);
             SetPenSize(1.8f);
 
             float systemTimeSec = (float)system_time() / 1000000.0f;
@@ -1556,9 +1694,11 @@ public:
                 SetHighColor(transparentBlendedColor);
                 StrokeLine(BPoint(currentX, currentY - tailLength), BPoint(currentX, currentY));
             }
+            SetDrawingMode(B_OP_COPY);
             SetPenSize(1.0f);
         }
         else if (fVisualizerMode == MODE_MOTO_RIDER) {
+        	SetDrawingMode(B_OP_ALPHA);
             // Mode 6: Endless Motorcycle Runner with Parallax & Scoreboard Display
             float baselineY = height - 2.0f; 
             float bgBrightness = (bgCol.red * 0.299f) + (bgCol.green * 0.587f) + (bgCol.blue * 0.114f);
@@ -1685,6 +1825,7 @@ public:
                 StrokeLine(BPoint(riderX - 2, riderY - 4), BPoint(riderX - 6, riderY)); 
                 StrokeLine(BPoint(riderX - 2, riderY - 8), BPoint(riderX + 6, riderY - 7)); 
             }
+            SetDrawingMode(B_OP_COPY);
             SetPenSize(1.0f);
         }
 
