@@ -3284,10 +3284,10 @@ SuperMusicWindow::SuperMusicWindow()
 	fArtView->SetExplicitSize(BSize(325 * scale, 325 * scale)); 
     fArtView->SetExplicitMinSize(BSize(325 * scale, 325 * scale));
 	fArtView->SetExplicitMaxSize(BSize(325 * scale, 325 * scale));
-
-	fSpectrum = new SpectrumView(BRect(0, 0, 350, 75), "spectrum"); 
-	fSpectrum->SetExplicitMinSize(BSize(350, 75));
-	fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 75)); 
+	if (cfg.showSpectrumVisuals) fSpectrum = new SpectrumView(BRect(0, 0, 350, 75), "spectrum"); 
+    if (!cfg.showSpectrumVisuals) fSpectrum = new SpectrumView(BRect(0, 0, 350, 1), "spectrum"); 
+	//fSpectrum->SetExplicitMinSize(BSize(350, 75));
+	//fSpectrum->SetExplicitMaxSize(BSize(350, B_SIZE_UNSET)); 
     
     BBitmap* heartIcon = GetVectorIcon(kIconFav, kIconFavSize, 40);
 	fBtnAddFav = new IconButton("btn_add_fav", heartIcon, new BMessage(MSG_ADD_FAV));
@@ -3323,7 +3323,7 @@ fControlStack = new BGroupView(B_VERTICAL, 5);
 
 BLayoutBuilder::Group<>(fControlStack, B_VERTICAL, 5)
 
-    .SetInsets(5)  
+    //.SetInsets(5)  
     .Add(fVolumeSlider)
         .AddGroup(B_HORIZONTAL, 5)
         .AddGlue() 
@@ -3335,9 +3335,9 @@ BLayoutBuilder::Group<>(fControlStack, B_VERTICAL, 5)
 
 BGroupView* fMetaAndSpectrumStack = new BGroupView(B_VERTICAL, 5);
 BLayoutBuilder::Group<>(fMetaAndSpectrumStack, B_VERTICAL, 5)
-    .SetInsets(4)
-    .AddStrut(7)
-    .Add(fSongView, 1.0f) 
+   // .SetInsets(4)
+    //.AddStrut(1)
+    .Add(fSongView) 
     .Add(fSpectrum)
     .AddStrut(1) 
 .End();
@@ -3346,12 +3346,13 @@ BLayoutBuilder::Group<>(fMetaAndSpectrumStack, B_VERTICAL, 5)
 BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     .SetInsets(20)
     .Add(fArtView) 
-    .Add(fDescView, B_ALIGN_HORIZONTAL_CENTER) 
+    //.Add(fDescView, B_ALIGN_HORIZONTAL_CENTER) 
+    .Add(fDescView) 
     .Add(fMetaAndSpectrumStack)     
     .AddGlue()    
     .AddGroup(B_HORIZONTAL, 16) 
         .AddGroup(B_VERTICAL, 6) 
-            .AddStrut(5)     	
+           // .AddStrut(5)     	
             .Add(fListenersView)
             .Add(fquality)
             .Add(fCompactModeRadio)               
@@ -4057,9 +4058,44 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			}
 
 
+        case MSG_TOGGLE_Spectrum: {
+            cfg.showSpectrumVisuals = (fEnableSpectrum->Value() == B_CONTROL_ON);
+            save_config();
+
+            if (fSpectrum != nullptr) {
+                // Force Haiku app_server to clear the parent container boundaries
+                fSpectrum->Invalidate();
+                if (fSpectrum->Parent()) {
+                    fSpectrum->Parent()->Invalidate();
+                }
+            }
+
+            this->UpdateMPVFilters();
+            
+            if (cfg.showSpectrumVisuals) {
+                        fSpectrum->SetExplicitMinSize(BSize(350, 75));
+                        fSpectrum->SetExplicitMaxSize(BSize(350, 75));
+                        fSpectrum->SetExplicitPreferredSize(BSize(350, 75));
+             
+            }
+ 
+  			if (!cfg.showSpectrumVisuals) {
+                    	fSpectrum->SetExplicitMinSize(BSize(350, 1));
+                        fSpectrum->SetExplicitMaxSize(BSize(350, 1));
+                        fSpectrum->SetExplicitPreferredSize(BSize(350, 1));                    
+                    
+  			}
+             
+
+    		fPlayerGroup->InvalidateLayout();
+    		ApplyTheme(); 
+        	ResizeToPreferred();
+            break;
+        }
+        
 
 
-		
+
 		case MSG_COMPACTM_CHANGED: {
     		void* source = nullptr;
     		message->FindPointer("source", &source);
@@ -4111,26 +4147,30 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                     float expandedWidth = 220.0f * scale; 
                     fSongView->SetExplicitMinSize(BSize(expandedWidth, B_SIZE_UNSET));
                     fSongView->SetExplicitPreferredSize(BSize(expandedWidth, B_SIZE_UNSET));
-                   // fSongView->SetExplicitMaxSize(BSize(expandedWidth, 24.0f * scale));
                     fSongView->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 24.0f * scale));
                     
                     float sliderWidth = (btnSize * 4) + (5 * 3); // Fits exactly over the 4 buttons + spacing
    					fVolumeSlider->SetExplicitMaxSize(BSize(sliderWidth, B_SIZE_UNSET));
     				fVolumeSlider->SetExplicitPreferredSize(BSize(sliderWidth, B_SIZE_UNSET));
                     
+                    if (!cfg.showSpectrumVisuals) {
+                    	  float expandedWidth = 220.0f * scale; 
+                          fSpectrum->SetExplicitMinSize(BSize(expandedWidth, 10.0f * scale));
+                          fSpectrum->SetExplicitMaxSize(BSize(expandedWidth, 10.0f * scale));
+                    	  fSpectrum->SetExplicitPreferredSize(BSize(expandedWidth, 10.0f * scale));
                     
-                    if (fSpectrum) {
-                       // fSpectrum->SetExplicitMinSize(BSize(expandedWidth, 50.0f * scale));
-                       // fSpectrum->SetExplicitMaxSize(BSize(expandedWidth, 50.0f * scale));
-                        fSpectrum->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-                        fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED));
-                        fSpectrum->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+                		}
+                    if (cfg.showSpectrumVisuals) {
+                        fSpectrum->SetExplicitMinSize(BSize(350, 50));
+                        fSpectrum->SetExplicitMaxSize(BSize(350, 50));
+                        fSpectrum->SetExplicitPreferredSize(BSize(350, 50));
                     }
                     
                     // FIX: Ensure pointer validation includes an explicit greater-than-pointer boundary limit trap
                     if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {  
-                     	fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED));             
-                       // fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+                          fMetaAndSpectrumStack->SetExplicitMinSize(BSize(350, 50));
+                        fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(350, 50));
+                        fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(350, 50));
                     }   
                     
                 } else {
@@ -4141,16 +4181,26 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                     fVolumeSlider->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
     				fVolumeSlider->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
                     
-                    if (fSpectrum) {
-                        fSpectrum->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-                        fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED));
-                        fSpectrum->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+                    if (cfg.showSpectrumVisuals) {
+                    	fSpectrum->SetExplicitMinSize(BSize(350, 75));
+                        fSpectrum->SetExplicitMaxSize(BSize(350, 75));
+                        fSpectrum->SetExplicitPreferredSize(BSize(350, 75));
                         
                     }
+                    
+                   if (!cfg.showSpectrumVisuals) {
+                    	fSpectrum->SetExplicitMinSize(BSize(350, 1));
+                        fSpectrum->SetExplicitMaxSize(BSize(350, 1));
+                        fSpectrum->SetExplicitPreferredSize(BSize(350, 1));
+                        
+                    
 
                     if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {
-                        fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED));
+                        fMetaAndSpectrumStack->SetExplicitMinSize(BSize(350, 1));
+                        fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(350, 1));
+                        fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(350, 1));
                     }
+                   }
                 }
             }
 
@@ -4192,7 +4242,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
      			fPlayerGroup->GroupLayout()->SetInsets(20);
         		fControlStack->GroupLayout()->SetInsets(5);        
        			fSongView->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-       			fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+        			
        			
         		fCompactModeRadio->Show();
         		fDescView->Show();
@@ -4206,9 +4256,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		for (int i = 0; i < 15; i++) {
             		if (fEQSliders[i]) fEQSliders[i]->SetTarget(this);
         		}
-        
-                // --- CRASH-FREE REMOVED TAB RESTORATION LOOP ---
-                // The Radio tab is omitted completely to protect its bound view references
+ 
                 BGroupView* groups[] = { fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
                 const char* labels[] = { "Stations", "Fav", "Config", "About" };
                 BTab** dynamicTabs[] = { &fStationTab, &fFavTab, &fConfigTab, &fAboutTab };
@@ -4244,10 +4292,11 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                 ((SongLabel*)fSongView)->SetCompactMode(cfg.compactMode);
             }
 
-            // Spectrum Size Recalculation Fix
+
             if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {
                 fMetaAndSpectrumStack->InvalidateLayout();
-                fMetaAndSpectrumStack->Layout(true);
+                if (cfg.showSpectrumVisuals) fMetaAndSpectrumStack->Layout(true);
+                if (!cfg.showSpectrumVisuals) fMetaAndSpectrumStack->Layout(false);
             }
             if (fSpectrum) {
                 fSpectrum->InvalidateLayout();
@@ -4413,21 +4462,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         	break;
     	}
     	
-        case MSG_TOGGLE_Spectrum: {
-            cfg.showSpectrumVisuals = (fEnableSpectrum->Value() == B_CONTROL_ON);
-            save_config();
 
-            if (fSpectrum != nullptr) {
-                // Force Haiku app_server to clear the parent container boundaries
-                fSpectrum->Invalidate();
-                if (fSpectrum->Parent()) {
-                    fSpectrum->Parent()->Invalidate();
-                }
-            }
-
-            this->UpdateMPVFilters();
-            break;
-        }
 
     	
     	case MSG_TOGGLE_LADSPA: {
