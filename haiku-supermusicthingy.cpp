@@ -3335,7 +3335,7 @@ BLayoutBuilder::Group<>(fControlStack, B_VERTICAL, 5)
 
 BGroupView* fMetaAndSpectrumStack = new BGroupView(B_VERTICAL, 5);
 BLayoutBuilder::Group<>(fMetaAndSpectrumStack, B_VERTICAL, 5)
-   // .SetInsets(4)
+    .SetInsets(4)
     .AddStrut(1)
     .Add(fSongView) 
     .Add(fSpectrum)
