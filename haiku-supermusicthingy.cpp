@@ -4055,6 +4055,72 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     			}
     			break;
 			}
+			
+			
+	
+    	
+    	case MSG_TOGGLE_LADSPA: {
+    		cfg.ladspaEnabled = (fEnableladspa->Value() == B_CONTROL_ON);
+    		save_config();
+    		UpdateMPVFilters(); 
+    		break;
+		}	
+
+    	
+	case MSG_TOGGLE_EQ: {
+    		BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("eq_toggle"));
+    		if (chk) {
+        		cfg.eqEnabled = (chk->Value() == B_CONTROL_ON);            
+        
+        		if (cfg.eqEnabled) {
+            		fEnableladspa->Show();
+            		fEnableSpectrum->Show();
+            		fChkShuffle->Show();  
+            		fEQContainer->Show();
+        		} else {
+            		fEnableladspa->Hide();  
+            		fEnableSpectrum->Hide();
+            		fEQContainer->Hide();
+        		}
+        
+                // Force parent container and layout elements to instantly clear 
+                // and wipe away stale pixels using your custom dark theme colors
+                if (fSpectrum != nullptr) {
+                    fSpectrum->Invalidate();
+                    if (fSpectrum->Parent()) fSpectrum->Parent()->Invalidate();
+                }
+                if (fEQContainer) {
+                    fEQContainer->Invalidate();
+                    if (fEQContainer->Parent()) fEQContainer->Parent()->Invalidate();
+                }
+
+
+        		
+        		if (cfg.showSpectrumVisuals) {
+                        fSpectrum->SetExplicitMinSize(BSize(350, 75));
+                        fSpectrum->SetExplicitMaxSize(BSize(350, 75));
+                        fSpectrum->SetExplicitPreferredSize(BSize(350, 75));
+             
+            	}
+ 
+  				if (!cfg.eqEnabled) {
+                    	fSpectrum->SetExplicitMinSize(BSize(350, 1));
+                        fSpectrum->SetExplicitMaxSize(BSize(350, 1));
+                        fSpectrum->SetExplicitPreferredSize(BSize(350, 1));                    
+                    
+  				}
+             
+
+    			fPlayerGroup->InvalidateLayout();
+    			ApplyTheme(); 
+        		InvalidateLayout();
+        		ResizeToPreferred();
+        		save_config();
+        		UpdateMPVFilters(); 
+    			}
+    		break;
+		}
+		
 
 
         case MSG_TOGGLE_Spectrum: {
@@ -4078,7 +4144,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
              
             }
  
-  			if (!cfg.showSpectrumVisuals) {
+  			if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) {
                     	fSpectrum->SetExplicitMinSize(BSize(350, 1));
                         fSpectrum->SetExplicitMaxSize(BSize(350, 1));
                         fSpectrum->SetExplicitPreferredSize(BSize(350, 1));                    
@@ -4152,14 +4218,14 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
    					fVolumeSlider->SetExplicitMaxSize(BSize(sliderWidth, B_SIZE_UNSET));
     				fVolumeSlider->SetExplicitPreferredSize(BSize(sliderWidth, B_SIZE_UNSET));
                     
-                    if (!cfg.showSpectrumVisuals) {
+                    if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) {
                     	  float expandedWidth = 220.0f * scale; 
                           fSpectrum->SetExplicitMinSize(BSize(expandedWidth, 10.0f * scale));
                           fSpectrum->SetExplicitMaxSize(BSize(expandedWidth, 10.0f * scale));
                     	  fSpectrum->SetExplicitPreferredSize(BSize(expandedWidth, 10.0f * scale));
                     
                 		}
-                    if (cfg.showSpectrumVisuals) {
+                    if (cfg.showSpectrumVisuals && cfg.eqEnabled) {
                         fSpectrum->SetExplicitMinSize(BSize(350, 50));
                         fSpectrum->SetExplicitMaxSize(BSize(350, 50));
                         fSpectrum->SetExplicitPreferredSize(BSize(350, 50));
@@ -4187,7 +4253,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                         
                     }
                     
-                   if (!cfg.showSpectrumVisuals) {
+                   if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) {
                     	fSpectrum->SetExplicitMinSize(BSize(350, 1));
                         fSpectrum->SetExplicitMaxSize(BSize(350, 1));
                         fSpectrum->SetExplicitPreferredSize(BSize(350, 1));
@@ -4461,51 +4527,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         	break;
     	}
     	
-
-
-    	
-    	case MSG_TOGGLE_LADSPA: {
-    		cfg.ladspaEnabled = (fEnableladspa->Value() == B_CONTROL_ON);
-    		save_config();
-    		UpdateMPVFilters(); 
-    		break;
-		}	
-
-    	
-	case MSG_TOGGLE_EQ: {
-    		BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("eq_toggle"));
-    		if (chk) {
-        		cfg.eqEnabled = (chk->Value() == B_CONTROL_ON);            
-        
-        		if (cfg.eqEnabled) {
-            		fEnableladspa->Show();
-            		fEnableSpectrum->Show();
-            		fChkShuffle->Show();  
-            		fEQContainer->Show();
-        		} else {
-            		fEnableladspa->Hide();  
-            		fEnableSpectrum->Hide();
-            		fEQContainer->Hide();
-        		}
-        
-                // Force parent container and layout elements to instantly clear 
-                // and wipe away stale pixels using your custom dark theme colors
-                if (fSpectrum != nullptr) {
-                    fSpectrum->Invalidate();
-                    if (fSpectrum->Parent()) fSpectrum->Parent()->Invalidate();
-                }
-                if (fEQContainer) {
-                    fEQContainer->Invalidate();
-                    if (fEQContainer->Parent()) fEQContainer->Parent()->Invalidate();
-                }
-
-        		InvalidateLayout();
-        		ResizeToPreferred();
-        		save_config();
-        		UpdateMPVFilters(); 
-    		}
-    		break;
-		}
 
 
     	
