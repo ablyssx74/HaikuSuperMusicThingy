@@ -826,57 +826,75 @@ public:
 void UpdateLevel(double level) {
     if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) return;
 
-    // Hardcode baseline manual offset of 1150ms on first run
-    static bool sFirstRunOffsetApplied = false;
-    if (!sFirstRunOffsetApplied) {
-        fManualSyncOffsetUs = 1150000; // 1150ms in microseconds
-        sFirstRunOffsetApplied = true;
-    }
-
     bigtime_t now = system_time();
 
-    // 1. DYNAMIC AUTO-SYNC ENGINE
-    double detected_seconds = 0.0;
-    if (mpv_get_property(mpv, "audio-out-detected-latency", MPV_FORMAT_DOUBLE, &detected_seconds) == 0) {
-        // Base latency detected by MPV + your manual fine-tuning offset
-        fAudioHardwareDelayUs = (bigtime_t)(detected_seconds * 1000000.0) + fManualSyncOffsetUs;
-        
-        // Safety guard to ensure latency doesn't drop below zero
-        if (fAudioHardwareDelayUs < 0) fAudioHardwareDelayUs = 0;
+    // 1. NATIVE AUDIO BUFFER TRACKING ENGINE
+    static bigtime_t sLastCallbackTime = 0;
+    static bigtime_t sSmoothedNativeBufferUs = 0;
+
+    if (sLastCallbackTime > 0 && now > sLastCallbackTime) {
+        bigtime_t current_native_buffer = now - sLastCallbackTime;
+
+        if (sSmoothedNativeBufferUs == 0) {
+            sSmoothedNativeBufferUs = current_native_buffer;
+        } else {
+            sSmoothedNativeBufferUs = (bigtime_t)((sSmoothedNativeBufferUs * 0.90) + (current_native_buffer * 0.10));
+        }
+
+        // Fix: Use a 1140ms baseline offset (matching your logs) to align with mpv playback pipeline,
+        // and dynamically add the native 190ms hardware buffer variation on top of it.
+        bigtime_t basePlaybackDelayUs = 1140000; 
+        fAudioHardwareDelayUs = basePlaybackDelayUs + sSmoothedNativeBufferUs + fManualSyncOffsetUs;
     } else {
-        fAudioHardwareDelayUs = 50000 + fManualSyncOffsetUs; 
+        fAudioHardwareDelayUs = 1330000 + fManualSyncOffsetUs; 
     }
+    sLastCallbackTime = now;
+
+    if (fAudioHardwareDelayUs < 0) fAudioHardwareDelayUs = 0;
 
 
 /*
-
     // 2. TIMING AND DATA DEBUG PRINT OUT
     static int debug_throttle_counter = 0;
-    static bigtime_t last_frame_time = 0;
+    static bigtime_t sLastLoggedLatencyUs = 0; // Tracks previous latency to detect shifts
+    bool latency_changed = false;
+    long long latency_delta_us = 0;
 
-    // Calculate sample frame size based on time elapsed since last call
-    long long sample_frame_size = 0;
-    if (last_frame_time > 0 && now > last_frame_time) {
-        bigtime_t time_delta_us = now - last_frame_time;
-        // Math: (Microseconds / 1,000,000) * 44100 samples per second
-        // Assumes a standard 44.1kHz stream. Adjust 44100.0 if using 48kHz.
-        sample_frame_size = (long long)((double)time_delta_us / 1000000.0 * 44100.0);
+    // Detect if latency changed by more than 1ms (1000 us) to filter out microscopic jitter
+    if (sLastLoggedLatencyUs > 0) {
+        latency_delta_us = (long long)fAudioHardwareDelayUs - (long long)sLastLoggedLatencyUs;
+        if (llabs(latency_delta_us) >= 1000) { 
+            latency_changed = true;
+        }
     }
-    last_frame_time = now;
+
+    // Convert the smoothed native buffer time directly into sample counts
+    long long sample_frame_size = (long long)((double)sSmoothedNativeBufferUs / 1000000.0 * 44100.0);
 
     if (++debug_throttle_counter >= 60) {
         debug_throttle_counter = 0;
         int active_buffer_elements = (fHistoryHead - fHistoryTail + 512) % 512;
 
-        fprintf(stderr, "[SPECTRUM DEBUG] Input Level: %6.2f dB | NATIVE FRAME SIZE: ~%lld samples | mpv Latency: %4.1f ms (%lld us) | Cache Slots Filled: %d/512\n", 
+        // Build the change alert string if a shift was detected
+        char change_alert[64] = "";
+        if (latency_changed) {
+            snprintf(change_alert, sizeof(change_alert), " -> [LATENCY CHANGED: %+lld us]", latency_delta_us);
+            sLastLoggedLatencyUs = fAudioHardwareDelayUs; // Update baseline after logging change
+        } else if (sLastLoggedLatencyUs == 0) {
+            sLastLoggedLatencyUs = fAudioHardwareDelayUs; // Initialize baseline on first log
+        }
+
+        fprintf(stderr, "[SPECTRUM DEBUG] Input Level: %6.2f dB | NATIVE FRAME SIZE: ~%lld samples | Native Latency: %4.1f ms (%lld us) | Cache Slots Filled: %d/512%s\n", 
                 level, 
                 sample_frame_size,
                 (double)fAudioHardwareDelayUs / 1000.0, 
                 (long long)fAudioHardwareDelayUs, 
-                active_buffer_elements);
+                active_buffer_elements,
+                change_alert);
     }
 
 */
+
     // 3. EXPANDED BUFFER PIPELINE INDEXING
     fLevelHistory[fHistoryHead] = level;
     fTimeHistory[fHistoryHead] = now;
@@ -989,7 +1007,7 @@ void UpdateLevel(double level) {
         }
     }
 
-/*  
+/*
 virtual void KeyDown(const char* bytes, int32 numBytes) override {
     if (numBytes == 1) {
         if (bytes[0] == '+') {
@@ -1009,8 +1027,8 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
     }
     BView::KeyDown(bytes, numBytes);
 }
-
 */
+
     virtual void MouseDown(BPoint point) override {
         BMessage* message = Window()->CurrentMessage();
         int32 buttons = 0;
