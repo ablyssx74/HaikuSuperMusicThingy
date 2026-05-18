@@ -1460,7 +1460,59 @@ virtual void Pulse() override {
                         fObsHeightScale[o] = 0.6f + ((rand() % 8) / 10.0f);                        
                         fMotoScore++; // Successfully cleared a hazard! Increment score tally
                     }
-                } // Parallax scrolling speed tracking
+                } 
+                
+                // ------------------------------------------------------------
+                // --- BACKGROUND SCROLLING DOG SUBROUTINE (RUNNING LEFT TO RIGHT) ---
+                // ------------------------------------------------------------
+                static float dogVelocityY = 0.0f; // Tracks dog's jump physics arc
+
+                if (!fDogDrawActive) {
+                    if ((rand() % 1000) < 3) {
+                        fDogDrawX = -30.0f; // Spawn past the LEFT margin
+                        fDogDrawY = 0.0f;   // Track dog height relative to ground floor
+                        dogVelocityY = 0.0f;
+                        fDogDrawActive = true;
+                    }
+                } else {
+                    // Running left-to-right means the dog moves faster than the background scroll!
+                    // 5.8f matches obstacle speed, adding 2.5f lets him dynamically pass the rider
+                    fDogDrawX += (5.8f + 2.5f); 
+
+                    // --- JUMP SENSING AI DETECTOR ---
+                    // Scan both active obstacle queue instances to see if one is approaching from the right
+                    if (fDogDrawY <= 0.01f) { // Only jump if currently resting on the ground
+                        for (int o = 0; o < 2; o++) {
+                            // Since dog runs right, check if an obstacle is to his RIGHT,
+                            // within 40 pixels, and he hasn't passed it yet
+                            if (fObsX[o] > fDogDrawX && (fObsX[o] - fDogDrawX) < 40.0f) {
+                                if (fObsIsPit[o] == 0 || fObsIsPit[o] == 3 || fObsIsPit[o] == 4) {
+                                    dogVelocityY = 3.5f; // Initial vertical upward leap velocity
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // --- DOG GRAVITY PHYSICS ACCELERATION PASS ---
+                    fDogDrawY += dogVelocityY;
+                    if (fDogDrawY > 0.0f) {
+                        dogVelocityY -= 0.35f; // Soft gravity weight pulling him down
+                    } else {
+                        fDogDrawY = 0.0f;
+                        dogVelocityY = 0.0f;
+                    }
+
+                    // Recycle and shut down state when completely past RIGHT boundary
+                    if (fDogDrawX > artworkWidth_cached + 30.0f) {
+                        fDogDrawActive = false;
+                    }
+                }
+                // ------------------------------------------------------------
+
+               
+                
+                // Parallax scrolling speed tracking
                 fMtnScrollX -= 0.95f; 
                 if (fMtnScrollX < -240.0f) {
                     fMtnScrollX += 240.0f;
@@ -2288,6 +2340,39 @@ virtual void Pulse() override {
             BString scoreStr;
             scoreStr.SetToFormat("SCORE: %" B_PRId32, fMotoScore);
             DrawString(scoreStr.String(), BPoint(startX + artworkWidth - 68.0f, 15.0f));            
+            
+            
+            // --- LAYER 5C: BACKGROUND SCROLLING VECTOR DOG RENDERING (FACING RIGHT) ---
+            if (fDogDrawActive) {
+                SetDrawingMode(B_OP_ALPHA);
+                SetHighColor(255, 255, 255, 210); 
+                
+                float dogFloorY = baselineY - 5.0f - fDogDrawY; 
+
+                // Draw main body torso
+                FillRect(BRect(startX + fDogDrawX - 7.0f, dogFloorY - 4.0f, startX + fDogDrawX + 7.0f, dogFloorY + 3.0f));
+                
+                // FIXED ORIENTATION: Draw head block on the RIGHT (+4.0f to +11.0f) because he's running right!
+                FillRect(BRect(startX + fDogDrawX + 4.0f, dogFloorY - 9.0f, startX + fDogDrawX + 11.0f, dogFloorY - 3.0f));
+                
+                // Draw legs
+                FillRect(BRect(startX + fDogDrawX - 5.0f, dogFloorY + 3.0f, startX + fDogDrawX - 3.0f, dogFloorY + 8.0f)); // Back Leg
+                FillRect(BRect(startX + fDogDrawX + 3.0f, dogFloorY + 3.0f, startX + fDogDrawX + 5.0f, dogFloorY + 8.0f)); // Front Leg
+                
+                // Animated fast wagging tail (now pointing LEFT since he runs right)
+                SetPenSize(1.5f);
+                static int dogGameTailWag = 0;
+                dogGameTailWag++;
+                if (dogGameTailWag % 2 == 0) {
+                    StrokeLine(BPoint(startX + fDogDrawX - 7.0f, dogFloorY - 2.0f), BPoint(startX + fDogDrawX - 11.0f, dogFloorY - 6.0f));
+                } else {
+                    StrokeLine(BPoint(startX + fDogDrawX - 7.0f, dogFloorY - 2.0f), BPoint(startX + fDogDrawX - 12.0f, dogFloorY - 2.0f));
+                }
+            }
+
+
+            
+            
             
             // --- LAYER 6: MOTORCYCLE RIDER VEHICLE BODY & FLIP MECHANIC ---
             float riderX = startX + 45.0f; 
