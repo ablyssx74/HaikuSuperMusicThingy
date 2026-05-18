@@ -3733,7 +3733,7 @@ SuperMusicWindow::SuperMusicWindow()
 	fArtView->SetExplicitSize(BSize(350 * scale, 350 * scale)); 
     fArtView->SetExplicitMinSize(BSize(350 * scale, 350 * scale));
 	fArtView->SetExplicitMaxSize(BSize(350 * scale, 350 * scale));
-	if (cfg.showSpectrumVisuals) fSpectrum = new SpectrumView(BRect(0, 0, 350, 115), "spectrum"); 
+	if (cfg.showSpectrumVisuals) fSpectrum = new SpectrumView(BRect(0, 0, 350, 100), "spectrum"); 
     if (!cfg.showSpectrumVisuals) fSpectrum = new SpectrumView(BRect(0, 0, 350, 1), "spectrum"); 
 	//fSpectrum->SetExplicitMinSize(BSize(350, 75));
 	//fSpectrum->SetExplicitMaxSize(BSize(350, B_SIZE_UNSET)); 
@@ -4863,7 +4863,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                         
                         if (cfg.showSpectrumVisuals && cfg.eqEnabled) {
                             if (!cfg.compactModeDesc && !cfg.compactModeTitle) {
-                                stackHeight = 100.0f; // Matches your 350x115 spectrum perfectly
+                                stackHeight = 100.0f; // Matches your 350x100 spectrum perfectly
                             } else if (!cfg.compactModeDesc && cfg.compactModeTitle) {                    	
                                 stackHeight = 100.0f * scale; // Spectrum (90) + Title text space
                             } else if (cfg.compactModeDesc && !cfg.compactModeTitle) {                    		
@@ -4888,9 +4888,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     				fVolumeSlider->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
                     
                     if (cfg.showSpectrumVisuals) {
-                    	fSpectrum->SetExplicitMinSize(BSize(350, 115));
-                        fSpectrum->SetExplicitMaxSize(BSize(350, 115));
-                        fSpectrum->SetExplicitPreferredSize(BSize(350, 115));
+                    	fSpectrum->SetExplicitMinSize(BSize(350, 100));
+                        fSpectrum->SetExplicitMaxSize(BSize(350, 100));
+                        fSpectrum->SetExplicitPreferredSize(BSize(350, 100));
                         
                     }
                     
