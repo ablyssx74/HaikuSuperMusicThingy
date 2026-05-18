@@ -561,7 +561,7 @@ struct Config {
     bool sysTray = false;
     #endif
     bool autoShuffleVisuals = false;
-    bool showSpectrumVisuals = false;
+    bool showSpectrumVisuals = true;
     bool autoVsync = false;
     bool ladspaEnabled = false;
     bool shuffleFavsOnly = false;
@@ -569,7 +569,7 @@ struct Config {
     int notifyIconSize = 64; 
     std::string updateTheme = "Default";
     std::string quality = "128k";
-    bool eqEnabled = false;
+    bool eqEnabled = true;
     float eqBands[15] = {0.0f}; 
     float limitIn = 0.0f;
     float limitLmt = 0.0f;
@@ -639,9 +639,9 @@ void load_config() {
     cfg.autoVsync = false;
     cfg.ladspaEnabled = false;
     cfg.showVisuals = false;   
-    cfg.showSpectrumVisuals = false;   
+    cfg.showSpectrumVisuals = true;   
     cfg.shuffleFavsOnly = false; 
-    cfg.eqEnabled = false;
+    cfg.eqEnabled = true;
     for (int i = 0; i < 15; i++) {
         cfg.eqBands[i] = 0.0f; // flat EQ defaults
     }
@@ -678,9 +678,9 @@ void load_config() {
                 cfg.autoVsync = j.value("autoVsync", false);
                 cfg.ladspaEnabled = j.value("ladspaEnabled", false);
                 cfg.showVisuals = j.value("showVisuals", false);   
-                cfg.showSpectrumVisuals = j.value("showSpectrumVisuals", false);   
+                cfg.showSpectrumVisuals = j.value("showSpectrumVisuals", true);   
                 cfg.shuffleFavsOnly = j.value("shuffleFavsOnly", false); 
-                cfg.eqEnabled = j.value("eqEnabled", false);                
+                cfg.eqEnabled = j.value("eqEnabled", true);                
                 if (j.contains("eqBands") && j["eqBands"].is_array()) {
                      for (size_t i = 0; i < 15 && i < j["eqBands"].size(); i++) {
                         cfg.eqBands[i] = j["eqBands"][i].get<float>();
@@ -725,6 +725,7 @@ public:
 		fStuntTextY = 0.0f;
 		fStuntTextLife = 0;
 		fStuntTextStr = "";
+
 
 		
 		// Force a staggering pipeline gap so obstacles do not stack on top of each other
@@ -790,6 +791,12 @@ public:
         fBallDX[1] = -3.0f;
         fBallDY[1] = 3.5f;
         fBallSize[1] = 10.0f;
+        
+        // EasterEgg1
+		fDogDrawActive = false;
+		fDogDrawX = 0.0f;
+		fDogDrawY = 0.0f;
+
     }
     
     virtual void MessageReceived(BMessage* message) override {
@@ -1048,13 +1055,14 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
             
             if (buttons & B_PRIMARY_MOUSE_BUTTON) {
                 if (fVisualizerMode == MODE_MOTO_RIDER && fMotoCrashTicks == 0) {
-                    // --- DOUBLE CLICK IN THE AIR = BACKFLIP ---
-                    if (clicks >= 2 && fMotoY > 0.05f && !fIsFlipping) {
+                    // --- DOUBLE CLICK IN THE AIR = TRIGGER/CHAIN FLIPS ---
+                    if (clicks >= 2 && fMotoY > 0.05f) {
                         fIsFlipping = true;
-                        fFlipRotation = 0.0f;
-                        fMotoVelocityY += 2.5f; // Extra altitude boost for styling the flip
+                        // Give an extra lift bump on every flip chain to help clear the height gap
+                        fMotoVelocityY += 2.0f; 
                         return;
                     }
+
                     
                     // --- SINGLE CLICK ON THE GROUND = REGULAR JUMP ---
                     if (fMotoY <= 0.05f) {
@@ -1075,99 +1083,119 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
 
 
 
-    virtual void Pulse() override {
-        BRect b = Bounds();
-        float w = b.Width();
-        float viewHeight = b.Height();
+virtual void Pulse() override {
+    BRect b = Bounds();
+    float w = b.Width();
+    float viewHeight = b.Height();
 
-        if (viewHeight <= 0 || w <= 0) return;
+    if (viewHeight <= 0.0f || w <= 0.0f) return;
 
-        // ====================================================================
-        // 1. MASTER AUDIO MAGNITUDE & SPRING PHYSICS CALCULATIONS
-        // ====================================================================
-        float floorDb = -45.0f;
-        float peak = (float)fCurrentLevel;        
-        if (peak < floorDb) peak = floorDb;
-        if (peak > 0.0f) peak = 0.0f;
-        float masterMagnitude = (peak - floorDb) / (0.0f - floorDb);
-        float currentInputDb = 0.0f;
+    // ====================================================================
+    // 1. MASTER AUDIO MAGNITUDE & LIMITER CALCULATIONS
+    // ====================================================================
+    const float floorDb = -45.0f;
+    float peak = (float)fCurrentLevel;        
+    if (peak < floorDb) peak = floorDb;
+    if (peak > 0.0f) peak = 0.0f;
+    
+    // Normalize master volume strictly between 0.0 and 1.0
+    float masterMagnitude = (peak - floorDb) / (0.0f - floorDb);
+    float currentInputDb = 0.0f;
+    
+    if (Window() != nullptr) {
+        BSlider* inputSlider = dynamic_cast<BSlider*>(Window()->FindView("LimitInput"));
+        if (inputSlider == nullptr) {
+            inputSlider = dynamic_cast<BSlider*>(Window()->FindView("input_gain"));
+        }
+        if (inputSlider != nullptr) {
+            currentInputDb = (float)inputSlider->Value();
+        }
+    }
+
+    // Protection mapping to ensure limiter divisor never hits 0 or flips inverted
+    if (currentInputDb < 0.0f) currentInputDb = 0.0f; 
+
+    const float masterSensitivityMultiplier = 0.87f;
+    float limiterDivisor = 1.0f + (currentInputDb * 0.065f);
+    masterMagnitude = (powf(masterMagnitude, 2.0f) * masterSensitivityMultiplier) / limiterDivisor;
+
+    // ====================================================================
+    // 2. SPRING PHYSICS & BIN CALCULATIONS
+    // ====================================================================
+    const float springStiffness = 0.28f; 
+    const float springDamping = 0.74f;   
+    bool isTimingOut = ((system_time() - fLastDataTime) > 100000);
+
+    for (int i = 0; i < 64; i++) {
+        // Frequency-dependent scaling curve
+        float frequencyScale = 1.0f;
+        if (i < 12) {
+            frequencyScale = 1.15f + ((12 - i) * 0.03f); 
+        } else if (i > 45) {
+            frequencyScale = 0.85f - ((i - 45) * 0.02f); 
+        }
+
+        // Replaced rand() flickering with a controlled pseudo-organic pulse scale
+        float organicScale = 0.95f + (0.10f * sinf(i * 0.25f)); 
         
-        if (Window() != nullptr) {
-            BSlider* inputSlider = dynamic_cast<BSlider*>(Window()->FindView("LimitInput"));
-            if (inputSlider == nullptr) {
-                inputSlider = dynamic_cast<BSlider*>(Window()->FindView("input_gain"));
-            }
-            if (inputSlider != nullptr) {
-                currentInputDb = (float)inputSlider->Value();
-            }
+        // Calculate target constraint ceiling to prevent spring breakdown
+        float targetHeight = masterMagnitude * viewHeight * frequencyScale * organicScale;
+        if (targetHeight > viewHeight) targetHeight = viewHeight;
+
+        // Apply Hooke's Law Spring Force
+        float displacement = targetHeight - fBarHeights[i];
+        float springForce = displacement * springStiffness;
+        fBarVelocities[i] = (fBarVelocities[i] + springForce) * springDamping;
+        fBarHeights[i] += fBarVelocities[i];
+        
+        // Boundaries enforcement
+        if (fBarHeights[i] > viewHeight) {
+            fBarHeights[i] = viewHeight;
+            fBarVelocities[i] = 0.0f;
+        }
+        if (fBarHeights[i] < 0.0f) {
+            fBarHeights[i] = 0.0f;
+            fBarVelocities[i] = 0.0f; 
         }
 
-        float masterSensitivityMultiplier = 0.87f;
-        float limiterDivisor = 1.0f + (currentInputDb * 0.065f);
-        masterMagnitude = (powf(masterMagnitude, 2.0f) * masterSensitivityMultiplier) / limiterDivisor;
-
-        const float springStiffness = 0.28f; 
-        const float springDamping = 0.74f;   
-
-        for (int i = 0; i < 64; i++) {
-            float frequencyScale = 1.0f;
-            if (i < 12) {
-                frequencyScale = 1.15f + ((12 - i) * 0.03f); 
-            } else if (i > 45) {
-                frequencyScale = 0.85f - ((i - 45) * 0.02f); 
-            }
-
-            float punchFactor = 0.80f + ((rand() % 40) / 100.0f); 
-            float targetHeight = masterMagnitude * viewHeight * frequencyScale * punchFactor;
-
-            float displacement = targetHeight - fBarHeights[i];
-            float springForce = displacement * springStiffness;
-            fBarVelocities[i] = (fBarVelocities[i] + springForce) * springDamping;
-            fBarHeights[i] += fBarVelocities[i];
-            
-            if (fBarHeights[i] > viewHeight) fBarHeights[i] = viewHeight;
-            if (fBarHeights[i] < 0.0f) {
-                fBarHeights[i] = 0.0f;
-                fBarVelocities[i] = 0.0f; 
-            }
-
-            if (fBarHeights[i] >= fPeakHeights[i]) {
-                fPeakHeights[i] = fBarHeights[i];
-                fPeakHold[i] = 6; 
+        // Peak Hold logic processing
+        if (fBarHeights[i] >= fPeakHeights[i]) {
+            fPeakHeights[i] = fBarHeights[i];
+            fPeakHold[i] = 6; 
+        } else {
+            if (fPeakHold[i] > 0) {
+                fPeakHold[i]--;
             } else {
-                if (fPeakHold[i] > 0) {
-                    fPeakHold[i]--;
-                } else {
-                    fPeakHeights[i] -= (viewHeight * 0.025f); 
-                    if (fPeakHeights[i] < 0.0f) fPeakHeights[i] = 0.0f;
-                }
+                fPeakHeights[i] -= (viewHeight * 0.025f); 
+                if (fPeakHeights[i] < 0.0f) fPeakHeights[i] = 0.0f;
             }
         }
 
-        // ====================================================================
-        // 2. TIMEOUT SMOOTHING DECAYS
-        // ====================================================================
-        if ((system_time() - fLastDataTime) > 100000) { 
-            if (fCurrentLevel > floorDb) {
-                fCurrentLevel = (fCurrentLevel * 0.80) + (floorDb * 0.20);
+        // Integrated Timeout Smoothing Decay
+        if (isTimingOut) {
+            if (fBarHeights[i] > 0.05f) {
+                fBarHeights[i] *= 0.75f; 
+                fBarVelocities[i] *= 0.50f;
+            } else {
+                fBarHeights[i] = 0.0f;
+                fBarVelocities[i] = 0.0f;
             }
-            for (int i = 0; i < 64; i++) {
-                if (fBarHeights[i] > 0.05f) {
-                    fBarHeights[i] *= 0.75f; 
-                    fBarVelocities[i] *= 0.50f;
-                } else {
-                    fBarHeights[i] = 0.0f;
-                    fBarVelocities[i] = 0.0f;
-                }
-                if (fPeakHeights[i] > 0.0f) {
-                    fPeakHeights[i] -= 1.5f;
-                    if (fPeakHeights[i] < 0.0f) fPeakHeights[i] = 0.0f;
-                }
+            if (fPeakHeights[i] > 0.0f) {
+                fPeakHeights[i] -= 1.5f;
+                if (fPeakHeights[i] < 0.0f) fPeakHeights[i] = 0.0f;
             }
         }
+    }
+
+    // Handle overall input volume attenuation tracking on silence
+    if (isTimingOut && fCurrentLevel > floorDb) {
+        fCurrentLevel = (fCurrentLevel * 0.80f) + (floorDb * 0.20f);
+    }
+
+
 
         // ====================================================================
-        // 3. SINGLE-BALL PONG PHYSICS ENGINE (35% Velocity reduction)
+        // 3. SINGLE-BALL PONG PHYSICS ENGINE (Scoring Inverted + Ball Chasing Dog)
         // ====================================================================
         if (fVisualizerMode == MODE_PONG_BALLS) {
             float bassImpact = (fBarHeights[2] + fBarHeights[6] + fBarHeights[12]) / 3.0f;
@@ -1216,9 +1244,17 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
             static bigtime_t winStartTime = 0;
             static bool timerStarted = false;
 
+            // Declare persistent, static dog metrics inside the physics engine layout scope
+            static bool dogActive = false;
+            static bool dogRunningAway = false;
+            static float dogX = 0.0f;
+            static float dogY = 0.0f;
+            static bigtime_t dogSpawnTime = 0;
+
             if (fLeftScore >= 10 || fRightScore >= 10) {
                 fBallX[k] = startX_cached + (artworkWidth_cached / 2.0f);
                 fBallY[k] = viewHeight / 2.0f;
+                dogActive = false; // Disable dog on victory screen
 
                 if (!timerStarted) {
                     winStartTime = system_time(); 
@@ -1261,6 +1297,46 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
                 if (fBallY[k] - radius < 0) { fBallY[k] = radius; fBallDY[k] = -fBallDY[k]; }
                 else if (fBallY[k] + radius > viewHeight) { fBallY[k] = viewHeight - radius; fBallDY[k] = -fBallDY[k]; }
 
+                // ------------------------------------------------------------
+                // --- BALL-CHASING DOG PHYSICS ENGINE SUBROUTINE ---
+                // ------------------------------------------------------------
+                if (!dogActive) {
+                    // 0.5% chance to spawn dog from the floor every frame
+                    if ((rand() % 1000) < 5) {
+                        dogX = startX_cached + (artworkWidth_cached / 2.0f);
+                        dogY = viewHeight + 15.0f; // Start hidden below screen edge
+                        dogSpawnTime = system_time();
+                        dogActive = true;
+                        dogRunningAway = false;
+                    }
+                } else {
+                    if (!dogRunningAway) {
+                        // Phase A: Active ball pursuit over 4.0 seconds (4000000 microseconds)
+                        if (system_time() - dogSpawnTime >= 4000000) {
+                            dogRunningAway = true;
+                        } else {
+                            // Smooth interpolation vector pursuit (chases ball's current coordinates)
+                            dogX += (fBallX[k] - dogX) * 0.07f;
+                            dogY += (fBallY[k] - dogY) * 0.07f;
+                        }
+                    } else {
+                        // Phase B: Run away off the screen boundary
+                        dogX += 4.5f; // Fast break to the right
+                        dogY += (viewHeight - 10.0f - dogY) * 0.1f; // Diagonally head toward bottom corner
+                        
+                        // Clean up state when completely past boundaries
+                        if (dogX > startX_cached + artworkWidth_cached + 25.0f) {
+                            dogActive = false;
+                        }
+                    }
+                }
+                // Save coordinates globally/locally using temporary class pointer fields or shared global markers
+                // For direct access in the drawing code, we will bind these to quick global aliases
+                fDogDrawActive = dogActive;
+                fDogDrawX = dogX;
+                fDogDrawY = dogY;
+                // ------------------------------------------------------------
+
                 // Left Paddle Collision check
                 float leftPaddleRightEdge = startX_cached + 5.0f;
                 if (fBallX[k] - radius <= leftPaddleRightEdge && fBallX[k] + radius >= startX_cached && fBallDX[k] < 0) {
@@ -1274,7 +1350,6 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
                         float randomFactor = ((rand() % 20) - 10) / 50.0f;
                         fBallDY[k] = (-normalizedIntersectY * 3.5f) + randomFactor;
 
-                        fLeftScore++;
                         fLeftPaddleTargetOffset = (float)((rand() % 16) - 8); 
                     }
                 }
@@ -1291,13 +1366,20 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
                         float normalizedIntersectY = relativeIntersectY / (paddleH / 2.0f);
                         float randomFactor = ((rand() % 20) - 10) / 50.0f;
                         fBallDY[k] = (-normalizedIntersectY * 3.5f) + randomFactor;
-
-                        fRightScore++;
                     }
                 }
 
                 // Out of bounds reset path handler (DEDICATED FIXED SHOCKWAVE TRIGGER)
                 if (fBallX[k] < startX_cached || fBallX[k] > startX_cached + artworkWidth_cached) {
+                    
+                    // --- INVERTED SCORE ROUTING ALLOCATION ---
+                    if (fBallX[k] < startX_cached) {
+                        fRightScore++; 
+                    } else {
+                        fLeftScore++; 
+                    }
+                    // ------------------------------------------
+
                     // 1. Snapshot the exact screen location of the ball's demise
                     fPongExplosionX = fBallX[k];
                     fPongExplosionY = fBallY[k];
@@ -1315,7 +1397,8 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
                     fBallDY[k] = ((rand() % 100) > 50) ? 2.5f : -2.5f;
                 }
             }
-        } 
+        }
+
 
 
 
@@ -1334,83 +1417,66 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
             }
         }
 
-  // ====================================================================
+  		// ====================================================================
         // 5. MODE 6: MULTI-OBSTACLE PHYSICS ENGINE, SCORE TRACKER & BACKFIRE
         // ====================================================================
         if (fVisualizerMode == MODE_MOTO_RIDER) {
             // Sample columns 2, 3, and 4 early to drive dynamic growing obstacles
             float lowBassPulse = (fBarHeights[2] + fBarHeights[3] + fBarHeights[4]) / 3.0f;
             float bassNormalized = (viewHeight > 0.0f) ? (lowBassPulse / viewHeight) : 0.0f;
-
+            
             if (fMotoCrashTicks > 0) {
                 fMotoCrashTicks--;
-                if (fMotoCrashTicks == 0) {
-                    // Reset game pipeline on crash recovery loop
+                if (fMotoCrashTicks == 0) { // Reset game pipeline on crash recovery loop
                     fObsX[0] = artworkWidth_cached + 40.0f;
-                    fObsIsPit[0] = rand() % 3; // 0=Rock, 1=Pit, 2=Water
-                    fObsHeightScale[0] = 0.6f + ((rand() % 8) / 10.0f);
-                    
+                    fObsIsPit[0] = rand() % 5; // Expanded: 0=Rock, 1=Pit, 2=Water, 3=4-Spikes, 4=5-Spikes
+                    fObsHeightScale[0] = 0.6f + ((rand() % 8) / 10.0f);                    
                     fObsX[1] = fObsX[0] + 180.0f; // Keep the separation buffer intact
-                    fObsIsPit[1] = rand() % 3;
-                    fObsHeightScale[1] = 0.6f + ((rand() % 8) / 10.0f);
-                    
+                    fObsIsPit[1] = rand() % 5; // Expanded
+                    fObsHeightScale[1] = 0.6f + ((rand() % 8) / 10.0f);                    
                     fMotoY = 0.0f;
                     fMotoVelocityY = 0.0f;
                     fMotoScore = 0; // Wipe score on structural crashes
-                    
-                    // Reset backflip tracking flags on crash recovery
                     fIsFlipping = false;
                     fFlipRotation = 0.0f;
                 }
-            } else {
-                // Loop tracking and moving both active obstacle queue instances
+            } else { // Loop tracking and moving both active obstacle queue instances
                 for (int o = 0; o < 2; o++) {
-                    // Base speed plus an added extra difficulty multiplier for harder obstacles
                     float baseObstacleSpeed = 5.8f; 
-                    fObsX[o] -= baseObstacleSpeed; 
+                    fObsX[o] -= baseObstacleSpeed;                     
                     
                     // --- HAZARD 1: DYNAMIC HORIZONTAL MOVEMENT ---
                     // Solid rocks weave back and forth dynamically over time
                     if (o == 0 && fObsIsPit[o] == 0) {
                         float weaveTime = (float)system_time() / 1000000.0f;
                         fObsX[o] += sinf(weaveTime * 6.5f) * 1.8f; // Aggressive lateral shifting
-                    }
-
+                    } 
+                    
                     // Recycle obstacle back to the right margins once it rolls left off-screen
-                    if (fObsX[o] < -40.0f) {
+                    if (fObsX[o] < -50.0f) { // Adjusted lower edge slightly for wider spike obstacles
                         int otherIndex = (o == 0) ? 1 : 0;
-                        fObsX[o] = max_c(artworkWidth_cached + 40.0f, fObsX[otherIndex] + 160.0f + (rand() % 60));
-                        
-                        fObsIsPit[o] = rand() % 3; // Cycle smoothly into rock, pit, or water
-                        fObsHeightScale[o] = 0.6f + ((rand() % 8) / 10.0f);
-                        
+                        fObsX[o] = max_c(artworkWidth_cached + 40.0f, fObsX[otherIndex] + 160.0f + (rand() % 60));                        
+                        fObsIsPit[o] = rand() % 5; // Cycle smoothly into rock, pit, water, or multi-spikes
+                        fObsHeightScale[o] = 0.6f + ((rand() % 8) / 10.0f);                        
                         fMotoScore++; // Successfully cleared a hazard! Increment score tally
                     }
-                }
-
-                // --- FIXED MOUNTAINS (No skipping loop) ---
-                // Parallax scrolling speed tracking
+                } // Parallax scrolling speed tracking
                 fMtnScrollX -= 0.95f; 
-                // Instead of resetting abruptly to 0, smoothly cycle based on step length
                 if (fMtnScrollX < -240.0f) {
                     fMtnScrollX += 240.0f;
-                }
-
-                // Randomize heights when initialization runs or mountains pass thresholds
+                } 
                 for (int m = 0; m < 4; m++) {
                     if (fMtnHeightScale[m] <= 0.01f) {
-                        fMtnHeightScale[m] = 0.7f + ((rand() % 7) / 5.0f); // Varied sizes!
+                        fMtnHeightScale[m] = 0.7f + ((rand() % 7) / 5.0f); 
                     }
                 }
-
                 for (int t = 0; t < 4; t++) {
-                    fTreeX[t] -= 1.85f; // Sped up trees to heighten the depth contrast against mountains
+                    fTreeX[t] -= 1.85f; 
                     if (fTreeX[t] < -20.0f) {
                         fTreeX[t] = artworkWidth_cached + 10.0f + (rand() % 40);
                         fTreeHeight[t] = 12.0f + (rand() % 10);
                     }
                 }
-
                 for (int c = 0; c < 3; c++) {
                     fCloudX[c] -= 0.20f;
                     if (fCloudX[c] < -40.0f) {
@@ -1418,100 +1484,161 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
                         fCloudY[c] = 4.0f + (rand() % 8);
                         fCloudSize[c] = 16.0f + (rand() % 14);
                     }
-                }
-
+                } 
+                
                 // Trigger a backfire burst when a heavy bass beat slams past an intense threshold
                 if (fMotoCrashTicks == 0 && lowBassPulse > (viewHeight * 0.52f)) {
                     for (int s = 0; s < 12; s++) {
                         if (fSparkLife[s] <= 0) {
-                            fSparkLife[s] = 8 + (rand() % 8); 
-                            fSparkX[s] = 0.0f;                
-                            fSparkY[s] = 0.0f; 
-                            fSparkDX[s] = -1.8f - ((rand() % 15) / 10.0f);
-                            fSparkDY[s] = -0.5f + ((rand() % 20) / 10.0f);
+                            fSparkLife[s] = 8 + (rand() % 8);  fSparkX[s] = 0.0f; fSparkY[s] = 0.0f; fSparkDX[s] = -1.8f - ((rand() % 15) / 10.0f);  fSparkDY[s] = -0.5f + ((rand() % 20) / 10.0f);
                         }
                     }
-                }
-
-                // Run physics translation calculations across all active spark vectors
+                } 
                 for (int s = 0; s < 12; s++) {
                     if (fSparkLife[s] > 0) {
-                        fSparkLife[s]--; 
-                        fSparkX[s] += fSparkDX[s];
-                        fSparkY[s] += fSparkDY[s];
-                        
-                        fSparkDX[s] *= 0.88f; 
-                        fSparkDY[s] += 0.15f; 
+                        fSparkLife[s]--; fSparkX[s] += fSparkDX[s]; fSparkY[s] += fSparkDY[s]; fSparkDX[s] *= 0.88f; fSparkDY[s] += 0.15f; 
                     }
-                }
-
-                // Calculate ongoing manual jump vertical gravity arc curves
+                } 
                 fMotoY += fMotoVelocityY;
                 fMotoVelocityY -= 0.45f; 
-
                 if (fMotoY <= 0.0f) {
-                    fMotoY = 0.0f;
-                    fMotoVelocityY = 0.0f;
-                    
-                    // Safely terminate flip if the rider touches down early
-                    fIsFlipping = false;
-                    fFlipRotation = 0.0f;
-                }
-
-                // --- BACKFLIP ANIMATION STEP TRACKER ---
+                    fMotoY = 0.0f; fMotoVelocityY = 0.0f;                    
+                    fIsFlipping = false; fFlipRotation = 0.0f;
+                } 
                 if (fIsFlipping) {
-                    fFlipRotation += 18.0f; // Spin velocity
+                    fFlipRotation += 18.0f; 
                     if (fFlipRotation >= 360.0f) {
-                        fIsFlipping = false;
-                        fFlipRotation = 0.0f;
-                        fMotoScore += 5; // Reward the player!
-                        
-                        // TRIGGER STUNT POPUP ENGINE:
+                        fIsFlipping = false; fFlipRotation = 0.0f;
+                        fMotoScore += 5;                         
                         fStuntTextStr.SetTo("+5 STUNT!");
-                        fStuntTextY = fMotoY + 22.0f; // Position text right above the driver's head
-                        fStuntTextLife = 25;          // Set text visibility to last for 25 frames
+                        fStuntTextY = fMotoY + 22.0f; 
+                        fStuntTextLife = 25;          
                     }
-                }
-
-                // --- ANIMATE FLOATING POPUP TEXT ---
+                } 
                 if (fStuntTextLife > 0) {
-                    fStuntTextLife--;      // Tick down visibility life timer
-                    fStuntTextY += 0.8f;   // Float upward smoothly frame-by-frame
-                }
+                    fStuntTextLife--;      
+                    fStuntTextY += 0.8f;   
+                } 
 
+                // ====================================================================
+                // 5B. BACKFLIP ANIMATION STEP TRACKER & MULTI-FLIP BONUS CALCULATIONS
+                // ====================================================================
+                static int consecutiveFlipCount = 0; // Tracks flips within a single jump
 
-                // MULTI-OBJECT COLLISION BOX INTERSECT TESTS WITH MULTI-HAZARD DETECTION
-                float bikeLeft = 35.0f;  
-                float bikeRight = 55.0f;
+                fMotoY += fMotoVelocityY;
+                fMotoVelocityY -= 0.45f; 
                 
-                // STUNT BALANCING MECHANIC: Shrink hitboxes while curling mid-air to dodge tight blocks
+                if (fMotoY <= 0.0f) {
+                    fMotoY = 0.0f; 
+                    fMotoVelocityY = 0.0f;                    
+                    
+                    // Safely terminate flip if the rider touches down
+                    fIsFlipping = false; 
+                    fFlipRotation = 0.0f;
+                    consecutiveFlipCount = 0; // Reset landing tracker combo anchor
+                } 
+
                 if (fIsFlipping) {
-                    bikeLeft = 41.0f;
-                    bikeRight = 49.0f;
+                    fFlipRotation += 18.0f; // Spin velocity frame step
+                    
+                    if (fFlipRotation >= 360.0f) {
+                        fFlipRotation -= 360.0f; // Reset wheel loop rotation step cleanly
+                        consecutiveFlipCount++;  // Increments: 1 for single, 2 for double!
+                        
+                        // Progressive scoring scaling rewards system (+5, +15, +30...)
+                        int scoreBonus = 5 * consecutiveFlipCount;
+                        fMotoScore += scoreBonus; 
+                        
+                        // --- RANDOM STUNT PHRASE GENERATOR ENGINE ---
+                        const char* randomPhrases[10] = {
+                            "Way to go!",
+                            "You Rock!",
+                            "Front Flip Mania!",
+                            "Excellent!",
+                            "Wow!",
+                            "Watch it!",
+                            "Go Go Go!",
+                            "Non Stop!",
+                            "No way!",
+                            "Look Out!"
+                        };
+                        int phraseIndex = rand() % 10;
+                        const char* chosenPhrase = randomPhrases[phraseIndex];
+
+                        // Build the message layout (e.g., "+15 DOUBLE FLIP!! You Rock!")
+                        if (consecutiveFlipCount == 1) {
+                            fStuntTextStr.SetToFormat("+5 %s", chosenPhrase);
+                        } else if (consecutiveFlipCount == 2) {
+                            fStuntTextStr.SetToFormat("+15 DOUBLE FLIP!! %s", chosenPhrase);
+                        } else {
+                            fStuntTextStr.SetToFormat("+%" B_PRId32 " MEGA FLIP!!! %s", (int32)(5 * consecutiveFlipCount), chosenPhrase);
+                        }
+                        
+                        // FIXED COORDINATES: Center explicitly on screen to prevent canvas clipping
+                        fStuntTextY = viewHeight / 2.0f; 
+                        fStuntTextLife = 35; // Extended frame visibility slightly for larger announcements
+                        
+                        fIsFlipping = false; 
+                    }
+                } 
+
+                if (fStuntTextLife > 0) {
+                    fStuntTextLife--;      
+                    fStuntTextY -= 0.4f; // Float upward gently from screen center baseline
                 }
-                
+
+
+
+                // ====================================================================
+                // 5C. ADVANCED MULTI-OBJECT COLLISION BOX INTERSECT TESTS
+                // ====================================================================
+                float bikeLeft = 35.0f;  
+                float bikeRight = 55.0f;                
+                if (fIsFlipping) {
+                    bikeLeft = 41.0f; bikeRight = 49.0f;
+                }                
                 for (int o = 0; o < 2; o++) {
-                    if (fObsIsPit[o] == 1 || fObsIsPit[o] == 2) {
-                        // PIT (1) or WATER (2) Collision logic: Must clear the horizontal gap or fall in
+                    if (fObsIsPit[o] == 1 || fObsIsPit[o] == 2) {  // PIT (1) or WATER (2)
                         if (fMotoY <= 0.1f && bikeRight > fObsX[o] && bikeLeft < fObsX[o] + 24.0f) {
                             fMotoCrashTicks = 30; 
                         }
-                    } else {
-                        // SOLID ROCK (0) Collision Logic: Grow taller on bass spikes!
-                        float audioGrowthFactor = 1.0f;
-                        if (o == 1) {
-                            audioGrowthFactor += (bassNormalized * 2.0f); 
-                        }
-
-                        float currentObsHeight = 10.0f * fObsHeightScale[o] * audioGrowthFactor;
-                        
+                    } else if (fObsIsPit[o] == 0) {  // SOLID ROCK (0)
+                        float audioGrowthFactor = 1.0f + (bassNormalized * 2.0f); 
+                        float currentObsHeight = 10.0f * fObsHeightScale[o] * audioGrowthFactor;                        
                         if (fObsX[o] >= bikeLeft && fObsX[o] <= bikeRight && fMotoY < currentObsHeight) {
                             fMotoCrashTicks = 30; 
                         }
+                    } else { 
+                        // NEW TYPE 3 (4 Spikes) & TYPE 4 (5 Spikes) COLLISION DETECTOR PASS
+                        int spikeCount = (fObsIsPit[o] == 3) ? 4 : 5;
+                        float spikeWidth = 8.0f; 
+                        
+                        // Audio growth multiplier calculation (Cleaned up and toned down to 1.2f)
+                        float spikeAudioScale = 1.0f + (bassNormalized * 1.2f); 
+
+                        // Cycle across each individual triangle blade to parse sub-hitbox elevations
+                        for (int sIdx = 0; sIdx < spikeCount; sIdx++) {
+                            float sLeft = fObsX[o] + (sIdx * spikeWidth);
+                            float sRight = sLeft + spikeWidth;
+                            
+                            // If the motorcycle bounding box intersects this specific triangle's horizontal span
+                            if (bikeRight >= sLeft && bikeLeft <= sRight) {
+                                // Deterministic variation for spike sizing sequence heights
+                                float sizeVariation = 0.7f + (((sIdx * 3) % 5) / 6.0f); // Yields varied scaling metrics
+                                float finalSpikeHeight = 7.0f * fObsHeightScale[o] * sizeVariation * spikeAudioScale; 
+
+                                if (fMotoY < finalSpikeHeight) {
+                                    fMotoCrashTicks = 30; // Structural crash triggered
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
-            }
+            } 
         }
+
+
 
 
         Invalidate(); 
@@ -1819,6 +1946,33 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
             DrawString(rightScoreStr.String(), BPoint(midPointX + 22.0f, scoreY));
 
 
+            // --- PROCEDURAL WHITE VECTOR DOG RENDERING OVERLAY ---
+            if (fDogDrawActive) {
+                SetDrawingMode(B_OP_ALPHA);
+                SetHighColor(255, 255, 255, 230); // Clean white dog body
+                
+                // Draw main body torso
+                FillRect(BRect(fDogDrawX - 7.0f, fDogDrawY - 4.0f, fDogDrawX + 7.0f, fDogDrawY + 3.0f));
+                
+                // Draw head block
+                FillRect(BRect(fDogDrawX + 4.0f, fDogDrawY - 9.0f, fDogDrawX + 11.0f, fDogDrawY - 3.0f));
+                
+                // Draw legs
+                FillRect(BRect(fDogDrawX - 6.0f, fDogDrawY + 3.0f, fDogDrawX - 4.0f, fDogDrawY + 8.0f)); // Back Leg
+                FillRect(BRect(fDogDrawX + 4.0f, fDogDrawY + 3.0f, fDogDrawX + 6.0f, fDogDrawY + 8.0f)); // Front Leg
+                
+                // Little wagging tail
+                SetPenSize(1.5f);
+                static int tailWag = 0;
+                tailWag++;
+                if (tailWag % 2 == 0) {
+                    StrokeLine(BPoint(fDogDrawX - 7.0f, fDogDrawY - 2.0f), BPoint(fDogDrawX - 11.0f, fDogDrawY - 6.0f));
+                } else {
+                    StrokeLine(BPoint(fDogDrawX - 7.0f, fDogDrawY - 2.0f), BPoint(fDogDrawX - 12.0f, fDogDrawY - 2.0f));
+                }
+            }
+
+
             // --- VICTORY WIN MESSAGE SCREEN OVERLAY WITH COUNTDOWN ---
             // Keep variables persistent across frames at function-level scope
             static bigtime_t drawWinStartTime = 0;
@@ -2009,53 +2163,36 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
         }
         
         
-        else if (fVisualizerMode == MODE_MOTO_RIDER) {
+		else if (fVisualizerMode == MODE_MOTO_RIDER) {
             // Mode 6: Endless Motorcycle Runner with Parallax & Scoreboard Display
             SetDrawingMode(B_OP_ALPHA);
-            float baselineY = height - 2.0f; 
-            float bgBrightness = (bgCol.red * 0.299f) + (bgCol.green * 0.587f) + (bgCol.blue * 0.114f);
-            bool isDarkBg = (bgBrightness < 100.0f);
-
+            float baselineY = height - 2.0f; float bgBrightness = (bgCol.red * 0.299f) + (bgCol.green * 0.587f) + (bgCol.blue * 0.114f); bool isDarkBg = (bgBrightness < 100.0f);
             // Fetch live audio vars to match the physics thread scaling calculations exactly
-            float lowBassPulse = (fBarHeights[2] + fBarHeights[3] + fBarHeights[4]) / 3.0f;
-            float bassNormalized = (height > 0.0f) ? (lowBassPulse / height) : 0.0f;           
-            
+            float lowBassPulse = (fBarHeights[2] + fBarHeights[3] + fBarHeights[4]) / 3.0f; float bassNormalized = (height > 0.0f) ? (lowBassPulse / height) : 0.0f;             
             // --- LAYER 0: SKY RESIDENT LAYER (Drifting Clouds) ---
-            SetPenSize(1.0f);  
-            SetHighColor(isDarkBg ? rgb_color{110, 125, 140, 120} : rgb_color{200, 205, 210, 150});
+            SetPenSize(1.0f); SetHighColor(isDarkBg ? rgb_color{110, 125, 140, 120} : rgb_color{200, 205, 210, 150});
             for (int c = 0; c < 3; c++) {
                 float cx = startX + fCloudX[c]; float cy = fCloudY[c]; float cw = fCloudSize[c];
-                FillEllipse(BPoint(cx, cy), cw / 2.0f, 3.5f);
-                FillEllipse(BPoint(cx + (cw * 0.2f), cy - 2.0f), cw / 3.0f, 3.0f);
-                FillEllipse(BPoint(cx - (cw * 0.2f), cy - 1.0f), cw / 3.5f, 2.5f);
-            }         
-            
+                FillEllipse(BPoint(cx, cy), cw / 2.0f, 3.5f); FillEllipse(BPoint(cx + (cw * 0.2f), cy - 2.0f), cw / 3.0f, 3.0f); FillEllipse(BPoint(cx - (cw * 0.2f), cy - 1.0f), cw / 3.5f, 2.5f);
+            }             
             // --- LAYER 1: DISTANT PARALLAX MOUNTAINS (FIXED STUTTER & RANDOM SIZES) ---
             // Loops 4 cleanly separated sequential indices across the pre-calculated width buffers
             for (int m = 0; m < 4; m++) {
                 // Read custom sizing profile scalar set inside your math loop
                 float currentMtnScale = (fMtnHeightScale[m] > 0.01f) ? fMtnHeightScale[m] : (0.8f + (m * 0.15f));
-                float peakHeight = 26.0f * currentMtnScale;
-                
+                float peakHeight = 26.0f * currentMtnScale;                
                 // Matches the strict 240px wide modular boundary step to keep the scrolling continuous
-                float mx = fMtnScrollX + (m * 240.0f);
-                
+                float mx = fMtnScrollX + (m * 240.0f);                
                 BPoint triangle[3] = {
                     BPoint(startX + mx, baselineY),
                     BPoint(startX + mx + 120.0f, baselineY - peakHeight), 
                     BPoint(startX + mx + 240.0f, baselineY)
-                };
-                
+                };                
                 // Base Solid Mountain Color
-                SetHighColor(isDarkBg ? rgb_color{55, 68, 82, 255} : rgb_color{190, 198, 205, 255});
-                FillPolygon(triangle, 3);                
-                
+                SetHighColor(isDarkBg ? rgb_color{55, 68, 82, 255} : rgb_color{190, 198, 205, 255}); FillPolygon(triangle, 3);                 
                 // Outer Structural Depth Accent Edging Line
-                SetHighColor(isDarkBg ? rgb_color{85, 100, 115, 255} : rgb_color{165, 175, 185, 255});
-                SetPenSize(1.2f);
-                StrokePolygon(triangle, 3);                
-            }          
-            
+                SetHighColor(isDarkBg ? rgb_color{85, 100, 115, 255} : rgb_color{165, 175, 185, 255}); SetPenSize(1.2f); StrokePolygon(triangle, 3);                
+            }             
             // --- LAYER 2: MIDGROUND LAYER (Random Green Stick Trees) ---
             SetHighColor(35, 155, 75, 255); SetPenSize(1.5f);   
             for (int t = 0; t < 4; t++) {
@@ -2063,22 +2200,17 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
                 StrokeLine(BPoint(tx, baselineY), BPoint(tx, baselineY - th));
                 StrokeLine(BPoint(tx, baselineY - th), BPoint(tx - 4.0f, baselineY - th + 5.0f)); StrokeLine(BPoint(tx, baselineY - th), BPoint(tx + 4.0f, baselineY - th + 5.0f));
                 StrokeLine(BPoint(tx, baselineY - th + 4.0f), BPoint(tx - 6.0f, baselineY - th + 10.0f)); StrokeLine(BPoint(tx, baselineY - th + 4.0f), BPoint(tx + 6.0f, baselineY - th + 10.0f));
-            }            
-            
+            }                 
             // --- LAYER 3: LIVE GAME GROUND RUNNER horizon tracks ---
             SetHighColor(isDarkBg ? rgb_color{80, 90, 100, 255} : rgb_color{180, 185, 190, 255}); 
-            SetPenSize(2.0f);            
-            StrokeLine(BPoint(startX, baselineY), BPoint(startX + artworkWidth, baselineY));
-            
-            SetHighColor(bgCol); 
+            SetPenSize(2.0f);  StrokeLine(BPoint(startX, baselineY), BPoint(startX + artworkWidth, baselineY)); SetHighColor(bgCol); 
             for (int o = 0; o < 2; o++) {
                 // If the obstacle is either a pit (1) or water pocket (2), carve out the black drop gap
                 if (fObsIsPit[o] == 1 || fObsIsPit[o] == 2) {
                     StrokeLine(BPoint(startX + fObsX[o] + 1.0f, baselineY), BPoint(startX + fObsX[o] + 23.0f, baselineY));
                 }
-            }
-            
-            // --- LAYER 4: MULTI-HAZARD DRAW ENGINES (High Contrast Rocks, Pits, & Water Blue Pools) ---
+            }            
+            // --- LAYER 4: MULTI-HAZARD DRAW ENGINES (High Contrast Rocks, Pits, Water Blue Pools, & Spikes) ---
             int32 themeColorIndex = 20; 
             for (int o = 0; o < 2; o++) {
                 if (fObsIsPit[o] == 0) {
@@ -2087,51 +2219,66 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
                     if (o == 1) { 
                         audioGrowthFactor += (bassNormalized * 1.6f); 
                     }                    
-                    float finalObsHeight = 10.0f * fObsHeightScale[o] * audioGrowthFactor;                    
-                    float obsWidth = (fObsHeightScale[o] < 0.9f) ? 7.0f : ((fObsHeightScale[o] > 1.2f) ? 5.0f : 10.0f);
-                    
-                    BRect rockBounds(startX + fObsX[o], baselineY - finalObsHeight, startX + fObsX[o] + obsWidth, baselineY);
-                    
-                    SetHighColor(fArtworkPalette[themeColorIndex]);
-                    FillRect(rockBounds);                    
-                    
+                    float finalObsHeight = 10.0f * fObsHeightScale[o] * audioGrowthFactor; float obsWidth = (fObsHeightScale[o] < 0.9f) ? 7.0f : ((fObsHeightScale[o] > 1.2f) ? 5.0f : 10.0f);                    
+                    BRect rockBounds(startX + fObsX[o], baselineY - finalObsHeight, startX + fObsX[o] + obsWidth, baselineY);  SetHighColor(fArtworkPalette[themeColorIndex]);
+                    FillRect(rockBounds);                       
                     if (fObsHeightScale[o] > 1.2f) {
                         SetHighColor(240, 70, 70, 255); 
                         FillRect(BRect(startX + fObsX[o], baselineY - finalObsHeight, startX + fObsX[o] + obsWidth, baselineY - finalObsHeight + 2.0f));
-                    }
-                    
+                    }                    
                     // CRITICAL VISIBILITY CORRECTION: Wrap stone geometry in bright safety strokes if background is dark
                     SetPenSize(1.0f);
                     SetHighColor(isDarkBg ? rgb_color{255, 255, 255, 220} : rgb_color{0, 0, 0, 220});
-                    StrokeRect(rockBounds);
-                    
+                    StrokeRect(rockBounds);                    
                 } else if (fObsIsPit[o] == 1) {
                     // --- HAZARD TYPE 1: EMPTY GROUND PIT GAP ---
                     SetHighColor(fArtworkPalette[themeColorIndex]);
                     FillRect(BRect(startX + fObsX[o] - 2.0f, baselineY - 3.0f, startX + fObsX[o], baselineY));
-                    FillRect(BRect(startX + fObsX[o] + 24.0f, baselineY - 3.0f, startX + fObsX[o] + 26.0f, baselineY));
-                    
+                    FillRect(BRect(startX + fObsX[o] + 24.0f, baselineY - 3.0f, startX + fObsX[o] + 26.0f, baselineY));                    
                     // Add high contrast neon warning trim to edges
                     SetHighColor(255, 60, 60, 255);
-                    StrokeLine(BPoint(startX + fObsX[o], baselineY), BPoint(startX + fObsX[o] + 24.0f, baselineY));
-                    
+                    StrokeLine(BPoint(startX + fObsX[o], baselineY), BPoint(startX + fObsX[o] + 24.0f, baselineY));                    
                 } else if (fObsIsPit[o] == 2) {
                     // --- HAZARD TYPE 2: NEON WATER POOL (BLUE OBSTACLE) ---
-                    BRect waterBounds(startX + fObsX[o], baselineY + 1.0f, startX + fObsX[o] + 24.0f, baselineY + 6.0f);
-                    
+                    BRect waterBounds(startX + fObsX[o], baselineY + 1.0f, startX + fObsX[o] + 24.0f, baselineY + 6.0f);                    
                     SetHighColor(0, 130, 255, 255); // Rich deep hazard blue pool fill
-                    FillRect(waterBounds);
-                    
+                    FillRect(waterBounds);                    
                     SetHighColor(0, 240, 255, 255); // Radiant glowing surface layer line
-                    StrokeLine(BPoint(startX + fObsX[o], baselineY + 1.0f), BPoint(startX + fObsX[o] + 24.0f, baselineY + 1.0f));
-                    
+                    StrokeLine(BPoint(startX + fObsX[o], baselineY + 1.0f), BPoint(startX + fObsX[o] + 24.0f, baselineY + 1.0f));                    
                     // Safety shoreline markers
                     SetHighColor(isDarkBg ? rgb_color{255, 255, 255, 180} : rgb_color{0, 0, 0, 180});
                     StrokeLine(BPoint(startX + fObsX[o], baselineY), BPoint(startX + fObsX[o], baselineY + 4.0f));
                     StrokeLine(BPoint(startX + fObsX[o] + 24.0f, baselineY), BPoint(startX + fObsX[o] + 24.0f, baselineY + 4.0f));
+                } else if (fObsIsPit[o] == 3 || fObsIsPit[o] == 4) {
+                    // --- HAZARD TYPE 3 & 4: PULSING SHARP SHOCK-SPIKE BLADES ---
+                    int spikeCount = (fObsIsPit[o] == 3) ? 4 : 5;
+                    float spikeWidth = 8.0f;
+                    float spikeAudioScale = 1.0f + (bassNormalized * 1.2f);
+
+                    for (int sIdx = 0; sIdx < spikeCount; sIdx++) {
+                        float leftX = startX + fObsX[o] + (sIdx * spikeWidth);
+                        float rightX = leftX + spikeWidth;
+                        float centerX = leftX + (spikeWidth / 2.0f);
+
+                        // Match physical sizing structure profile equations precisely
+                        float sizeVariation = 0.7f + (((sIdx * 3) % 5) / 6.0f);
+                        float currentSpikeHeight = 7.0f * fObsHeightScale[o] * sizeVariation * spikeAudioScale;
+                        float tipY = baselineY - currentSpikeHeight;
+
+                        // Solid Semi-Translucent Triangle Body Fill
+                        SetHighColor(255, 90, 0, 95); 
+                        BPoint spikeTri[3] = { BPoint(leftX, baselineY), BPoint(centerX, tipY), BPoint(rightX, baselineY) };
+                        FillPolygon(spikeTri, 3);
+
+                        // High Contrast Solid Accent Border Outlines
+                        SetPenSize(1.2f);
+                        SetHighColor(isDarkBg ? rgb_color{255, 110, 50, 240} : rgb_color{210, 40, 10, 240});
+                        StrokeLine(BPoint(leftX, baselineY), BPoint(centerX, tipY));
+                        StrokeLine(BPoint(centerX, tipY), BPoint(rightX, baselineY));
+                    }
                 }
-            }          
-            
+            }                      
+           
             // --- LAYER 5: SCOREBOARD TRACKING DISPLAY TEXT ---
             BFont scoreFont;   
             GetFont(&scoreFont);
@@ -2327,7 +2474,9 @@ private:
 	int32     fStuntTextLife;    // Ticks remaining before the popup disappears (opacity timer)
 	BString   fStuntTextStr;   
 
-
+    bool      fDogDrawActive;
+    float     fDogDrawX;
+    float     fDogDrawY;
 };
 
 
@@ -3681,7 +3830,7 @@ SuperMusicWindow::SuperMusicWindow()
     fProjectM = pm; 
 	#endif
     
-    setenv("LADSPA_PATH", "/boot/system/lib/ladspa_HaikuSuperMusicThingy", 1);     
+    setenv("LADSPA_PATH", "/boot/home/config/non-packaged/lib/ladspa", 1);     
  
     BFont largeFont(be_bold_font);
     BFont smallFont(be_bold_font);
@@ -3775,12 +3924,12 @@ BLayoutBuilder::Group<>(fControlStack, B_VERTICAL, 5)
     .SetInsets(5)  
     .Add(fVolumeSlider)
         .AddGroup(B_HORIZONTAL, 5)
-        .AddGlue() 
+        //.AddGlue() 
         .Add(fStopBtn)
         .Add(fPauseBtn)
         .Add(fPlayBtn)
         .Add(fShuffleBtn)
-        .AddGlue() 
+        //.AddGlue() 
       .End();
 
 BGroupView* fMetaAndSpectrumStack = new BGroupView(B_VERTICAL, 5);
@@ -4151,7 +4300,7 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     //.Add(fCmpSong)   
     .Add(fChkTheme)
    	.Add(fEQToggle)
-   	.Add(fEnableladspa)
+   	//.Add(fEnableladspa)  // Doesn't work as good as native mpv plugins and needs to be built into ffmpeg. But leaving in code for future debugging.
    	.Add(fEnableSpectrum)
    	.Add(fEQContainer)
      #ifdef USE_PROJECTM
@@ -4205,7 +4354,7 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     BStringView* txtCopy = new BStringView("abt_copy", "Copyright " B_UTF8_COPYRIGHT " 2026 Kris Beazley");
     txtCopy->SetAlignment(B_ALIGN_CENTER);
     
-    BStringView* txtEmail = new BStringView("abt_mail", "jb@epluribusunix.net");
+    BStringView* txtEmail = new BStringView("abt_mail", "supermusicthingy@epluribusunix.net");
     txtEmail->SetAlignment(B_ALIGN_CENTER);
     
     BStringView* txtAI = new BStringView("abtAI", "AI Assisted");
@@ -4434,7 +4583,7 @@ void SuperMusicWindow::UpdateMPVFilters() {
 
 	   filterChain << ",asetnsamples=n=1024,@bouncy:astats=metadata=1:reset=1";
        //filterChain << ",@bouncy:astats=metadata=1:reset=1"; 
-		//filterChain << ",asetnsamples=n=256,@bouncy:astats=metadata=1:reset=1";
+
 
     
 
@@ -4443,7 +4592,7 @@ void SuperMusicWindow::UpdateMPVFilters() {
         filterChain = "@bouncy:lavfi=[";
 
         BString eqPart;
-        eqPart << "ladspa=file='/boot/system/lib/ladspa_HaikuSuperMusicThingy/mbeq_1197.so':p=mbeq:c=";
+        eqPart << "ladspa=file='/boot/home/config/non-packaged/lib/ladspa/mbeq_1197.so':p=mbeq:c=";
         
         for (int i = 0; i < numBands; i++) {
             BString val;
@@ -4454,14 +4603,14 @@ void SuperMusicWindow::UpdateMPVFilters() {
         filterChain << eqPart;
 
         BString limiterPart;
-        limiterPart.SetToFormat("ladspa=file='/boot/system/lib/ladspa_HaikuSuperMusicThingy/fast_lookahead_limiter_1913.so':p=fastLookaheadLimiter:c=%.2f|%.2f|%.2f,",
+        limiterPart.SetToFormat("ladspa=file='/boot/home/config/non-packaged/lib/ladspa/fast_lookahead_limiter_1913.so':p=fastLookaheadLimiter:c=%.2f|%.2f|%.2f,",
             (float)fLimitInput->Value(), 
             (float)fLimitLimit->Value(), 
             (float)fLimitRelease->Value() / 1000.0f);
         filterChain << limiterPart;
 
             filterChain << "astats=metadata=1:reset=1]"; 
-           // filterChain << ",asetnsamples=n=256,@bouncy:astats=metadata=1:reset=1";
+
 
     }
     
@@ -5797,7 +5946,8 @@ int32 mpv_loop_thread(void* data) {
             mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &fade_start_vol);
             fade_target_vol = user_base_volume; // Target whatever slider setting user has
             fade_start_time = system_time();    // Capture high precision Haiku microsecond timestamp
-            fade_duration_us = 546000;         // 780ms 
+            //fade_duration_us = 546000;         // 780ms 
+            fade_duration_us = 160000;         // 160ms 
             is_fading = true;
         }
         
