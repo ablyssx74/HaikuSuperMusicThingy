@@ -826,6 +826,13 @@ public:
 void UpdateLevel(double level) {
     if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) return;
 
+    // Hardcode baseline manual offset of 1150ms on first run
+    static bool sFirstRunOffsetApplied = false;
+    if (!sFirstRunOffsetApplied) {
+        fManualSyncOffsetUs = 1150000; // 1150ms in microseconds
+        sFirstRunOffsetApplied = true;
+    }
+
     bigtime_t now = system_time();
 
     // 1. DYNAMIC AUTO-SYNC ENGINE
@@ -842,19 +849,33 @@ void UpdateLevel(double level) {
 
 
 /*
+
     // 2. TIMING AND DATA DEBUG PRINT OUT
     static int debug_throttle_counter = 0;
+    static bigtime_t last_frame_time = 0;
+
+    // Calculate sample frame size based on time elapsed since last call
+    long long sample_frame_size = 0;
+    if (last_frame_time > 0 && now > last_frame_time) {
+        bigtime_t time_delta_us = now - last_frame_time;
+        // Math: (Microseconds / 1,000,000) * 44100 samples per second
+        // Assumes a standard 44.1kHz stream. Adjust 44100.0 if using 48kHz.
+        sample_frame_size = (long long)((double)time_delta_us / 1000000.0 * 44100.0);
+    }
+    last_frame_time = now;
+
     if (++debug_throttle_counter >= 60) {
         debug_throttle_counter = 0;
-        // FIXED ELEM MATH: Smooth modulo wrapper ensures tracking accuracy
         int active_buffer_elements = (fHistoryHead - fHistoryTail + 512) % 512;
 
-        fprintf(stderr, "[SPECTRUM DEBUG] Input Level: %6.2f dB | mpv Latency: %4.1f ms (%lld us) | Cache Slots Filled: %d/512\n", 
+        fprintf(stderr, "[SPECTRUM DEBUG] Input Level: %6.2f dB | NATIVE FRAME SIZE: ~%lld samples | mpv Latency: %4.1f ms (%lld us) | Cache Slots Filled: %d/512\n", 
                 level, 
+                sample_frame_size,
                 (double)fAudioHardwareDelayUs / 1000.0, 
                 (long long)fAudioHardwareDelayUs, 
                 active_buffer_elements);
     }
+
 */
     // 3. EXPANDED BUFFER PIPELINE INDEXING
     fLevelHistory[fHistoryHead] = level;
@@ -968,7 +989,7 @@ void UpdateLevel(double level) {
         }
     }
 
-/*    
+/*  
 virtual void KeyDown(const char* bytes, int32 numBytes) override {
     if (numBytes == 1) {
         if (bytes[0] == '+') {
@@ -988,8 +1009,8 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
     }
     BView::KeyDown(bytes, numBytes);
 }
-*/
 
+*/
     virtual void MouseDown(BPoint point) override {
         BMessage* message = Window()->CurrentMessage();
         int32 buttons = 0;
@@ -4393,9 +4414,9 @@ void SuperMusicWindow::UpdateMPVFilters() {
                                 inputGain, limitVal, (float)fLimitRelease->Value());
         filterChain << limiterPart;
 
-
-        //filterChain << ",@bouncy:astats=metadata=1:reset=1"; 
-		filterChain << ",asetnsamples=n=256,@bouncy:astats=metadata=1:reset=1";
+	   filterChain << ",asetnsamples=n=1024,@bouncy:astats=metadata=1:reset=1";
+       //filterChain << ",@bouncy:astats=metadata=1:reset=1"; 
+		//filterChain << ",asetnsamples=n=256,@bouncy:astats=metadata=1:reset=1";
 
     
 
@@ -4421,8 +4442,8 @@ void SuperMusicWindow::UpdateMPVFilters() {
             (float)fLimitRelease->Value() / 1000.0f);
         filterChain << limiterPart;
 
-           // filterChain << "astats=metadata=1:reset=1]"; 
-            filterChain << ",asetnsamples=n=256,@bouncy:astats=metadata=1:reset=1";
+            filterChain << "astats=metadata=1:reset=1]"; 
+           // filterChain << ",asetnsamples=n=256,@bouncy:astats=metadata=1:reset=1";
 
     }
     
@@ -4598,6 +4619,16 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         }
         
        case MSG_CFG_THEME: {
+       		#ifdef IS_HAIKU_32BIT
+       		        BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_theme"));
+        			if (chk) {
+            			cfg.updateTheme = (chk->Value() == B_CONTROL_ON) ? "Dark" : "Default";
+            			save_config();
+  						ApplyTheme(); 
+        					}
+        				break;       		
+       		#else
+       		
             BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_theme"));
             if (chk) {
                 // Fix 1: Declare isDark explicitly
@@ -4700,6 +4731,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                 this->Layout(true);
             }
             break;
+            #endif
         } 
 
 
