@@ -107,7 +107,9 @@ enum {
     MODE_PONG_BALLS, 
     MODE_RAINDROPS, 
     MODE_MOTO_RIDER,
-    MODE_COUNT
+    MODE_COUNT,
+    MSG_SHOW_TITLE = 'msct',
+    MSG_SHOW_DESC = 'mscd'
  
 };
 
@@ -187,6 +189,8 @@ private:
     BCheckBox* fEnableSpectrum;
     BCheckBox* fChkSysTray;
     BCheckBox* fChkTheme;
+    BCheckBox* fCmpSong;
+    BCheckBox* fCmpTitle;
     BCheckBox* fChkPresetTimer;
     
 	BMenuField* fPresetField; 
