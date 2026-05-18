@@ -1736,10 +1736,17 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
             SetDrawingMode(B_OP_ALPHA);
             float paddleH = 21.0f; // Matches shorter design specification constraints
 
-            // Draw center dash partition line 
             float bgBrightness = (bgCol.red * 0.299f) + (bgCol.green * 0.587f) + (bgCol.blue * 0.114f);
-            if (bgBrightness < 100.0f) { SetHighColor(50, 230, 100, 140); } 
-            else { SetHighColor(160, 165, 170, 120); }
+            bool isLightPanel = (bgBrightness > 150.0f); // Detect bright/default system themes
+
+            // --- DRAW CENTER DASH PARTITION LINE ---
+            if (bgBrightness < 100.0f) { 
+                SetHighColor(50, 230, 100, 140); // Soft retro glowing green for dark themes
+            } else if (isLightPanel) {
+                SetHighColor(100, 105, 110, 255); // Bolder charcoal gray for high-visibility light themes
+            } else { 
+                SetHighColor(160, 165, 170, 120); // Default middle theme gray fallback
+            }
 
             SetPenSize(1.5f);
             float verticalPadding = 6.0f; 
@@ -1751,8 +1758,15 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
             // --- RETRO ARCADE SCORE TRACKING DISPLAY ---
             BFont scoreFont;
             GetFont(&scoreFont);
-            scoreFont.SetSize(14.0f); // Make it large and readable
+            scoreFont.SetSize(14.0f); // Large and readable layout
             SetFont(&scoreFont);
+
+            // High Contrast Text Color Swap Optimization
+            if (isLightPanel) {
+                SetHighColor(40, 45, 50, 255); // Deep high-contrast charcoal black text
+            } else {
+                SetHighColor(255, 255, 255, 220); // Default clean light/white text overlay
+            }
 
             BString leftScoreStr, rightScoreStr;
             leftScoreStr.SetToFormat("%" B_PRId32, fLeftScore);
@@ -1764,6 +1778,7 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
 
             DrawString(leftScoreStr.String(), BPoint(midPointX - 35.0f, scoreY));
             DrawString(rightScoreStr.String(), BPoint(midPointX + 22.0f, scoreY));
+
 
             // --- VICTORY WIN MESSAGE SCREEN OVERLAY WITH COUNTDOWN ---
             // Keep variables persistent across frames at function-level scope
@@ -2613,34 +2628,39 @@ public:
 void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
     if (!view) return;
     
-    if (view->ViewColor().red != bg.red || view->HighColor().red != txt.red) {
-        view->SetViewColor(bg);
-        view->SetLowColor(bg);
-        view->SetHighColor(txt);
-        
-        // Handle specific types that need extra love
-        if (BSlider* slider = dynamic_cast<BSlider*>(view)) {
-            slider->UseFillColor(true, &txt);
-        }
-
-        if (BTextView* textView = dynamic_cast<BTextView*>(view)) {
-            textView->SetFontAndColor(NULL, B_FONT_ALL, &txt);
-        }
-
-       if (BListView* listView = dynamic_cast<BListView*>(view)) {
-            for (int32 i = 0; i < listView->CountItems(); i++) {
-                listView->InvalidateItem(i);
-            }
-        }
-
-        view->Invalidate();
-    }
+    // Explicitly apply theme properties to the current view component
+    view->SetViewColor(bg);
+    view->SetLowColor(bg);
+    view->SetHighColor(txt);
     
+    // --- Special Type Invalidation overrides ---
+    if (BSlider* slider = dynamic_cast<BSlider*>(view)) {
+        slider->UseFillColor(true, &txt);
+    }
+
+    if (BTextView* textView = dynamic_cast<BTextView*>(view)) {
+        textView->SetFontAndColor(NULL, B_FONT_ALL, &txt);
+    }
+
+    if (BStringView* stringView = dynamic_cast<BStringView*>(view)) {
+        // Explicitly forces text label strings to draw cleanly in the correct theme color
+        stringView->SetHighColor(txt);
+    }
+
+    if (BListView* listView = dynamic_cast<BListView*>(view)) {
+        for (int32 i = 0; i < listView->CountItems(); i++) {
+            listView->InvalidateItem(i);
+        }
+    }
+
+    view->Invalidate();
+    
+    // Safely iterate through every single child object recursively without skipping branches
     for (int32 i = 0; i < view->CountChildren(); i++) {
         RecursiveColorApply(view->ChildAt(i), bg, txt);
-        
     }
 }
+
 
 
 
@@ -2652,7 +2672,7 @@ void SuperMusicWindow::ApplyTheme() {
 
     if (cfg.updateTheme == "Dark") {
         bgVal = {40, 40, 40, 255};      // Dark Grey
-        bg2Val = {0, 0, 0, 255};      // Dark Grey
+        bg2Val = {0, 0, 0, 255};        // Pure Black for lists
         txtVal = {255, 255, 255, 255};  // Pure White
     } else {
         bgVal = ui_color(B_PANEL_BACKGROUND_COLOR);
@@ -2675,14 +2695,12 @@ void SuperMusicWindow::ApplyTheme() {
 
         		BView* tabView = tab->View(); // Get the view associated with the tab
         		if (tabView != nullptr) {
-            RecursiveColorApply(tabView, bgVal, txtVal);
+                    RecursiveColorApply(tabView, bgVal, txtVal);
         		}
     		}
 		}
 
-        
         if (fPresetList) {
-			
             fPresetList->SetViewColor(bg2Val);
             fPresetList->SetLowColor(bgVal);
             fPresetList->SetHighColor(txtVal); 
@@ -2690,7 +2708,6 @@ void SuperMusicWindow::ApplyTheme() {
         }
 
         if (fPresetScroll) {
-  
             fPresetScroll->SetViewColor(bgVal);
             if (BScrollBar* sb = fPresetScroll->ScrollBar(B_VERTICAL)) {
                 sb->SetViewColor(bgVal);
@@ -2698,7 +2715,6 @@ void SuperMusicWindow::ApplyTheme() {
             }
             fPresetScroll->Invalidate();
         }
-
         
 	    if (fDescView) {
     		fDescView->SetViewColor(bgVal);
@@ -2711,7 +2727,6 @@ void SuperMusicWindow::ApplyTheme() {
         	fSongView->SetFontAndColor(&boldFont, B_FONT_ALL, &txtVal);
         	fSongView->Invalidate();
     	}
-  
         
         if (fStationList) {    
    			 fStationList->SetFlags(fStationList->Flags() | B_FRAME_EVENTS);
@@ -2736,10 +2751,44 @@ void SuperMusicWindow::ApplyTheme() {
     		fBtnAddFav->Invalidate();
 		}    
 
+        // --- NEW CONFIG DECK THEME PROFILES SYNC ---
+        // 1. Cleanly update all 15 EQ sliders
+        for (int i = 0; i < 15; i++) {
+            if (fEQSliders[i]) {
+                fEQSliders[i]->SetViewColor(bgVal);
+                fEQSliders[i]->SetLowColor(bgVal);
+                fEQSliders[i]->SetHighColor(txtVal); // Keeps textual frequency tags visible
+                fEQSliders[i]->Invalidate();
+            }
+        }
+
+        // 2. Clear out container backgrounds and apply high contrast text labels to the limiter sliders
+        BSlider* limiterSliders[] = { fLimitInput, fLimitLimit, fLimitRelease };
+        for (int s = 0; s < 3; s++) {
+            if (limiterSliders[s]) {
+                limiterSliders[s]->SetViewColor(bgVal);
+                limiterSliders[s]->SetLowColor(bgVal);
+                limiterSliders[s]->SetHighColor(txtVal); // Forces "In", "Lmt", and "Rel" strings to draw correctly
+                
+                // Traverse internal child structures for custom WheelSlider variations
+                for (int32 c = 0; c < limiterSliders[s]->CountChildren(); c++) {
+                    BView* child = limiterSliders[s]->ChildAt(c);
+                    if (child) {
+                        child->SetViewColor(bgVal);
+                        child->SetLowColor(bgVal);
+                        child->SetHighColor(txtVal);
+                        child->Invalidate();
+                    }
+                }
+                limiterSliders[s]->Invalidate();
+            }
+        }
+
         if (fTabView) fTabView->Invalidate();
         Unlock();
     }
 }
+
 
 
 
@@ -4548,6 +4597,114 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             break;
         }
         
+       case MSG_CFG_THEME: {
+            BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_theme"));
+            if (chk) {
+                // Fix 1: Declare isDark explicitly
+                bool isDark = (chk->Value() == B_CONTROL_ON);
+                cfg.updateTheme = isDark ? "Dark" : "Default";
+                save_config();
+                ApplyTheme(); 
+                
+                // Rebuild the tabs to force the top navigation buttons to snap into place
+                if (!cfg.compactMode && fTabView) {
+                    // 1. Completely strip out existing tab items
+                    for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
+                        BTab* tab = fTabView->TabAt(i);
+                        if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab) {
+                            fTabView->RemoveTab(i);
+                        }
+                    }
+
+                    // 2. Re-allocate them cleanly so they hook into the new look
+                    BGroupView* groups[] = { fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
+                    const char* labels[] = { "Stations", "Fav", "Config", "About" };
+                    BTab** dynamicTabs[] = { &fStationTab, &fFavTab, &fConfigTab, &fAboutTab };
+
+                    for (int i = 0; i < 4; i++) { 
+                        if (groups[i] == nullptr || dynamicTabs[i] == nullptr) continue;
+                        
+                        *dynamicTabs[i] = new BTab();
+                        (*dynamicTabs[i])->SetLabel(labels[i]);
+                        fTabView->AddTab(groups[i], *dynamicTabs[i]);
+                    }
+
+                    // 3. Keep the user pinned to the "Config" tab index so the menu doesn't jump
+                    for (int32 j = 0; j < fTabView->CountTabs(); j++) {
+                        BTab* currentTab = fTabView->TabAt(j);
+                        if (currentTab && currentTab->Label() && strcmp(currentTab->Label(), "Config") == 0) {
+                            fTabView->Select(j);
+                            break;
+                        }
+                    }
+
+                    // 4. Force the inner controls to blend seamlessly with the dark panel background
+                    rgb_color bgDarkColor = rgb_color{40, 40, 40, 255}; 
+
+                    // Style the 15-band EQ sliders array
+                    for (int i = 0; i < 15; i++) {
+                        if (fEQSliders[i]) {
+                            if (isDark) {
+                                fEQSliders[i]->SetViewColor(bgDarkColor);
+                                fEQSliders[i]->SetLowColor(bgDarkColor);
+                            } else {
+                                fEQSliders[i]->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+                                fEQSliders[i]->SetLowColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+                            }
+                            fEQSliders[i]->Invalidate();
+                        }
+                    }
+
+                      // Fix 2: Use BSlider* base class matching the class pointer initialization types
+                    BSlider* limiterSliders[] = { fLimitInput, fLimitLimit, fLimitRelease };
+                    
+                    for (int s = 0; s < 3; s++) {
+                        if (limiterSliders[s]) {
+                            if (isDark) {
+                                limiterSliders[s]->SetViewColor(bgDarkColor);
+                                limiterSliders[s]->SetLowColor(bgDarkColor);
+                                
+                                // FIX: Force the text label foreground color to white in dark mode
+                                limiterSliders[s]->SetHighColor(255, 255, 255, 255);
+                            } else {
+                                limiterSliders[s]->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+                                limiterSliders[s]->SetLowColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+                                
+                                // Reset the label color back to default charcoal/black for light mode
+                                limiterSliders[s]->SetHighColor(0, 0, 0, 255);
+                            }
+                            
+                            // Recolor any internal view wrappers inside the components
+                            for (int32 c = 0; c < limiterSliders[s]->CountChildren(); c++) {
+                                BView* child = limiterSliders[s]->ChildAt(c);
+                                if (child) {
+                                    if (isDark) {
+                                        child->SetViewColor(bgDarkColor);
+                                        child->SetLowColor(bgDarkColor);
+                                        child->SetHighColor(255, 255, 255, 255); // Force inner nested text labels to white
+                                    } else {
+                                        child->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+                                        child->SetLowColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+                                        child->SetHighColor(0, 0, 0, 255);
+                                    }
+                                    child->Invalidate();
+                                }
+                            }
+                            limiterSliders[s]->Invalidate();
+                        }
+                    }
+
+                }
+
+                this->InvalidateLayout(true);
+                this->Layout(true);
+            }
+            break;
+        } 
+
+
+
+         
 
 
 
@@ -5050,15 +5207,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         	break;
     	}
  
-       case MSG_CFG_THEME: {
-        BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_theme"));
-        if (chk) {
-            cfg.updateTheme = (chk->Value() == B_CONTROL_ON) ? "Dark" : "Default";
-            save_config();
-  			ApplyTheme(); 
-        	}
-        	break;
-    	}            
 
         case MSG_UPDATE_ART: {
             BBitmap* newArt;
