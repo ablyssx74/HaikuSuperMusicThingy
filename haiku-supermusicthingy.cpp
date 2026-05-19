@@ -451,30 +451,62 @@ public:
         Invalidate(); 
     }
 
-	virtual void Draw(BRect updateRect) {
+virtual void Draw(BRect updateRect) {
+    // 1. Dynamically fetch the current theme background color
+    rgb_color bgCol = (Parent() != nullptr) ? Parent()->ViewColor() : ui_color(B_PANEL_BACKGROUND_COLOR);
+
     if (fCurrentBitmap) {
-        SetHighColor(30, 30, 30);
+        // Clear background with theme color
+        SetHighColor(bgCol);
         FillRect(Bounds());
+        
+        // Draw the artwork
         SetDrawingMode(B_OP_ALPHA);
         DrawBitmap(fCurrentBitmap, fCurrentBitmap->Bounds(), Bounds(), B_FILTER_BITMAP_BILINEAR);        
+
+        // 2. Draw the masking overlay using the dynamic theme color
+        BRect b = Bounds();
+        float w = b.Width();
+        float h = b.Height();
+
+        const float fadeSize = 8.0f; 
+        
+        // Duplicate the system background color to use as our mask
+        rgb_color maskColor = bgCol; 
+
+        for (float step = 0; step < fadeSize; step += 1.0f) {
+            float linearProgress = step / fadeSize;
+            float alphaFactor = 1.0f - (0.5f * (1.0f - cosf(linearProgress * (float)M_PI)));
+            
+            maskColor.alpha = (uint8)(255.0f * alphaFactor);
+            SetHighColor(maskColor);
+
+            // Draw concentric frames to feather the artwork into the theme background
+            StrokeRect(BRect(step, step, w - step, h - step));
+        }
+
         SetDrawingMode(B_OP_COPY); 
     } else {
-        	SetHighColor(30, 30, 30);
-        	FillRect(Bounds());
-        	SetHighColor(200, 200, 200);
+        // Apply theme color here as well for consistency when empty
+        SetHighColor(bgCol);
+        FillRect(Bounds());
         
-        	const char* text = "Press Play or Shuffle";
+        // Calculate contrasting text color based on the theme (or default to a mid-gray)
+        SetHighColor(120, 120, 120);
+        
+        const char* text = "Press Play or Shuffle";
 
-        	font_height fh;
-        	GetFontHeight(&fh);
-        	float textWidth = StringWidth(text);
+        font_height fh;
+        GetFontHeight(&fh);
+        float textWidth = StringWidth(text);
 
-        	float x = (Bounds().Width() - textWidth) / 2;
-        	float y = (Bounds().Height() / 2) + (fh.ascent / 2) - (fh.descent / 2);
+        float x = (Bounds().Width() - textWidth) / 2;
+        float y = (Bounds().Height() / 2) + (fh.ascent / 2) - (fh.descent / 2);
 
-        	DrawString(text, BPoint(x, y));
-    	}
-	}
+        DrawString(text, BPoint(x, y));
+    }
+}
+
 
 
 private:
@@ -1219,7 +1251,7 @@ virtual void Pulse() override {
                 }
                 
                 if (fBallX[0] <= midPointX && !errorCalculated) {
-                    if ((rand() % 100) < 35) {
+                    if ((rand() % 100) < 25) {
                         currentAIError = (float)((rand() % 32) - 16); 
                     } else {
                         currentAIError = 0.0f; 
@@ -1282,7 +1314,7 @@ virtual void Pulse() override {
                     float moveX = (fBallDX[k] * 0.90f) * audioSpeedBoost;
                     float moveY = (fBallDY[k] * 0.90f) * audioSpeedBoost;
                     
-                    const float MAX_SPEED_X = 12.0f;
+                    const float MAX_SPEED_X = 15.0f;
                     if (moveX > MAX_SPEED_X) moveX = MAX_SPEED_X;
                     if (moveX < -MAX_SPEED_X) moveX = -MAX_SPEED_X;
 
@@ -1603,15 +1635,15 @@ virtual void Pulse() override {
                         
                         // --- RANDOM STUNT PHRASE GENERATOR ENGINE ---
                         const char* randomPhrases[10] = {
-                            "Way to go!",
+                            "Way To Go!",
                             "You Rock!",
                             "Front Flip Mania!",
                             "Excellent!",
                             "Wow!",
-                            "Watch it!",
+                            "Watch Out!",
                             "Go Go Go!",
                             "Non Stop!",
-                            "No way!",
+                            "No Way!",
                             "Look Out!"
                         };
                         int phraseIndex = rand() % 10;
@@ -1785,33 +1817,168 @@ virtual void Pulse() override {
         SetHighColor(bgCol);
         FillRect(b);
 
-        // --- RENDER MODES ---
+             // --- RENDER MODES ---
         if (fVisualizerMode == MODE_BARS) {
-        	SetDrawingMode(B_OP_ALPHA);
+            SetDrawingMode(B_OP_ALPHA);
+            
+            const int fadeZoneWidth = 2; 
+            const float bottomFadeHeight = 42.0f; 
+            const float barPadding = 1.0f;
+
+            // --- 2D ORGANIC SHIMMER ENGINE ---
+            bigtime_t sysTime = system_time();
+            
+            // Slowed down further: increased period to 8 seconds (an additional 25% reduction)
+            const float basePeriodSeconds = 8.0f; 
+            float timeSeconds = (float)sysTime / 1000000.0f;
+            float wavePhase = (timeSeconds / basePeriodSeconds) * 2.0f * (float)M_PI;
+            
+            // Generate a multi-axis floating focal point
+            // X drifts left-to-right; Y drifts top-to-bottom using a non-sync frequency ratio (1.4x)
+            float shimmerCenterX = (0.5f + 0.5f * sinf(wavePhase)) * (float)numBars;
+            float shimmerCenterY = (0.5f + 0.5f * cosf(wavePhase * 1.4f)) * height;
+
+            const float shimmerHalfWidthX = 12.0f;
+            const float shimmerHalfWidthY = height * 0.4f; 
+
             for (int i = 0; i < numBars; i++) {
                 float finalBarHeight = fBarHeights[i];
+                if (finalBarHeight <= 0.0f) continue;
                 
-                SetHighColor(fArtworkPalette[i]);             
-                FillRect(BRect(startX + (i * barWidth), height - finalBarHeight, 
-                   startX + ((i + 1) * barWidth) - 1, height));
+                // --- 1. Edge Fades ---
+                float edgeFade = 1.0f;
+                if (i < fadeZoneWidth) {
+                    edgeFade = (float)i / (float)fadeZoneWidth;
+                } else if (i >= (numBars - fadeZoneWidth)) {
+                    edgeFade = (float)(numBars - 1 - i) / (float)fadeZoneWidth;
+                }
+                edgeFade = 0.5f * (1.0f - cosf(edgeFade * (float)M_PI));
 
+                float baseBottomFade = 1.0f;
+                if (finalBarHeight < bottomFadeHeight && bottomFadeHeight > 0.0f) {
+                    baseBottomFade = finalBarHeight / bottomFadeHeight;
+                    baseBottomFade = 0.5f * (1.0f - cosf(baseBottomFade * (float)M_PI));
+                }
+                float finalAlphaMultiplier = edgeFade * baseBottomFade;
+
+                // --- 2. 2D Distance Blending ---
+                float distX = fabsf((float)i - shimmerCenterX);
+                float barTopY = height - finalBarHeight;
+                
+                float shimmerIntensity = 0.0f;
+                if (distX < shimmerHalfWidthX) {
+                    float normX = distX / shimmerHalfWidthX;
+                    float intensityX = 0.5f * (1.0f + cosf(normX * (float)M_PI));
+
+                    float distY = fabsf(barTopY - shimmerCenterY);
+                    float intensityY = 0.0f;
+                    if (distY < shimmerHalfWidthY) {
+                        float normY = distY / shimmerHalfWidthY;
+                        intensityY = 0.5f * (1.0f + cosf(normY * (float)M_PI));
+                    }
+
+                    shimmerIntensity = intensityX * intensityY;
+                }
+
+                // --- 3. Geometry Setup ---
+                float currentXStart = startX + (i * barWidth);
+                float currentXEnd = startX + ((i + 1) * barWidth) - 1.0f - barPadding;
+                if (currentXEnd < currentXStart) currentXEnd = currentXStart;
+
+                // --- 4. Render Main Ambient Bar ---
+                rgb_color barColor = fArtworkPalette[i];
+                barColor.alpha = (uint8)(255.0f * finalAlphaMultiplier);
+                SetHighColor(barColor);             
+                FillRect(BRect(currentXStart, height - finalBarHeight, currentXEnd, height));
+
+                // --- 5. Enhanced 2D Emboss Overlay ---
+                if (currentXEnd - currentXStart >= 3.0f) {
+                    int16 lightBoost = 25 + (int16)(75.0f * shimmerIntensity);
+                    
+                    rgb_color leftEdgeColor = barColor;
+                    leftEdgeColor.red   = (uint8)min_c(255, leftEdgeColor.red + lightBoost);
+                    leftEdgeColor.green = (uint8)min_c(255, leftEdgeColor.green + lightBoost);
+                    leftEdgeColor.blue  = (uint8)min_c(255, leftEdgeColor.blue + lightBoost);
+                    
+                    rgb_color rightEdgeColor = barColor;
+                    rightEdgeColor.red   = (uint8)max_c(0, rightEdgeColor.red - 40);
+                    rightEdgeColor.green = (uint8)max_c(0, rightEdgeColor.green - 40);
+                    rightEdgeColor.blue  = (uint8)max_c(0, rightEdgeColor.blue - 40);
+                    
+                    // Thicker Left Emboss (2 pixels wide)
+                    SetHighColor(leftEdgeColor);
+                    FillRect(BRect(currentXStart, height - finalBarHeight, currentXStart + 1.0f, height));
+
+                    // Thicker Right Drop Shadow (2 pixels wide)
+                    SetHighColor(rightEdgeColor);
+                    FillRect(BRect(currentXEnd - 1.0f, height - finalBarHeight, currentXEnd, height));
+                    
+                    // Thicker Top Peak Emboss (2 pixels tall)
+                    SetHighColor(leftEdgeColor);
+                    FillRect(BRect(currentXStart, height - finalBarHeight, currentXEnd, height - finalBarHeight + 1.0f));
+                }
+
+                // --- 6. Render Peak Indicators ---
                 if (fPeakHeights[i] > finalBarHeight && fPeakHeights[i] > 2.0f) {
                     rgb_color peakColor = fArtworkPalette[i];
                     peakColor.red   = (uint8)min_c(255, peakColor.red + 50);
                     peakColor.green = (uint8)min_c(255, peakColor.green + 50);
                     peakColor.blue  = (uint8)min_c(255, peakColor.blue + 50);
                     
+                    float peakBottomFade = 1.0f;
+                    if (fPeakHeights[i] < bottomFadeHeight && bottomFadeHeight > 0.0f) {
+                        peakBottomFade = fPeakHeights[i] / bottomFadeHeight;
+                        peakBottomFade = 0.5f * (1.0f - cosf(peakBottomFade * (float)M_PI));
+                    }
+                    
+                    peakColor.alpha = (uint8)(255.0f * edgeFade * peakBottomFade);
+                    
                     SetHighColor(peakColor); 
-                    StrokeLine(BPoint(startX + (i * barWidth), height - fPeakHeights[i]),
-                               BPoint(startX + ((i + 1) * barWidth) - 1, height - fPeakHeights[i]));
-                                SetDrawingMode(B_OP_COPY);
+                    StrokeLine(BPoint(currentXStart, height - fPeakHeights[i]),
+                               BPoint(currentXEnd, height - fPeakHeights[i]));
                 }
             }
-        } 
-        else if (fVisualizerMode == MODE_LINE_WAVE) {
-        	SetDrawingMode(B_OP_ALPHA);
-            SetPenSize(2.5f);
+            SetDrawingMode(B_OP_COPY);
+        }
+
+
+         else if (fVisualizerMode == MODE_LINE_WAVE) {
+            SetDrawingMode(B_OP_ALPHA);
             float midY = height / 2.0f;
+
+            // --- 1. GLOBAL AUDIO ACTIVITY TRACKING ---
+            // Scan bars to find the current maximum peak activity level
+            float maxCurrentPeak = 0.0f;
+            for (int i = 0; i < numBars; i++) {
+                if (fBarHeights[i] > maxCurrentPeak) {
+                    maxCurrentPeak = fBarHeights[i];
+                }
+            }
+
+            // If max peak is below 0.1 pixels, fade completely out. 
+            // Scale dynamically if it's minimal to prevent sharp blinking cutoffs.
+            float audioActivityAlpha = 1.0f;
+            if (maxCurrentPeak < 3.0f) {
+                audioActivityAlpha = maxCurrentPeak / 3.0f;
+            }
+
+            // If there's absolutely no activity, we can skip the loop entirely to preserve CPU
+            if (audioActivityAlpha <= 0.001f) {
+                SetDrawingMode(B_OP_COPY);
+                return;
+            }
+
+            // --- 2D ORGANIC SHIMMER ENGINE (MATCHED ENGINE SPEED) ---
+            bigtime_t sysTime = system_time();
+            const float basePeriodSeconds = 8.0f; 
+            float timeSeconds = (float)sysTime / 1000000.0f;
+            float wavePhase = (timeSeconds / basePeriodSeconds) * 2.0f * (float)M_PI;
+            
+            float shimmerCenterX = (0.5f + 0.5f * sinf(wavePhase)) * (float)numBars;
+            float shimmerCenterY = (0.5f + 0.5f * cosf(wavePhase * 1.4f)) * height;
+
+            const float shimmerHalfWidthX = 12.0f;
+            const float shimmerHalfWidthY = height * 0.4f;
 
             BPoint points[64];
             for (int i = 0; i < numBars; i++) {
@@ -1827,17 +1994,69 @@ virtual void Pulse() override {
             }
 
             for (int i = 0; i < numBars - 1; i++) {
-                SetHighColor(fArtworkPalette[i]);
-
                 int i0 = (i == 0) ? 0 : i - 1; int i1 = i; int i2 = i + 1; int i3 = (i + 2 >= numBars) ? numBars - 1 : i + 2;
                 BPoint p0 = points[i0]; BPoint p1 = points[i1]; BPoint p2 = points[i2]; BPoint p3 = points[i3];
 
-                const int steps = 4; BPoint prevSegmentPoint = p1;
+                const int steps = 4; 
+                
+                // Keep track of separate rendering points for the shadow and the highlight
+                BPoint prevSegPointShadow = p1;
+                BPoint prevSegmentPoint = p1;
+
+                // Position offset for the 3D Drop-Shadow line
+                prevSegPointShadow.x += 1.0f;
+                prevSegPointShadow.y += 1.5f;
 
                 for (int s = 1; s <= steps; s++) {
                     float t = (float)s / (float)steps; float t2 = t * t; float t3 = t2 * t;
                     float f1 = -0.5f * t3 + t2 - 0.5f * t; float f2 = 1.5f * t3 - 2.5f * t2 + 1.0f; float f3 = -1.5f * t3 + 2.0f * t2 + 0.5f * t; float f4 = 0.5f * t3 - 0.5f * t2;
+                    
                     BPoint currSegmentPoint(p0.x * f1 + p1.x * f2 + p2.x * f3 + p3.x * f4, p0.y * f1 + p1.y * f2 + p2.y * f3 + p3.y * f4);
+                    
+                    // --- Calculate Shimmer Proximity for this sub-segment ---
+                    float currentSegmentIndex = (currSegmentPoint.x - startX) / barWidth;
+                    float distX = fabsf(currentSegmentIndex - shimmerCenterX);
+                    float distY = fabsf(currSegmentPoint.y - shimmerCenterY);
+                    
+                    float shimmerIntensity = 0.0f;
+                    if (distX < shimmerHalfWidthX && distY < shimmerHalfWidthY) {
+                        float intensityX = 0.5f * (1.0f + cosf((distX / shimmerHalfWidthX) * (float)M_PI));
+                        float intensityY = 0.5f * (1.0f + cosf((distY / shimmerHalfWidthY) * (float)M_PI));
+                        shimmerIntensity = intensityX * intensityY;
+                    }
+
+                    // --- PASS 1: RENDER EMBOSS DROP SHADOW (Thicker Backing) ---
+                    rgb_color shadowColor = fArtworkPalette[i];
+                    shadowColor.red   = (uint8)max_c(0, shadowColor.red - 45);
+                    shadowColor.green = (uint8)max_c(0, shadowColor.green - 45);
+                    shadowColor.blue  = (uint8)max_c(0, shadowColor.blue - 45);
+                    
+                    // Modulate the baseline shadow opacity (160) by our activity alpha
+                    shadowColor.alpha = (uint8)(160.0f * audioActivityAlpha); 
+                    
+                    SetHighColor(shadowColor);
+                    SetPenSize(3.5f); // Thicker line behind
+                    
+                    BPoint currSegPointShadow = currSegmentPoint;
+                    currSegPointShadow.x += 1.0f;
+                    currSegPointShadow.y += 1.5f;
+                    
+                    StrokeLine(prevSegPointShadow, currSegPointShadow);
+                    prevSegPointShadow = currSegPointShadow;
+
+                    // --- PASS 2: RENDER FOREGROUND SPLINE WITH SHIMMER LUMINANCE ---
+                    int16 lightBoost = 20 + (int16)(80.0f * shimmerIntensity);
+                    rgb_color litColor = fArtworkPalette[i];
+                    litColor.red   = (uint8)min_c(255, litColor.red + lightBoost);
+                    litColor.green = (uint8)min_c(255, litColor.green + lightBoost);
+                    litColor.blue  = (uint8)min_c(255, litColor.blue + lightBoost);
+                    
+                    // Modulate foreground text/line opacity by our activity alpha
+                    litColor.alpha = (uint8)(255.0f * audioActivityAlpha);
+                    
+                    SetHighColor(litColor);
+                    SetPenSize(2.5f); // Crisp primary foreground thickness
+                    
                     StrokeLine(prevSegmentPoint, currSegmentPoint);
                     prevSegmentPoint = currSegmentPoint;
                 }
@@ -1845,19 +2064,52 @@ virtual void Pulse() override {
             SetDrawingMode(B_OP_COPY);
             SetPenSize(1.0f); 
         }
+
+
         else if (fVisualizerMode == MODE_LONG_WAVE) {
-        	SetDrawingMode(B_OP_ALPHA);
+            SetDrawingMode(B_OP_ALPHA);
             float midY = height / 2.0f;
             const int numNodes = 10; BPoint nodes[10];
+            
+            // --- 1. GLOBAL AUDIO ACTIVITY TRACKING ---
+            float maxCurrentPeak = 0.0f;
+            for (int i = 0; i < numBars; i++) {
+                if (fBarHeights[i] > maxCurrentPeak) {
+                    maxCurrentPeak = fBarHeights[i];
+                }
+            }
+
+            // Smooth interpolation threshold below 3 pixels to prevent sharp clipping pops
+            float audioActivityAlpha = 1.0f;
+            if (maxCurrentPeak < 3.0f) {
+                audioActivityAlpha = maxCurrentPeak / 3.0f;
+            }
+
+            // If there's completely no audio active, skip calculations entirely to preserve CPU
+            if (audioActivityAlpha <= 0.001f) {
+                SetDrawingMode(B_OP_COPY);
+                return;
+            }
             
             // INSET BOUNDS: Margins pull endpoints safely inside the clipping region
             float innerWidth = artworkWidth - 4.0f;
             float adjustedStartX = startX + 2.0f;
 
+            // --- 2D ORGANIC SHIMMER ENGINE (MATCHED ENGINE SPEED) ---
+            bigtime_t sysTime = system_time();
+            const float basePeriodSeconds = 8.0f; 
+            float timeSeconds = (float)sysTime / 1000000.0f;
+            float wavePhase = (timeSeconds / basePeriodSeconds) * 2.0f * (float)M_PI;
+            
+            float shimmerCenterX = (0.5f + 0.5f * sinf(wavePhase)) * (float)numBars;
+            float shimmerCenterY = (0.5f + 0.5f * cosf(wavePhase * 1.4f)) * height;
+
+            const float shimmerHalfWidthX = 12.0f;
+            const float shimmerHalfWidthY = height * 0.4f;
+
             for (int i = 0; i < numNodes; i++) {
                 nodes[i].x = adjustedStartX + (innerWidth * ((float)i / (float)(numNodes - 1)));
             }
-
 
             float peakAmplitudes[8] = { 0.0f };
             for (int chunk = 0; chunk < 8; chunk++) {
@@ -1899,19 +2151,21 @@ virtual void Pulse() override {
                         float rG = (colStart.green + (colEnd.green - colStart.green) * t) * 0.4f; 
                         float rB = (colStart.blue + (colEnd.blue - colStart.blue) * t) * 0.4f;
                         
-                        if (glowMirror == 1) { glowColor = { (uint8)(rR * 0.5f + bgCol.red * 0.5f), (uint8)(rG * 0.5f + bgCol.green * 0.5f), (uint8)(rB * 0.5f + bgCol.blue * 0.5f), 255 }; }
-                        else { glowColor = { (uint8)rR, (uint8)rG, (uint8)rB, 255 }; }
+                        if (glowMirror == 1) { 
+                            glowColor = { (uint8)(rR * 0.5f + bgCol.red * 0.5f), (uint8)(rG * 0.5f + bgCol.green * 0.5f), (uint8)(rB * 0.5f + bgCol.blue * 0.5f), (uint8)(255.0f * audioActivityAlpha) }; 
+                        } else { 
+                            glowColor = { (uint8)rR, (uint8)rG, (uint8)rB, (uint8)(255.0f * audioActivityAlpha) }; 
+                        }
                         
                         SetHighColor(glowColor);
                         BPoint curr(p0.x * f1 + p1.x * f2 + p2.x * f3 + p3.x * f4, p0.y * f1 + p1.y * f2 + p2.y * f3 + p3.y * f4);
                         StrokeLine(prevSegmentPoint, curr); prevSegmentPoint = curr;
-                        SetDrawingMode(B_OP_COPY);
+                        SetDrawingMode(B_OP_ALPHA);
                     }
                 }
             }
 
-            // --- PASS 2: CRISP FOREGROUND PASS ---
-            SetPenSize(3.0f); 
+            // --- PASS 2: CRISP FOREGROUND PASS WITH 3D SHADOW EMBOSS AND SHIMMER ---
             for (int fgMirror = 0; fgMirror < 2; fgMirror++) { 
                 for (int i = 0; i < numNodes - 1; i++) {
                     int i0 = (i == 0) ? 0 : i - 1; int i1 = i; int i2 = i + 1; int i3 = (i + 2 >= numNodes) ? numNodes - 1 : i + 2;
@@ -1925,30 +2179,84 @@ virtual void Pulse() override {
                     rgb_color colStart = fArtworkPalette[(int)(((float)i / (float)(numNodes - 1)) * 63.0f)];
                     rgb_color colEnd = fArtworkPalette[(int)(((float)(i + 1) / (float)(numNodes - 1)) * 63.0f)];
                     
+                    BPoint prevSegmentPointShadow(p0.x * 0.0f + p1.x * 1.0f + p2.x * 0.0f + p3.x * 0.0f, p0.y * 0.0f + p1.y * 1.0f + p2.y * 0.0f + p3.y * 0.0f);
                     BPoint prevSegmentPoint(p0.x * 0.0f + p1.x * 1.0f + p2.x * 0.0f + p3.x * 0.0f, p0.y * 0.0f + p1.y * 1.0f + p2.y * 0.0f + p3.y * 0.0f);
                     
+                    // Offset initial shadow coordinates down and right
+                    prevSegmentPointShadow.x += 1.0f;
+                    prevSegmentPointShadow.y += 1.5f;
+
                     const int steps = 24;
                     for (int s = 1; s <= steps; s++) {
                         float t = (float)s / (float)steps; float t2 = t * t; float t3 = t2 * t;
                         float f1 = -0.5f * t3 + t2 - 0.5f * t; float f2 = 1.5f * t3 - 2.5f * t2 + 1.0f; float f3 = -1.5f * t3 + 2.0f * t2 + 0.5f * t; float f4 = 0.5f * t3 - 0.5f * t2;
                         
-                        rgb_color blendedColor; 
+                        BPoint curr(p0.x * f1 + p1.x * f2 + p2.x * f3 + p3.x * f4, p0.y * f1 + p1.y * f2 + p2.y * f3 + p3.y * f4);
+
+                        // --- Calculate Shimmer Intensity for this exact segment point ---
+                        float currentSegmentIndex = (curr.x - startX) / (artworkWidth / 64.0f);
+                        float distX = fabsf(currentSegmentIndex - shimmerCenterX);
+                        float distY = fabsf(curr.y - shimmerCenterY);
+                        
+                        float shimmerIntensity = 0.0f;
+                        if (distX < shimmerHalfWidthX && distY < shimmerHalfWidthY) {
+                            float intensityX = 0.5f * (1.0f + cosf((distX / shimmerHalfWidthX) * (float)M_PI));
+                            float intensityY = 0.5f * (1.0f + cosf((distY / shimmerHalfWidthY) * (float)M_PI));
+                            shimmerIntensity = intensityX * intensityY;
+                        }
+
+                        // Base color values
                         float rR = colStart.red + (colEnd.red - colStart.red) * t; 
                         float rG = colStart.green + (colEnd.green - colStart.green) * t; 
                         float rB = colStart.blue + (colEnd.blue - colStart.blue) * t;
+
+                        // --- SUB-PASS A: DRAW EMBOSS DROP SHADOW ---
+                        rgb_color shadowColor;
+                        float sR = max_c(0.0f, rR - 50.0f);
+                        float sG = max_c(0.0f, rG - 50.0f);
+                        float sB = max_c(0.0f, rB - 50.0f);
                         
-                        if (fgMirror == 1) { blendedColor = { (uint8)(rR * 0.5f + bgCol.red * 0.5f), (uint8)(rG * 0.5f + bgCol.green * 0.5f), (uint8)(rB * 0.5f + bgCol.blue * 0.5f), 255 }; }
-                        else { blendedColor = { (uint8)rR, (uint8)rG, (uint8)rB, 255 }; }
+                        if (fgMirror == 1) { 
+                            shadowColor = { (uint8)(sR * 0.5f + bgCol.red * 0.5f), (uint8)(sG * 0.5f + bgCol.green * 0.5f), (uint8)(sB * 0.5f + bgCol.blue * 0.5f), (uint8)(140.0f * audioActivityAlpha) }; 
+                        } else { 
+                            shadowColor = { (uint8)sR, (uint8)sG, (uint8)sB, (uint8)(140.0f * audioActivityAlpha) }; 
+                        }
+
+                        SetHighColor(shadowColor);
+                        SetPenSize(4.0f); // Slightly wider dark shadow backing
+                        
+                        BPoint currShadow = curr;
+                        currShadow.x += 1.0f;
+                        currShadow.y += 1.5f;
+                        
+                        StrokeLine(prevSegmentPointShadow, currShadow);
+                        prevSegmentPointShadow = currShadow;
+
+                        // --- SUB-PASS B: DRAW MAIN SHIMMERING LINE ---
+                        int16 lightBoost = 20 + (int16)(80.0f * shimmerIntensity);
+                        rgb_color blendedColor; 
+                        float litR = min_c(255.0f, rR + lightBoost);
+                        float litG = min_c(255.0f, rG + lightBoost);
+                        float litB = min_c(255.0f, rB + lightBoost);
+
+                        if (fgMirror == 1) { 
+                            blendedColor = { (uint8)(litR * 0.5f + bgCol.red * 0.5f), (uint8)(litG * 0.5f + bgCol.green * 0.5f), (uint8)(litB * 0.5f + bgCol.blue * 0.5f), (uint8)(255.0f * audioActivityAlpha) }; 
+                        } else { 
+                            blendedColor = { (uint8)litR, (uint8)litG, (uint8)litB, (uint8)(255.0f * audioActivityAlpha) }; 
+                        }
                         
                         SetHighColor(blendedColor);
-                        BPoint curr(p0.x * f1 + p1.x * f2 + p2.x * f3 + p3.x * f4, p0.y * f1 + p1.y * f2 + p2.y * f3 + p3.y * f4);
-                        StrokeLine(prevSegmentPoint, curr); prevSegmentPoint = curr;
+                        SetPenSize(3.0f); // Crisp primary foreground line
+                        
+                        StrokeLine(prevSegmentPoint, curr);
+                        prevSegmentPoint = curr;
                     }
                 }
             }
             SetDrawingMode(B_OP_COPY);
             SetPenSize(1.0f); 
         }
+
 
         else if (fVisualizerMode == MODE_PONG_BALLS) {
             SetDrawingMode(B_OP_ALPHA);
@@ -3001,8 +3309,9 @@ void SuperMusicWindow::ApplyTheme() {
                     }
                 }
             }
+            
 
-            if (fPresetList) {
+             if (fPresetList) {
                 fPresetList->SetViewColor(bg2Val);
                 fPresetList->SetLowColor(bgVal);
                 fPresetList->SetHighColor(txtVal); 
@@ -3252,9 +3561,7 @@ void play_favorite() {
         }
     }
 
-    //double original_vol;
-    //mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &original_vol);
-    fade_volume(mpv, 0, 400);
+    fade_volume(mpv, 0, 250);
     currentSong = "Loading Favorite...";
     if (gGuiWindow && gGuiWindow->Lock()) {
         gGuiWindow->UpdateStatus(currentDesc.c_str(), currentSong.c_str());
@@ -3264,7 +3571,6 @@ void play_favorite() {
     const char *cmd[] = {"loadfile", finalUrl.c_str(), NULL};
     mpv_command(mpv, cmd);
     
-    //fade_volume(mpv, original_vol, 600);
 }
 
 
@@ -3303,9 +3609,7 @@ void SuperMusicWindow::PlayStation(const Channel& chan) {
         }
     }
 
-    //double original_vol;
-    //mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &original_vol);
-    fade_volume(mpv, 0, 400); 
+    fade_volume(mpv, 0, 250); 
 
     currentSong = "Buffering...";
     UpdateStatus(currentStation.c_str(), currentSong.c_str());
@@ -3313,7 +3617,7 @@ void SuperMusicWindow::PlayStation(const Channel& chan) {
     std::string url = get_quality_url(chan); 
     const char *cmd[] = {"loadfile", url.c_str(), NULL};
     mpv_command(mpv, cmd);    
-   // fade_volume(mpv, original_vol, 600);
+
     if (Lock()) {
         fTabView->Select(0);
         Unlock();
@@ -3357,10 +3661,7 @@ void delete_favorite() {
     
 void play_random() {
     if (channels.empty()) return;
-
-    //double original_vol;        
-    //mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &original_vol);
-    fade_volume(mpv, 0, 400);
+    fade_volume(mpv, 0, 250);
 
     int idx = rand() % channels.size();
     Channel& chan = channels[idx];
@@ -3396,8 +3697,7 @@ void play_random() {
     std::string url = get_quality_url(chan); 
     const char *cmd[] = {"loadfile", url.c_str(), NULL};
     mpv_command(mpv, cmd);
-    
-    //fade_volume(mpv, original_vol, 600);
+
 }
 
 
@@ -3933,7 +4233,7 @@ void SuperMusicWindow::UpdateTrayState(bool enabled, bool hideWindow) {
 
 
 SuperMusicWindow::SuperMusicWindow()
-    : BWindow(BRect(100, 100, 575, 250), "SuperMusicThingy", B_TITLED_WINDOW, 
+    : BWindow(BRect(100, 100, 350, 250), "SuperMusicThingy", B_TITLED_WINDOW, 
     B_ASYNCHRONOUS_CONTROLS | B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE)
     
 {
@@ -4000,16 +4300,16 @@ SuperMusicWindow::SuperMusicWindow()
     // RIGID LAYOUT CONSTRAINT FIX
     // ====================================================================
     if (cfg.showSpectrumVisuals) { 
-        fSpectrum = new SpectrumView(BRect(0, 0, 375, 120), "spectrum"); 
-        
+		float stackHeight = 100.0f * scale; // Default baseline fallback
+        stackHeight = 150.0f;    
+        fSpectrum = new SpectrumView(BRect(0, 0, 350 * scale, stackHeight), "spectrum"); 
         // Lock both boundaries to the exact same size.
         // This forces Haiku's engine to respect a strict, unstretchable box.
-        fSpectrum->SetExplicitMinSize(BSize(375, 120));
-        fSpectrum->SetExplicitMaxSize(BSize(375, 120));
+        fSpectrum->SetExplicitMinSize(BSize(350 * scale, stackHeight));
+        fSpectrum->SetExplicitMaxSize(BSize(350 * scale, stackHeight));
     } else {
         // Safe, flat initialization when spectrum visuals are toggled off
-        fSpectrum = new SpectrumView(BRect(0, 0, 350, 0), "spectrum"); 
-        
+        fSpectrum = new SpectrumView(BRect(0, 0, 350, 0), "spectrum");         
         fSpectrum->SetExplicitMinSize(BSize(350, 0));
         fSpectrum->SetExplicitMaxSize(BSize(350, 0));
     }
@@ -4078,9 +4378,7 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     .SetInsets(10)
     .Add(fArtView) 
     .Add(fMetaAndSpectrumStack)     
-    
-    // FIXED METHOD: Replace the unstable, expanding Glue component 
-    // with a structured, crisp 5-pixel static layout spacer padding block
+
     .AddStrut(5)    
     
     .AddGroup(B_HORIZONTAL, 10) 
@@ -4431,8 +4729,8 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     .Add(fChkShuffle)
     .Add(fShuffleFavsCheckbox)
     .Add(fCompactModeConfig)
-    //.Add(fCmpTitle)  // Still testing these two
-    //.Add(fCmpSong)   
+   // .Add(fCmpTitle)  // Still testing these two
+   // .Add(fCmpSong)   
     .Add(fChkTheme)
    	.Add(fEQToggle)
    	//.Add(fEnableladspa)  // Doesn't work as good as native mpv plugins and needs to be built into ffmpeg. But leaving in code for future debugging.
@@ -4810,23 +5108,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		break;
 		}	
 		
-		case MSG_SHOW_TITLE: {
-       	 	BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("fCmpTitle_toggle"));
-        	if (chk) {
-            	cfg.compactModeTitle = (chk->Value() == B_CONTROL_ON);
-            	save_config(); 
-        	}
-        		break;
-    	}
-        
-        case MSG_SHOW_DESC: {
-        	BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("fCmpSong_toggle"));
-        	if (chk) {
-            	cfg.compactModeDesc = (chk->Value() == B_CONTROL_ON);
-            	save_config(); 
-        	}
-        		break;
-    	}
+
 
     	
 	case MSG_TOGGLE_EQ: {
@@ -4856,12 +5138,14 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                     if (fEQContainer->Parent()) fEQContainer->Parent()->Invalidate();
                 }
 
-
+				float scale = be_plain_font->Size() / 12.0f; 
         		
         		if (cfg.showSpectrumVisuals) {
-                        fSpectrum->SetExplicitMinSize(BSize(375, 120));
-                        fSpectrum->SetExplicitMaxSize(BSize(375, 120));
-                        fSpectrum->SetExplicitPreferredSize(BSize(375, 120));
+            	        float stackHeight = 100.0f * scale; // Default baseline fallback
+                        stackHeight = 150.0f;                     
+                        fSpectrum->SetExplicitMinSize(BSize(350 * scale, stackHeight));
+                        fSpectrum->SetExplicitMaxSize(BSize(350 * scale, stackHeight));
+                        fSpectrum->SetExplicitPreferredSize(BSize(350 * scale, stackHeight));
              
             	}
  
@@ -4898,11 +5182,13 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             }
 
             this->UpdateMPVFilters();
-            
+            float scale = be_plain_font->Size() / 12.0f; 
             if (cfg.showSpectrumVisuals) {
-                        fSpectrum->SetExplicitMinSize(BSize(375, 120));
-                        fSpectrum->SetExplicitMaxSize(BSize(375, 120));
-                        fSpectrum->SetExplicitPreferredSize(BSize(375, 120));
+            	        float stackHeight = 100.0f * scale; // Default baseline fallback
+                        stackHeight = 150.0f;                     
+                        fSpectrum->SetExplicitMinSize(BSize(350 * scale, stackHeight));
+                        fSpectrum->SetExplicitMaxSize(BSize(350 * scale, stackHeight));
+                        fSpectrum->SetExplicitPreferredSize(BSize(350 * scale, stackHeight));
              
             }
  
@@ -5037,17 +5323,34 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         } 
 
 
+		case MSG_SHOW_TITLE: {
+       	 	BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("fCmpTitle_toggle"));
+        	if (chk) {
+            	cfg.compactModeTitle = (chk->Value() == B_CONTROL_ON);
+            	save_config(); 
+            	ApplyTheme();  
+        	}
+        		break;
+    	}
+        
+        case MSG_SHOW_DESC: {
+        	BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("fCmpSong_toggle"));
+        	if (chk) {
+            	cfg.compactModeDesc = (chk->Value() == B_CONTROL_ON);            	
+            	save_config(); 
+            	ApplyTheme(); 
+        	}
+        		break;
+    	}
 
-         
 
-
-
+		case B_COLORS_UPDATED:
 		case MSG_COMPACTM_CHANGED: {
     		void* source = nullptr;
     		message->FindPointer("source", &source);
     
     		bool newState;
-    
+    		
     		if (source == nullptr) {
         		newState = cfg.compactMode;
         		if (fCompactModeConfig) fCompactModeConfig->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
@@ -5073,7 +5376,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
     		// 4. Setup sizes based on current state
     		float scale = be_plain_font->Size() / 12.0f; 
-    		float artSize = cfg.compactMode ? (116 * scale) : (350 * scale);
+    		float artSize = cfg.compactMode ? (135 * scale) : (350 * scale);
     		float btnSize = cfg.compactMode ? (40 * scale) : (75 * scale);
     		float favSize = cfg.compactMode ? (40 * scale) : (75 * scale);
 
@@ -5090,6 +5393,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                 ((SongLabel*)fSongView)->SetCompactMode(cfg.compactMode);
                 
                 if (cfg.compactMode) {
+
+    		
                     float expandedWidth = 220.0f * scale; 
                     fSongView->SetExplicitMinSize(BSize(expandedWidth, B_SIZE_UNSET));
                     fSongView->SetExplicitPreferredSize(BSize(expandedWidth, B_SIZE_UNSET));
@@ -5149,17 +5454,18 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                             if (!cfg.compactModeDesc && !cfg.compactModeTitle) {
                                 stackHeight = 100.0f; // Matches your 350x100 spectrum perfectly
                             } else if (!cfg.compactModeDesc && cfg.compactModeTitle) {                    	
-                                stackHeight = 100.0f * scale; // Spectrum (90) + Title text space
+                                stackHeight = 90.0f * scale; // Spectrum (90) + Title text space
                             } else if (cfg.compactModeDesc && !cfg.compactModeTitle) {                    		
-                                stackHeight = 100.0f * scale; // Spectrum (90) + Desc text space
+                                stackHeight = 90.0f * scale; // Spectrum (90) + Desc text space
                             } else if (cfg.compactModeDesc && cfg.compactModeTitle) {
-                                stackHeight = 100.0f * scale;  // Spectrum (25) + Both text lines space
+                                stackHeight = 50.0f * scale;  // Spectrum (25) + Both text lines space
                             }
                         }
                         
                         fMetaAndSpectrumStack->SetExplicitMinSize(BSize(350 * scale, stackHeight));
                         fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(350 * scale, stackHeight));
                         fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(350 * scale, stackHeight));
+                        
                     }   
                     
                 } else {
@@ -5172,22 +5478,27 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     				fVolumeSlider->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
                     
                     if (cfg.showSpectrumVisuals) {
-                    	fSpectrum->SetExplicitMinSize(BSize(375, 120));
-                        fSpectrum->SetExplicitMaxSize(BSize(375, 120));
-                        fSpectrum->SetExplicitPreferredSize(BSize(375, 120));
+                    	float stackHeight = 100.0f * scale; // Default baseline fallback
+                        stackHeight = 150.0f; 
+                    	fSpectrum->SetExplicitMinSize(BSize(350 * scale, stackHeight));
+                        fSpectrum->SetExplicitMaxSize(BSize(350 * scale, stackHeight));
+                        fSpectrum->SetExplicitPreferredSize(BSize(350 * scale, stackHeight));
                         
                     }
                     
                    if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) {
-                    	fSpectrum->SetExplicitMinSize(BSize(350, 1));
-                        fSpectrum->SetExplicitMaxSize(BSize(350, 1));
-                        fSpectrum->SetExplicitPreferredSize(BSize(350, 1));     
+                    	fSpectrum->SetExplicitMinSize(BSize(350, 0));
+                        fSpectrum->SetExplicitMaxSize(BSize(350, 0));
+                        fSpectrum->SetExplicitPreferredSize(BSize(350, 0));     
                         
-                    if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {
-                        fMetaAndSpectrumStack->SetExplicitMinSize(BSize(350, 0));
-                        fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(350, 0));
-                        fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(350, 0));
-                    }
+                    if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {  
+                       float stackHeight = 100.0f * scale; // Default baseline fallback
+                        stackHeight = 150.0f;                        
+                        fMetaAndSpectrumStack->SetExplicitMinSize(BSize(350 * scale, stackHeight));
+                        fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(350 * scale, stackHeight));
+                        fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(350 * scale, stackHeight));
+                        
+                      } 
                    }
                 }
             }
@@ -5221,7 +5532,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         		fquality->Show();
         		fListenersView->Show();
         		fSpectrum->Show();
-
+				
         		for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
             		BTab* tab = fTabView->TabAt(i);
             		if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab)
@@ -5715,12 +6026,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		#endif
 //--------------------------------- Projectm     
 
-        case B_COLORS_UPDATED: {
-            if (cfg.updateTheme == "Default") {
-                ApplyTheme();
-            }
-            break;
-        }
+
 
 
 
