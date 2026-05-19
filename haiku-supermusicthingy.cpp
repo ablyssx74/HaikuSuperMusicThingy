@@ -2293,15 +2293,22 @@ virtual void Pulse() override {
                 } else if (fObsIsPit[o] == 2) {
                     // --- HAZARD TYPE 2: NEON WATER POOL (BLUE OBSTACLE) ---
                     BRect waterBounds(startX + fObsX[o], baselineY + 1.0f, startX + fObsX[o] + 24.0f, baselineY + 6.0f);                    
-                    SetHighColor(0, 130, 255, 255); // Rich deep hazard blue pool fill
+                    SetHighColor(0, 130, 255, 255); 
+                    
+                    // Rich deep hazard blue pool fill
                     FillRect(waterBounds);                    
-                    SetHighColor(0, 240, 255, 255); // Radiant glowing surface layer line
+                    SetHighColor(0, 240, 255, 255); 
+                    
+                    // Radiant glowing surface layer line
                     StrokeLine(BPoint(startX + fObsX[o], baselineY + 1.0f), BPoint(startX + fObsX[o] + 24.0f, baselineY + 1.0f));                    
+                    
                     // Safety shoreline markers
                     SetHighColor(isDarkBg ? rgb_color{255, 255, 255, 180} : rgb_color{0, 0, 0, 180});
                     StrokeLine(BPoint(startX + fObsX[o], baselineY), BPoint(startX + fObsX[o], baselineY + 4.0f));
                     StrokeLine(BPoint(startX + fObsX[o] + 24.0f, baselineY), BPoint(startX + fObsX[o] + 24.0f, baselineY + 4.0f));
+                
                 } else if (fObsIsPit[o] == 3 || fObsIsPit[o] == 4) {
+                	
                     // --- HAZARD TYPE 3 & 4: PULSING SHARP SHOCK-SPIKE BLADES ---
                     int spikeCount = (fObsIsPit[o] == 3) ? 4 : 5;
                     float spikeWidth = 8.0f;
@@ -2339,7 +2346,38 @@ virtual void Pulse() override {
             SetHighColor(isDarkBg ? rgb_color{0, 240, 255, 200} : rgb_color{50, 60, 70, 220});
             BString scoreStr;
             scoreStr.SetToFormat("SCORE: %" B_PRId32, fMotoScore);
-            DrawString(scoreStr.String(), BPoint(startX + artworkWidth - 68.0f, 15.0f));            
+            DrawString(scoreStr.String(), BPoint(startX + artworkWidth - 68.0f, 15.0f));  
+            
+            
+           // --- LAYER 5B: UNCLIPPED CENTER-SCREEN STUNT POPUP ---
+            if (fStuntTextLife > 0) {
+                BFont stuntFont;
+                GetFont(&stuntFont);
+                stuntFont.SetSize(13.0f); 
+                stuntFont.SetFace(B_BOLD_FACE);
+                SetFont(&stuntFont);
+                
+                // --- THEME-ADAPTIVE HIGH-CONTRAST COLOR SWITCH pass ---
+                if (isDarkBg) {
+                    // Dark Mode active: Classic Golden Yellow Flare is perfect
+                    SetHighColor(255, 215, 0, (uint8)(fStuntTextLife * 7.2f)); 
+                } else {
+                    // Light Mode active: Deep, rich Neon Green for text readability
+                    SetHighColor(0, 185, 20, (uint8)(fStuntTextLife * 7.2f)); 
+                }
+                // ------------------------------------------------------
+
+                // Mathematical String Width Center Offset Calculation
+                float stringWidth = stuntFont.StringWidth(fStuntTextStr.String());
+                float screenCenterX = startX + (artworkWidth / 2.0f);
+                
+                // Draw precisely in the screen center safely below clouds and above ground
+                DrawString(fStuntTextStr.String(), BPoint(screenCenterX - (stringWidth / 2.0f), fStuntTextY));
+                
+                // Restore font to clear trailing canvas modifications
+                SetFont(&scoreFont);
+            }
+          
             
             
             // --- LAYER 5C: BACKGROUND SCROLLING VECTOR DOG RENDERING (FACING RIGHT) ---
@@ -2436,26 +2474,7 @@ virtual void Pulse() override {
                 StrokeLine(driverHip, handlebarsGrip); 
             }
             
-               // --- LAYER 6.5: FLOATING STUNT POPUP OVERLAY ---
-                if (fStuntTextLife > 0) {
-                    BFont stuntFont;
-                    GetFont(&stuntFont);
-                    stuntFont.SetSize(10.0f);
-                    stuntFont.SetFace(B_BOLD_FACE); // Make it pop!
-                    SetFont(&stuntFont);
 
-                    // Compute dynamic text color brightness fading out as the life timer expires
-                    uint8 alphaFade = (uint8)((fStuntTextLife / 25.0f) * 255.0f);
-                    
-                    // High-visibility electric gold/yellow stunt text
-                    SetHighColor(255, 215, 0, alphaFade); 
-                    
-                    // Render string offset relative to riderX position
-                    float popupTextX = riderX - 22.0f;
-                    float popupTextY = baselineY - fStuntTextY;
-                    
-                    DrawString(fStuntTextStr.String(), BPoint(popupTextX, popupTextY));
-                }
 
 
             SetDrawingMode(B_OP_COPY);
@@ -2943,122 +2962,132 @@ void SuperMusicWindow::ApplyTheme() {
     rgb_color bg2Val;
     rgb_color txtVal;
 
-    if (cfg.updateTheme == "Dark") {
-        bgVal = {40, 40, 40, 255};      // Dark Grey
-        bg2Val = {0, 0, 0, 255};        // Pure Black for lists
-        txtVal = {255, 255, 255, 255};  // Pure White
-    } else {
-        bgVal = ui_color(B_PANEL_BACKGROUND_COLOR);
-        bg2Val = ui_color(B_PANEL_BACKGROUND_COLOR);
-        txtVal = ui_color(B_PANEL_TEXT_COLOR);
-    }
-
-    float scale = be_bold_font->Size() / 12.0f; 
-
-    BFont boldFont(be_bold_font);
-    boldFont.SetSize(12.0 * scale);
-
+    // --- LOCK THE WINDOW ONCE TO PREVENT DEADLOCKS ---
     if (Lock()) {
-		if (fTabView) {
-    		fTabView->SetViewColor(bgVal);
-    
-    		for (int32 i = 0; i < fTabView->CountTabs(); i++) {
-        		BTab* tab = fTabView->TabAt(i);
-        		if (tab == nullptr) continue; // Safety check for the tab object
+        // Run a linear two-pass execution to shake loose Haiku's color caches 
+        // without invoking dangerous recursive function deadlocks.
+        int totalPasses = (cfg.updateTheme == "Default") ? 2 : 1;
 
-        		BView* tabView = tab->View(); // Get the view associated with the tab
-        		if (tabView != nullptr) {
-                    RecursiveColorApply(tabView, bgVal, txtVal);
-        		}
-    		}
-		}
+        // FIXED NAME MATCH: Changed totalRequiredPasses to totalPasses
+        for (int pass = 1; pass <= totalPasses; pass++) {
+            if (cfg.updateTheme == "Dark" || (cfg.updateTheme == "Default" && pass == 1)) {
 
-        if (fPresetList) {
-            fPresetList->SetViewColor(bg2Val);
-            fPresetList->SetLowColor(bgVal);
-            fPresetList->SetHighColor(txtVal); 
-            fPresetList->Invalidate();
-        }
-
-        if (fPresetScroll) {
-            fPresetScroll->SetViewColor(bgVal);
-            if (BScrollBar* sb = fPresetScroll->ScrollBar(B_VERTICAL)) {
-                sb->SetViewColor(bgVal);
-                sb->Invalidate();
+                // Pass 1 (or Dark Mode): Load dark colors to force cache invalidation
+                bgVal = {40, 40, 40, 255};      // Dark Grey
+                bg2Val = {0, 0, 0, 255};        // Pure Black for lists
+                txtVal = {255, 255, 255, 255};  // Pure White
+            } else {
+                // Pass 2 (Default Mode): Safely capture actual global user colors
+                bgVal = ui_color(B_PANEL_BACKGROUND_COLOR);
+                bg2Val = ui_color(B_PANEL_BACKGROUND_COLOR);
+                txtVal = ui_color(B_PANEL_TEXT_COLOR);
             }
-            fPresetScroll->Invalidate();
-        }
-        
-	    if (fDescView) {
-    		fDescView->SetViewColor(bgVal);
-    		fDescView->SetFontAndColor(&boldFont, B_FONT_ALL, &txtVal);
-    		fDescView->Invalidate();
-		}
-		
-		if (fSongView) {
-			fSongView->SetViewColor(bgVal);
-        	fSongView->SetFontAndColor(&boldFont, B_FONT_ALL, &txtVal);
-        	fSongView->Invalidate();
-    	}
-        
-        if (fStationList) {    
-   			 fStationList->SetFlags(fStationList->Flags() | B_FRAME_EVENTS);
-   			 
-       		 if (fStationList->Parent()) {
-            	fStationList->SetViewColor(bgVal); 
-            	fStationList->SetLowColor(bgVal);
-            	fStationList->SetHighColor(txtVal); 
-            	fStationList->Invalidate();
-        	}
-        }
-        
-        if (fFavList) {
-            fFavList->SetViewColor(bgVal);
-            fFavList->SetLowColor(bgVal);
-            fFavList->SetHighColor(txtVal); 
-            fFavList->Invalidate(); 
-        }    
-        if (fBtnAddFav) {
-    		fBtnAddFav->SetViewColor(bgVal);
-    		fBtnAddFav->SetHighColor(txtVal); 
-    		fBtnAddFav->Invalidate();
-		}    
 
-        // --- NEW CONFIG DECK THEME PROFILES SYNC ---
-        // 1. Cleanly update all 15 EQ sliders
-        for (int i = 0; i < 15; i++) {
-            if (fEQSliders[i]) {
-                fEQSliders[i]->SetViewColor(bgVal);
-                fEQSliders[i]->SetLowColor(bgVal);
-                fEQSliders[i]->SetHighColor(txtVal); // Keeps textual frequency tags visible
-                fEQSliders[i]->Invalidate();
-            }
-        }
+            float scale = be_bold_font->Size() / 12.0f; 
 
-        // 2. Clear out container backgrounds and apply high contrast text labels to the limiter sliders
-        BSlider* limiterSliders[] = { fLimitInput, fLimitLimit, fLimitRelease };
-        for (int s = 0; s < 3; s++) {
-            if (limiterSliders[s]) {
-                limiterSliders[s]->SetViewColor(bgVal);
-                limiterSliders[s]->SetLowColor(bgVal);
-                limiterSliders[s]->SetHighColor(txtVal); // Forces "In", "Lmt", and "Rel" strings to draw correctly
-                
-                // Traverse internal child structures for custom WheelSlider variations
-                for (int32 c = 0; c < limiterSliders[s]->CountChildren(); c++) {
-                    BView* child = limiterSliders[s]->ChildAt(c);
-                    if (child) {
-                        child->SetViewColor(bgVal);
-                        child->SetLowColor(bgVal);
-                        child->SetHighColor(txtVal);
-                        child->Invalidate();
+            BFont boldFont(be_bold_font);
+            boldFont.SetSize(12.0 * scale);
+
+            if (fTabView) {
+                fTabView->SetViewColor(bgVal);
+        
+                for (int32 i = 0; i < fTabView->CountTabs(); i++) {
+                    BTab* tab = fTabView->TabAt(i);
+                    if (tab == nullptr) continue; 
+
+                    BView* tabView = tab->View(); 
+                    if (tabView != nullptr) {
+                        RecursiveColorApply(tabView, bgVal, txtVal);
                     }
                 }
-                limiterSliders[s]->Invalidate();
             }
-        }
 
-        if (fTabView) fTabView->Invalidate();
-        Unlock();
+            if (fPresetList) {
+                fPresetList->SetViewColor(bg2Val);
+                fPresetList->SetLowColor(bgVal);
+                fPresetList->SetHighColor(txtVal); 
+                fPresetList->Invalidate();
+            }
+
+            if (fPresetScroll) {
+                fPresetScroll->SetViewColor(bgVal);
+                if (BScrollBar* sb = fPresetScroll->ScrollBar(B_VERTICAL)) {
+                    sb->SetViewColor(bgVal);
+                    sb->Invalidate();
+                }
+                fPresetScroll->Invalidate();
+            }
+            
+            if (fDescView) {
+                fDescView->SetViewColor(bgVal);
+                fDescView->SetFontAndColor(&boldFont, B_FONT_ALL, &txtVal);
+                fDescView->Invalidate();
+            }
+            
+            if (fSongView) {
+                fSongView->SetViewColor(bgVal);
+                fSongView->SetFontAndColor(&boldFont, B_FONT_ALL, &txtVal);
+                fSongView->Invalidate();
+            }
+            
+            if (fStationList) {    
+                 fStationList->SetFlags(fStationList->Flags() | B_FRAME_EVENTS);
+                 
+                 if (fStationList->Parent()) {
+                    fStationList->SetViewColor(bgVal); 
+                    fStationList->SetLowColor(bgVal);
+                    fStationList->SetHighColor(txtVal); 
+                    fStationList->Invalidate();
+                }
+            }
+            
+            if (fFavList) {
+                fFavList->SetViewColor(bgVal);
+                fFavList->SetLowColor(bgVal);
+                fFavList->SetHighColor(txtVal); 
+                fFavList->Invalidate(); 
+            }    
+            if (fBtnAddFav) {
+                fBtnAddFav->SetViewColor(bgVal);
+                fBtnAddFav->SetHighColor(txtVal); 
+                fBtnAddFav->Invalidate();
+            }    
+
+            // --- EQ Sliders Sync ---
+            for (int i = 0; i < 15; i++) {
+                if (fEQSliders[i]) {
+                    fEQSliders[i]->SetViewColor(bgVal);
+                    fEQSliders[i]->SetLowColor(bgVal);
+                    fEQSliders[i]->SetHighColor(txtVal); 
+                    fEQSliders[i]->Invalidate();
+                }
+            }
+
+            // --- Limiter Sliders Sync ---
+            BSlider* limiterSliders[] = { fLimitInput, fLimitLimit, fLimitRelease };
+            for (int s = 0; s < 3; s++) {
+                if (limiterSliders[s]) {
+                    limiterSliders[s]->SetViewColor(bgVal);
+                    limiterSliders[s]->SetLowColor(bgVal);
+                    limiterSliders[s]->SetHighColor(txtVal); 
+                    
+                    for (int32 c = 0; c < limiterSliders[s]->CountChildren(); c++) {
+                        BView* child = limiterSliders[s]->ChildAt(c);
+                        if (child) {
+                            child->SetViewColor(bgVal);
+                            child->SetLowColor(bgVal);
+                            child->SetHighColor(txtVal);
+                            child->Invalidate();
+                        }
+                    }
+                    limiterSliders[s]->Invalidate();
+                }
+            }
+
+            if (fTabView) fTabView->Invalidate();
+        } // --- End of For Loop Pass ---
+
+        Unlock(); // Release lock safely at the absolute end of execution
     }
 }
 
