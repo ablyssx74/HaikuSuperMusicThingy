@@ -3996,10 +3996,27 @@ SuperMusicWindow::SuperMusicWindow()
 	fArtView->SetExplicitSize(BSize(350 * scale, 350 * scale)); 
     fArtView->SetExplicitMinSize(BSize(350 * scale, 350 * scale));
 	fArtView->SetExplicitMaxSize(BSize(350 * scale, 350 * scale));
-	if (cfg.showSpectrumVisuals) fSpectrum = new SpectrumView(BRect(0, 0, 350, 100), "spectrum"); 
-    if (!cfg.showSpectrumVisuals) fSpectrum = new SpectrumView(BRect(0, 0, 350, 1), "spectrum"); 
-	//fSpectrum->SetExplicitMinSize(BSize(350, 75));
-	//fSpectrum->SetExplicitMaxSize(BSize(350, B_SIZE_UNSET)); 
+    // ====================================================================
+    // RIGID LAYOUT CONSTRAINT FIX
+    // ====================================================================
+    if (cfg.showSpectrumVisuals) { 
+        fSpectrum = new SpectrumView(BRect(0, 0, 375, 120), "spectrum"); 
+        
+        // Lock both boundaries to the exact same size.
+        // This forces Haiku's engine to respect a strict, unstretchable box.
+        fSpectrum->SetExplicitMinSize(BSize(375, 120));
+        fSpectrum->SetExplicitMaxSize(BSize(375, 120));
+    } else {
+        // Safe, flat initialization when spectrum visuals are toggled off
+        fSpectrum = new SpectrumView(BRect(0, 0, 350, 0), "spectrum"); 
+        
+        fSpectrum->SetExplicitMinSize(BSize(350, 0));
+        fSpectrum->SetExplicitMaxSize(BSize(350, 0));
+    }
+    // ====================================================================
+
+	
+	
     
     BBitmap* heartIcon = GetVectorIcon(kIconFav, kIconFavSize, 40);
 	fBtnAddFav = new IconButton("btn_add_fav", heartIcon, new BMessage(MSG_ADD_FAV));
@@ -4035,7 +4052,7 @@ fControlStack = new BGroupView(B_VERTICAL, 5);
 
 BLayoutBuilder::Group<>(fControlStack, B_VERTICAL, 5)
 
-    .SetInsets(5)  
+    //.SetInsets(5)  
     .Add(fVolumeSlider)
         .AddGroup(B_HORIZONTAL, 5)
         //.AddGlue() 
@@ -4053,7 +4070,7 @@ BLayoutBuilder::Group<>(fMetaAndSpectrumStack, B_VERTICAL, 5)
     .Add(fDescView)
     .Add(fSongView)  
     .Add(fSpectrum)
-    .AddStrut(2) 
+    //.AddStrut(2) 
 .End();
 
 
@@ -4061,7 +4078,11 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     .SetInsets(10)
     .Add(fArtView) 
     .Add(fMetaAndSpectrumStack)     
-    .AddGlue()    
+    
+    // FIXED METHOD: Replace the unstable, expanding Glue component 
+    // with a structured, crisp 5-pixel static layout spacer padding block
+    .AddStrut(5)    
+    
     .AddGroup(B_HORIZONTAL, 10) 
         .AddGroup(B_VERTICAL, 6) 
             .AddStrut(1)     	
@@ -4838,16 +4859,16 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
         		
         		if (cfg.showSpectrumVisuals) {
-                        fSpectrum->SetExplicitMinSize(BSize(350, 100));
-                        fSpectrum->SetExplicitMaxSize(BSize(350, 100));
-                        fSpectrum->SetExplicitPreferredSize(BSize(350, 100));
+                        fSpectrum->SetExplicitMinSize(BSize(375, 120));
+                        fSpectrum->SetExplicitMaxSize(BSize(375, 120));
+                        fSpectrum->SetExplicitPreferredSize(BSize(375, 120));
              
             	}
  
   				if (!cfg.eqEnabled) {
-                    	fSpectrum->SetExplicitMinSize(BSize(350, 1));
-                        fSpectrum->SetExplicitMaxSize(BSize(350, 1));
-                        fSpectrum->SetExplicitPreferredSize(BSize(350, 1));                    
+                    	fSpectrum->SetExplicitMinSize(BSize(350, 0));
+                        fSpectrum->SetExplicitMaxSize(BSize(350, 0));
+                        fSpectrum->SetExplicitPreferredSize(BSize(350, 0));                    
                     
   				}
              
@@ -4879,16 +4900,16 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             this->UpdateMPVFilters();
             
             if (cfg.showSpectrumVisuals) {
-                        fSpectrum->SetExplicitMinSize(BSize(350, 100));
-                        fSpectrum->SetExplicitMaxSize(BSize(350, 100));
-                        fSpectrum->SetExplicitPreferredSize(BSize(350, 100));
+                        fSpectrum->SetExplicitMinSize(BSize(375, 120));
+                        fSpectrum->SetExplicitMaxSize(BSize(375, 120));
+                        fSpectrum->SetExplicitPreferredSize(BSize(375, 120));
              
             }
  
   			if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) {
-                    	fSpectrum->SetExplicitMinSize(BSize(350, 1));
-                        fSpectrum->SetExplicitMaxSize(BSize(350, 1));
-                        fSpectrum->SetExplicitPreferredSize(BSize(350, 1));                    
+                    	fSpectrum->SetExplicitMinSize(BSize(350, 0));
+                        fSpectrum->SetExplicitMaxSize(BSize(350, 0));
+                        fSpectrum->SetExplicitPreferredSize(BSize(350, 0));                    
                     
   			}
              
@@ -5151,9 +5172,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     				fVolumeSlider->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
                     
                     if (cfg.showSpectrumVisuals) {
-                    	fSpectrum->SetExplicitMinSize(BSize(350, 100));
-                        fSpectrum->SetExplicitMaxSize(BSize(350, 100));
-                        fSpectrum->SetExplicitPreferredSize(BSize(350, 100));
+                    	fSpectrum->SetExplicitMinSize(BSize(375, 120));
+                        fSpectrum->SetExplicitMaxSize(BSize(375, 120));
+                        fSpectrum->SetExplicitPreferredSize(BSize(375, 120));
                         
                     }
                     
@@ -5163,9 +5184,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                         fSpectrum->SetExplicitPreferredSize(BSize(350, 1));     
                         
                     if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {
-                        fMetaAndSpectrumStack->SetExplicitMinSize(BSize(350, 1));
-                        fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(350, 1));
-                        fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(350, 1));
+                        fMetaAndSpectrumStack->SetExplicitMinSize(BSize(350, 0));
+                        fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(350, 0));
+                        fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(350, 0));
                     }
                    }
                 }
@@ -5694,7 +5715,12 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		#endif
 //--------------------------------- Projectm     
 
-
+        case B_COLORS_UPDATED: {
+            if (cfg.updateTheme == "Default") {
+                ApplyTheme();
+            }
+            break;
+        }
 
 
 
