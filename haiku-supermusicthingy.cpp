@@ -2951,7 +2951,6 @@ private:
     float     fCloudY[3];
     float     fCloudSize[3];
 
-    // --- FIX COMPLETE: Explicit dimensions declared so compiler sees arrays ---
     float     fSparkX[12];       
     float     fSparkY[12];
     float     fSparkDX[12];      
@@ -2995,7 +2994,7 @@ public:
         SetWordWrap(true);
         SetAlignment(B_ALIGN_CENTER);
         SetInsets(2, 2, 2, 2); 
-        //SetExplicitMinSize(BSize(B_SIZE_UNSET, 50));        
+   
         fScrollOffset = 0.0f;
         fWaitTicks = 0;
         fIsWrapped = true;
@@ -3368,7 +3367,7 @@ void SuperMusicWindow::ApplyTheme() {
         // without invoking dangerous recursive function deadlocks.
         int totalPasses = (cfg.updateTheme == "Default") ? 2 : 1;
 
-        // FIXED NAME MATCH: Changed totalRequiredPasses to totalPasses
+
         for (int pass = 1; pass <= totalPasses; pass++) {
             if (cfg.updateTheme == "Dark" || (cfg.updateTheme == "Default" && pass == 1)) {
 
@@ -3486,9 +3485,9 @@ void SuperMusicWindow::ApplyTheme() {
             }
 
             if (fTabView) fTabView->Invalidate();
-        } // --- End of For Loop Pass ---
+        } 
 
-        Unlock(); // Release lock safely at the absolute end of execution
+        Unlock(); 
     }
 }
 
@@ -5606,10 +5605,10 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
     		
     		// Allow the hover glow padding zone to protect borders by applying padding size modifiers
-    
-            float paddedBtnSize = btnSize + (12.0f * scale);
-            float paddedFavSize = favSize + (12.0f * scale);
-    		
+
+    		float paddedBtnSize = cfg.compactMode ? btnSize + (12.0f * scale) : btnSize + (16.0f * scale);
+    		float paddedFavSize = cfg.compactMode ? favSize + (12.0f * scale) : favSize + (16.0f * scale);
+
     		if (fBtnAddFav) {
                 fBtnAddFav->SetExplicitSize(BSize(paddedFavSize, paddedFavSize));
             }
@@ -6499,8 +6498,8 @@ int32 mpv_loop_thread(void* data) {
             mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &fade_start_vol);
             fade_target_vol = user_base_volume; // Target whatever slider setting user has
             fade_start_time = system_time();    // Capture high precision Haiku microsecond timestamp
-            //fade_duration_us = 546000;         // 780ms 
-            fade_duration_us = 160000;         // 160ms 
+            fade_duration_us = 546000;         // 780ms 
+            //fade_duration_us = 160000;         // 160ms 
             is_fading = true;
         }
         
@@ -6858,9 +6857,7 @@ void SuperMusicApp::MessageReceived(BMessage* message) {
                 win->PostMessage(message);
             }
             break;
-            
-
-            
+           
         }
         default:
             BApplication::MessageReceived(message);
