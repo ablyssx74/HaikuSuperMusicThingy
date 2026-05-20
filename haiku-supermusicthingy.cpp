@@ -170,9 +170,23 @@ BBitmap* GetVectorIcon(const unsigned char* data, size_t size, float dimensions)
 class IconButton : public BButton {
 public:
     IconButton(const char* name, BBitmap* icon, BMessage* msg)
-        : BButton(name, "", msg), fIcon(icon), fIsFavorite(false) 
+        : BButton(name, "", msg), fIcon(icon), fIsFavorite(false),
+          fIsHovered(false), fHoverAlpha(0.0f), fLastTime(system_time())
     {
         SetViewColor(B_TRANSPARENT_COLOR);
+        SetFlags(Flags() | B_POINTER_EVENTS);
+    }
+
+    // --- NEW: TELL HAIKU TO ALLOCATE EXTRA DRAWING ROOM ---
+    void GetPreferredSize(float* width, float* height) override {
+        if (fIcon) {
+            // Provide an extra 16 pixels of margin beyond the icon size
+            // This ensures the 8px glow ring never hits the bounding box edge
+            *width = fIcon->Bounds().Width() + 16.0f;
+            *height = fIcon->Bounds().Height() + 16.0f;
+        } else {
+            BButton::GetPreferredSize(width, height);
+        }
     }
 
     void SetFavorite(bool fav) {
@@ -182,44 +196,122 @@ public:
         }
     }
 
-void Draw(BRect updateRect) override {
-    if (fIcon) {
+    // Call this whenever you swap icons between 64 and 40 to force a layout refresh
+    void UpdateIcon(BBitmap* newIcon) {
+        fIcon = newIcon;
+        InvalidateLayout(); // Tells parent group to re-evaluate GetPreferredSize()
+        Invalidate();
+    }
+
+    void MouseMoved(BPoint point, uint32 transit, const BMessage* message) override {
+        BButton::MouseMoved(point, transit, message);
+        
+        bool wasHovered = fIsHovered;
+        if (transit == B_ENTERED_VIEW) {
+            fIsHovered = true;
+        } else if (transit == B_EXITED_VIEW) {
+            fIsHovered = false;
+        }
+        
+        if (wasHovered != fIsHovered) {
+            Invalidate();
+        }
+    }
+
+    void Draw(BRect updateRect) override {
         BRect b = Bounds();
-        float x = (b.Width() - fIcon->Bounds().Width()) / 2.0f;
-        float y = (b.Height() - fIcon->Bounds().Height()) / 2.0f;
+        float x = fIcon ? (b.Width() - fIcon->Bounds().Width()) / 2.0f : 0.0f;
+        float y = fIcon ? (b.Height() - fIcon->Bounds().Height()) / 2.0f : 0.0f;
 
         if (Value() == B_CONTROL_ON) {
             x += 1.0f;
             y += 1.0f;
         }
 
-        bool isFavBtn = (strcmp(Name(), "btn_add_fav") == 0);
+        bigtime_t currentTime = system_time();
+        float deltaTime = (float)(currentTime - fLastTime) / 1000000.0f;
+        fLastTime = currentTime;
 
-        if (isFavBtn) {
-            if (fIsFavorite) {
-                SetDrawingMode(B_OP_ALPHA);
-                SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
-            } else {
-                SetDrawingMode(B_OP_BLEND);
-            }
+        if (deltaTime > 0.1f) deltaTime = 0.1f;
+
+        const float fadeSpeed = 1.8f; 
+        if (fIsHovered) {
+            fHoverAlpha += deltaTime * fadeSpeed;
+            if (fHoverAlpha > 1.0f) fHoverAlpha = 1.0f;
         } else {
+            fHoverAlpha -= deltaTime * fadeSpeed;
+            if (fHoverAlpha < 0.0f) fHoverAlpha = 0.0f;
+        }
+
+        if (fHoverAlpha > 0.0f && fHoverAlpha < 1.0f) {
+            Invalidate();
+        }
+
+        rgb_color bgCol = (Parent() != nullptr) ? Parent()->ViewColor() : ui_color(B_PANEL_BACKGROUND_COLOR);
+
+        // --- 2. RENDER HOVER GLOW LAYER (DYNAMICALLY SCALED) ---
+        if (fHoverAlpha > 0.0f && IsEnabled() && fIcon) {
             SetDrawingMode(B_OP_ALPHA);
-            SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
             
-            if (!IsEnabled()) {
-                SetDrawingMode(B_OP_BLEND);
+            rgb_color glowColor = {235, 235, 240, 255}; 
+            if (bgCol.red > 200 && bgCol.green > 200 && bgCol.blue > 200) {
+                glowColor = {40, 40, 45, 255}; 
+            }
+
+            float midX = b.Width() / 2.0f;
+            float midY = b.Height() / 2.0f;
+            
+            // Base radius attaches cleanly to the rim of either the 64px or 40px icon assets
+            float baseRadius = (fIcon->Bounds().Width() / 2.0f) + 1.0f;
+            const int glowSteps = 6;
+
+            // DYNAMIC SPREAD: Scale maximum glow ring width proportional to icon width
+            // This prevents a huge 8px halo from bloating over the smaller 40px circle
+            float maxGlowSpread = fIcon->Bounds().Width() * 0.125f; 
+
+            for (int step = 0; step < glowSteps; step++) {
+                float progress = (float)step / (float)glowSteps;
+                float radius = baseRadius + (progress * maxGlowSpread);
+                
+                float alphaFactor = 0.30f * (1.0f - cosf((1.0f - progress) * (float)M_PI)) * fHoverAlpha;
+                glowColor.alpha = (uint8)(255.0f * alphaFactor);
+                
+                SetHighColor(glowColor);
+                StrokeEllipse(BPoint(midX, midY), radius, radius);
             }
         }
-        
-        DrawBitmap(fIcon, BPoint(x, y));
-        SetDrawingMode(B_OP_COPY);
-    }
-}
 
+        // --- 3. RENDER THE ICON ---
+        if (fIcon) {
+            bool isFavBtn = (strcmp(Name(), "btn_add_fav") == 0);
+
+            if (isFavBtn) {
+                if (fIsFavorite) {
+                    SetDrawingMode(B_OP_ALPHA);
+                    SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+                } else {
+                    SetDrawingMode(B_OP_BLEND);
+                }
+            } else {
+                SetDrawingMode(B_OP_ALPHA);
+                SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+                
+                if (!IsEnabled()) {
+                    SetDrawingMode(B_OP_BLEND);
+                }
+            }
+            
+            DrawBitmap(fIcon, BPoint(x, y));
+            SetDrawingMode(B_OP_COPY);
+        }
+    }
 
 private:
     BBitmap* fIcon;
     bool fIsFavorite;
+    bool fIsHovered;
+    float fHoverAlpha;       
+    bigtime_t fLastTime;    
 };
 
 
@@ -5393,7 +5485,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                 ((SongLabel*)fSongView)->SetCompactMode(cfg.compactMode);
                 
                 if (cfg.compactMode) {
-
     		
                     float expandedWidth = 220.0f * scale; 
                     fSongView->SetExplicitMinSize(BSize(expandedWidth, B_SIZE_UNSET));
@@ -5420,7 +5511,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                         		fSpectrum->SetExplicitMaxSize(BSize(350, 100));
                         		fSpectrum->SetExplicitPreferredSize(BSize(350, 100));
                         		//fSpectrum->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_MIDDLE));
-    							//this->InvalidateLayout(true);
+    							//this->InvalidateLayout(true);                   
                         		
                     		}
                         		
@@ -5437,7 +5528,10 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                         		
                     	    }
                     	    if (cfg.compactModeDesc && cfg.compactModeTitle) {
-
+    					  //float expandedWidth = 350.0f * scale; 		
+    					  //fSpectrum->SetExplicitMinSize(BSize(expandedWidth, 100.0f * scale));
+                          //fSpectrum->SetExplicitMaxSize(BSize(expandedWidth, 100.0f * scale));
+                    	 // fSpectrum->SetExplicitPreferredSize(BSize(expandedWidth, 100.0f * scale));
                         		fSpectrum->SetExplicitMinSize(BSize(350, 100));
                         		fSpectrum->SetExplicitMaxSize(BSize(350, 100));
                         		fSpectrum->SetExplicitPreferredSize(BSize(350, 100));                         		
@@ -5503,23 +5597,28 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                 }
             }
 
-			if (fBtnAddFav) {
-        		BSize favTargetSize(favSize, favSize);
-        		fBtnAddFav->SetExplicitSize(favTargetSize);
-        		fBtnAddFav->SetExplicitMinSize(favTargetSize);
-        		fBtnAddFav->SetExplicitMaxSize(favTargetSize); 
-    		}
+
 
 			if (cfg.compactModeDesc && cfg.compactModeTitle) { artSize = cfg.compactMode ? (150 * scale) : (350 * scale); }
     		fArtView->SetExplicitSize(BSize(artSize, artSize));
     		fArtView->SetExplicitMinSize(BSize(artSize, artSize));
     		fArtView->SetExplicitMaxSize(BSize(artSize, artSize));
-    		fBtnAddFav->SetExplicitSize(BSize(favSize, favSize));
+
     		
-    		fStopBtn->SetExplicitSize(BSize(btnSize, btnSize));
-    		fPauseBtn->SetExplicitSize(BSize(btnSize, btnSize));
-    		fPlayBtn->SetExplicitSize(BSize(btnSize, btnSize)); 
-    		fShuffleBtn->SetExplicitSize(BSize(btnSize, btnSize));
+    		// Allow the hover glow padding zone to protect borders by applying padding size modifiers
+    
+            float paddedBtnSize = btnSize + (12.0f * scale);
+            float paddedFavSize = favSize + (12.0f * scale);
+    		
+    		if (fBtnAddFav) {
+                fBtnAddFav->SetExplicitSize(BSize(paddedFavSize, paddedFavSize));
+            }
+    		
+    		if (fBtnAddFav) fBtnAddFav->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize));
+            if (fStopBtn)    fStopBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize));
+            if (fPauseBtn)   fPauseBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize));
+            if (fPlayBtn)    fPlayBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize)); 
+            if (fShuffleBtn) fShuffleBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize));
 
     		// 7. Toggle Tabs and Extra Info
     		if (cfg.compactMode) {
@@ -5582,6 +5681,14 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
     		fArtView->InvalidateLayout();
     		fPlayerGroup->InvalidateLayout();
+    		
+    	    // Force the custom buttons to adjust their inner render constraints
+            if (fPlayBtn) fPlayBtn->InvalidateLayout();
+            if (fPauseBtn) fPauseBtn->InvalidateLayout();
+            if (fStopBtn) fStopBtn->InvalidateLayout();
+            if (fShuffleBtn) fShuffleBtn->InvalidateLayout();
+            if (fBtnAddFav) fBtnAddFav->InvalidateLayout();
+    		
     		this->Layout(true); 
     		ApplyTheme(); 
     		
