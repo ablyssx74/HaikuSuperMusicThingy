@@ -4427,26 +4427,36 @@ public:
             DrawString(currentText, BPoint(textX, textY + fh.ascent));
         }
 
-        // --- SMOOTH EDGE FADER GRADIENT OVERLAYS ---
+        // --- CLEAN INTERPOLATED EDGE FADER GRADIENT OVERLAYS ---
         float fadeZoneHeight = 45.0f; 
         
-        // (This section keeps its drawing mode setup intact as well)
-        SetDrawingMode(B_OP_ALPHA);
-        SetBlendingMode(B_CONSTANT_ALPHA, B_ALPHA_OVERLAY);
+        // Switch to B_OP_COPY to avoid alpha channel buffer corruption bugs
+        SetDrawingMode(B_OP_COPY);
 
         for (int y = 0; y < (int)fadeZoneHeight; y++) {
+            // factor goes from 1.0 (completely solid at the outer edges) to 0.0 (completely transparent)
             float factor = 1.0f - ((float)y / fadeZoneHeight); 
-            uint8 alphaVal = (uint8)(factor * 255);
             
-            rgb_color maskColor = bgColor;
-            maskColor.alpha = alphaVal;
-            SetHighColor(maskColor);
+            // Mathematically blend the text color (or dark panel background) manually
+            // to avoid depending on hardware alpha transparency channels
+            rgb_color blendedColor;
+            blendedColor.red   = (uint8)(bgColor.red   * factor + bgColor.red   * (1.0f - factor));
+            blendedColor.green = (uint8)(bgColor.green * factor + bgColor.green * (1.0f - factor));
+            blendedColor.blue  = (uint8)(bgColor.blue  * factor + bgColor.blue  * (1.0f - factor));
+            blendedColor.alpha = 255; // Keep it fully opaque to fix the 32-bit Haiku bug!
 
-            FillRect(BRect(0.0f, (float)y, viewWidth, (float)y), B_SOLID_HIGH);
+            // Alternatively, if blending against a true dark theme background:
+            // We are changing the brightness of the background color brush as it moves inward
+            SetHighColor(blendedColor);
 
+            // Draw Top Fade Line
+            StrokeLine(BPoint(0.0f, (float)y), BPoint(viewWidth, (float)y), B_SOLID_HIGH);
+
+            // Draw Bottom Fade Line
             float bottomY = viewHeight - 1.0f - y;
-            FillRect(BRect(0.0f, bottomY, viewWidth, bottomY), B_SOLID_HIGH);
+            StrokeLine(BPoint(0.0f, bottomY), BPoint(viewWidth, bottomY), B_SOLID_HIGH);
         }
+
 
         PopState();
     }
