@@ -140,12 +140,12 @@ public:
     void UpdateMPVFilters(); 	
     void ApplyPreset(const float* values); 
 	void UpdateTrayState(bool enabled, bool hideWindow = true);
-
+	void ResizeWindowToFit();
 	
 	  
 private:
 
-
+	
 	BGroupView* fMetaAndSpectrumStack = nullptr; 
 	BTab* fRadioTab = nullptr; 
     BTab* fStationTab = nullptr; 
