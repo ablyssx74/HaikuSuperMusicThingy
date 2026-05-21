@@ -197,7 +197,20 @@ public:
         if (wasHovered != fIsHovered) Invalidate();
     }
 
-     virtual void Draw(BRect updateRect) override {
+         virtual void Draw(BRect updateRect) override {
+         	
+        // Fetch the native system color map dynamically to handle active Haiku themes cleanly
+        rgb_color bgCol = (Parent() != nullptr) ? Parent()->ViewColor() : ui_color(B_PANEL_BACKGROUND_COLOR);
+
+        // --- MIMIC DEFAULT THEME ENVIRONMENT ---
+        // Since SetViewColor is B_TRANSPARENT_COLOR, we must manually clear the updateRect
+        // with the true background color. This ensures B_OP_MIN has clean pixels to blend with,
+        // completely eliminating the green smudge on un-themed window backgrounds!
+        SetHighColor(bgCol);
+        SetDrawingMode(B_OP_COPY); // Direct overwrite paint
+        FillRect(updateRect);
+        
+        
         float cx = Bounds().Width() / 2.0f;
         float cy = Bounds().Height() / 2.0f;
         float radius = std::min(cx, cy) - 2.0f; 
@@ -225,7 +238,6 @@ public:
             Invalidate();
         }
 
-        rgb_color bgCol = (Parent() != nullptr) ? Parent()->ViewColor() : ui_color(B_PANEL_BACKGROUND_COLOR);
         bool isLightTheme = (bgCol.red > 150 && bgCol.green > 150 && bgCol.blue > 150);
 
         PushState();
@@ -244,12 +256,16 @@ public:
                 cy + (mHeight / 2.0f)
             );
 
-            // --- PALETTE VARIABLES RE-DECLARED HERE ---
             rgb_color neonLime  = {65, 255, 75, 255};   
             rgb_color neonCyan  = {0, 220, 255, 255};    
-            rgb_color dimUnlit  = isLightTheme ? rgb_color{200, 200, 205, 255} : rgb_color{45, 45, 48, 255};
 
             for (int i = 0; i <= 100; i += 5) {
+                // --- CRUCIAL FILTER CHANGE ---
+                // Only process active lit angles. Skipping unlit angles entirely
+                // eliminates the dark background contrail calculation block.
+                bool isLit = !fIsMuted && (Value() > 0 && i <= Value());
+                if (!isLit) continue;
+
                 float angleDeg = startAngle + (totalSweep * (i / 100.0f));
                 float angleRad = angleDeg * (M_PI / 180.0f);
 
@@ -260,32 +276,21 @@ public:
                 SetDrawingMode(B_OP_ALPHA);
                 SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
 
-                bool isLit = !fIsMuted && (Value() > 0 && i <= Value());
-
-                if (isLit) {
-                    float mixRatio = (float)i / 100.0f;
-                    rgb_color finalNeon = neonLime;
-                    if (mixRatio > 0.5f) {
-                        float factor = (mixRatio - 0.5f) * 2.0f;
-                        finalNeon.red   = (uint8)(neonLime.red * (1.0f - factor) + neonCyan.red * factor);
-                        finalNeon.green = (uint8)(neonLime.green * (1.0f - factor) + neonCyan.green * factor);
-                        finalNeon.blue  = (uint8)(neonLime.blue * (1.0f - factor) + neonCyan.blue * factor);
-                    }
-
-                    SetDrawingMode(B_OP_ALPHA);
-                    DrawBitmap(fTickIcon, tickBounds, destRect, B_FILTER_BITMAP_BILINEAR);
-                    
-                    SetDrawingMode(B_OP_MIN);
-                    SetHighColor(finalNeon);
-                    FillRect(destRect);
-                } 
-                else {
-                    SetDrawingMode(B_OP_ALPHA);
-                    SetHighColor(dimUnlit);
-                    DrawBitmap(fTickIcon, tickBounds, destRect, B_FILTER_BITMAP_BILINEAR);
-                    SetDrawingMode(B_OP_MIN);
-                    FillRect(destRect);
+                float mixRatio = (float)i / 100.0f;
+                rgb_color finalNeon = neonLime;
+                if (mixRatio > 0.5f) {
+                    float factor = (mixRatio - 0.5f) * 2.0f;
+                    finalNeon.red   = (uint8)(neonLime.red * (1.0f - factor) + neonCyan.red * factor);
+                    finalNeon.green = (uint8)(neonLime.green * (1.0f - factor) + neonCyan.green * factor);
+                    finalNeon.blue  = (uint8)(neonLime.blue * (1.0f - factor) + neonCyan.blue * factor);
                 }
+
+                SetDrawingMode(B_OP_ALPHA);
+                DrawBitmap(fTickIcon, tickBounds, destRect, B_FILTER_BITMAP_BILINEAR);
+                
+                SetDrawingMode(B_OP_MIN);
+                SetHighColor(finalNeon);
+                FillRect(destRect);
 
                 SetTransform(BAffineTransform()); 
             }
@@ -332,6 +337,7 @@ public:
         
         SetDrawingMode(B_OP_COPY);
     }
+
 
 
     virtual void MouseDown(BPoint point) override {
@@ -1232,8 +1238,7 @@ public:
         }
     }
     
-    BShape GenerateNeonLetterShape(int letterIndex, BPoint origin, float scale)
-{
+BShape GenerateNeonLetterShape(int letterIndex, BPoint origin, float scale) {
     BShape shape;
     shape.Clear();
 
