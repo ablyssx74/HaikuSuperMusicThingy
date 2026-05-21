@@ -316,7 +316,6 @@ public:
 
                 SetTransform(BAffineTransform()); 
             }
-
         }
 
         PopState(); 
