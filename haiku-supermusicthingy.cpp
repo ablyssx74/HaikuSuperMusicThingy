@@ -4403,7 +4403,7 @@ public:
             // --- DYNAMIC THEME COLOR EVALUATOR ---
             rgb_color textColor;
             rgb_color headerColor;
-			if (cfg.updateTheme == "Dark") {
+			if (cfg.uTheme == "Dark") {
                 textColor = make_color(255, 255, 255, 255);
                 headerColor = make_color(240, 180, 40, 255); 
             } else {
