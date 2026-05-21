@@ -33,6 +33,7 @@
 #include <Window.h>
 #include <Control.h>
 #include <AffineTransform.h>
+#include <interface/Shape.h>
 
 
 // --- Haiku Storage Kit ---
@@ -1124,7 +1125,11 @@ public:
 		fStuntTextLife = 0;
 		fStuntTextStr = "";
 
-
+		//Neon Sign
+		fNeonBassSmooth = 0.0f;
+		fNeonTrebleSmooth = 0.0f;
+		fNeonFlickerTimer1 = 0.0f;
+		fNeonFlickerTimer2 = 0.0f;
 		
 		// Force a staggering pipeline gap so obstacles do not stack on top of each other
 		fObsX[0] = 340.0f;
@@ -1226,6 +1231,55 @@ public:
                 break;
         }
     }
+    
+    BShape GenerateNeonLetterShape(int letterIndex, BPoint origin, float scale)
+{
+    BShape shape;
+    shape.Clear();
+
+    // Box metrics for structural letter layouts (40x60 base box size)
+    float w = 40.0f * scale;
+    float h = 60.0f * scale;
+
+    switch (letterIndex) {
+        case 0: // --- LETTER 'O' (Rounded continuous pill capsule) ---
+            shape.MoveTo(BPoint(origin.x + w / 2.0f, origin.y));
+            // Top-right arch, bottom-right arch, bottom-left arch, top-left arch
+            shape.BezierTo(BPoint(origin.x + w, origin.y), BPoint(origin.x + w, origin.y + h / 3.0f), BPoint(origin.x + w, origin.y + h / 2.0f));
+            shape.BezierTo(BPoint(origin.x + w, origin.y + h * 2.0f / 3.0f), BPoint(origin.x + w, origin.y + h), BPoint(origin.x + w / 2.0f, origin.y + h));
+            shape.BezierTo(BPoint(origin.x, origin.y + h), BPoint(origin.x, origin.y + h * 2.0f / 3.0f), BPoint(origin.x, origin.y + h / 2.0f));
+            shape.BezierTo(BPoint(origin.x, origin.y + h / 3.0f), BPoint(origin.x, origin.y), BPoint(origin.x + w / 2.0f, origin.y));
+            break;
+
+        case 1: // --- LETTER 'P' (Vertical stem + loop filament) ---
+            shape.MoveTo(BPoint(origin.x, origin.y + h));
+            shape.LineTo(BPoint(origin.x, origin.y));
+            shape.LineTo(BPoint(origin.x + w * 0.6f, origin.y));
+            shape.BezierTo(BPoint(origin.x + w, origin.y), BPoint(origin.x + w, origin.y + h * 0.5f), BPoint(origin.x + w * 0.6f, origin.y + h * 0.5f));
+            shape.LineTo(BPoint(origin.x, origin.y + h * 0.5f));
+            break;
+
+        case 2: // --- LETTER 'E' (Backbone with three horizontal tube tracks) ---
+            shape.MoveTo(BPoint(origin.x + w, origin.y));
+            shape.LineTo(BPoint(origin.x, origin.y));
+            shape.LineTo(BPoint(origin.x, origin.y + h));
+            shape.LineTo(BPoint(origin.x + w, origin.y + h));
+            // Jump internal pen position to trace out the center filament ring
+            shape.MoveTo(BPoint(origin.x, origin.y + h * 0.5f));
+            shape.LineTo(BPoint(origin.x + w * 0.75f, origin.y + h * 0.5f));
+            break;
+
+        case 3: // --- LETTER 'N' (Double upright pillars + diagonal cross connection) ---
+            shape.MoveTo(BPoint(origin.x, origin.y + h));
+            shape.LineTo(BPoint(origin.x, origin.y));
+            shape.LineTo(BPoint(origin.x + w, origin.y + h));
+            shape.LineTo(BPoint(origin.x + w, origin.y));
+            break;
+    }
+
+    return shape;
+}
+
 
     
 void UpdateLevel(double level) {
@@ -1445,13 +1499,16 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
             // Fetch system double click count 
             message->FindInt32("clicks", &clicks);
 
+            // --- RIGHT CLICK: CYCLE MODES ---
             if (buttons & B_SECONDARY_MOUSE_BUTTON) {
                 fVisualizerMode = (fVisualizerMode + 1) % MODE_COUNT;
                 Invalidate();
                 return; 
             }
             
+            // --- LEFT CLICK: MODE INTERACTIONS ---
             if (buttons & B_PRIMARY_MOUSE_BUTTON) {
+                // 1. MOTO RIDER INTERACTION
                 if (fVisualizerMode == MODE_MOTO_RIDER && fMotoCrashTicks == 0) {
                     // --- DOUBLE CLICK IN THE AIR = TRIGGER/CHAIN FLIPS ---
                     if (clicks >= 2 && fMotoY > 0.05f) {
@@ -1460,7 +1517,6 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
                         fMotoVelocityY += 2.0f; 
                         return;
                     }
-
                     
                     // --- SINGLE CLICK ON THE GROUND = REGULAR JUMP ---
                     if (fMotoY <= 0.05f) {
@@ -1470,13 +1526,24 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
                     }
                 }
 
+                // 2. PONG BALLS INTERACTION
                 if (fVisualizerMode == MODE_PONG_BALLS) {
                     return; 
+                }
+
+                // 3. NEW NEON SIGN INTERACTION: MANUAL POWER SURGE FLICKER
+                if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
+                    // Force-inject electrical sputter timing phases to cross-trigger instantly
+                    fNeonFlickerTimer1 = 0.25f; // Sputter "We're" for 250ms
+                    fNeonFlickerTimer2 = 0.35f; // Sputter "OPEN" for 350ms
+                    Invalidate(); // Instantly push a rendering redraw tick frame
+                    return;
                 }
             }
         }
         BView::MouseDown(point);
     }
+
 
 
 
@@ -1799,7 +1866,6 @@ virtual void Pulse() override {
 
 
 
-
         // ====================================================================
         // 4. MODE 5 RAINDROPS PHYSICS UPDATES
         // ====================================================================
@@ -1814,6 +1880,58 @@ virtual void Pulse() override {
                 }
             }
         }
+
+
+              // ====================================================================
+        // 4.5 MODE 6 NEON SIGN GAS PHYSICS ENGINE
+        // ====================================================================
+        if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
+            // Read active transient sub-band clusters
+            float totalBass = 0.0f;
+            float totalTreble = 0.0f;
+            
+            // Dynamic delta calculation prevents freeze-ups on lag spikes
+            float dt = 0.016f; 
+            
+            // Apply gVolumeScaleFactor to match your bar draw logic exactly
+            float volumeScale = gVolumeScaleFactor;
+
+            for (int b = 0; b < 12; b++)  totalBass += (fBarHeights[b] * volumeScale);
+            for (int t = 35; t < 55; t++) totalTreble += (fBarHeights[t] * volumeScale);
+            
+            // --- FIX: Extract structural viewport boundaries via Haiku API ---
+            float viewBoundsHeight = Bounds().Height();
+            if (viewBoundsHeight <= 0.0f) viewBoundsHeight = 1.0f; // Division-by-zero protection
+
+            float targetBass = (totalBass / 12.0f) / viewBoundsHeight;
+            float targetTreble = (totalTreble / 20.0f) / viewBoundsHeight;
+            
+            if (targetBass > 1.0f)   targetBass = 1.0f;
+            if (targetTreble > 1.0f) targetTreble = 1.0f;
+
+            // Cap-smoothing matches frame metrics cleanly
+            fNeonBassSmooth   += (targetBass - fNeonBassSmooth) * 0.20f;
+            fNeonTrebleSmooth += (targetTreble - fNeonTrebleSmooth) * 0.25f;
+
+            // Tick down flicker duration timers using true time delta
+            if (fNeonFlickerTimer1 > 0.0f) fNeonFlickerTimer1 -= dt;
+            if (fNeonFlickerTimer2 > 0.0f) fNeonFlickerTimer2 -= dt;
+
+            int noiseRoll = rand() % 100;
+
+            // Trigger flicker bursts organically based on music transients
+            if (fNeonFlickerTimer1 <= 0.0f && targetTreble > 0.40f && noiseRoll > 90) {
+                fNeonFlickerTimer1 = 0.10f + ((rand() % 100) / 400.0f); 
+            }
+
+            if (fNeonFlickerTimer2 <= 0.0f && targetBass > 0.50f && noiseRoll > 94) {
+                fNeonFlickerTimer2 = 0.06f + ((rand() % 100) / 500.0f); 
+            }
+            Window()->Lock();
+            Invalidate();
+            Window()->Unlock();
+        }
+
 
   		// ====================================================================
         // 5. MODE 6: MULTI-OBSTACLE PHYSICS ENGINE, SCORE TRACKER & BACKFIRE
@@ -2093,6 +2211,19 @@ virtual void Pulse() override {
 
         Invalidate(); 
     }
+
+
+
+void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
+    // FIX: Assign each unique control point to its own explicit array index slot
+    BPoint controlArray[3];
+    controlArray[0] = cp1;
+    controlArray[1] = cp2;
+    controlArray[2] = endPoint;
+    
+    shape.BezierTo(controlArray);
+}
+
 
 
 
@@ -2897,6 +3028,166 @@ virtual void Pulse() override {
             SetPenSize(1.0f);
         }
 
+        else if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
+            SetDrawingMode(B_OP_ALPHA);
+           
+
+            float centerWindowX = startX + (artworkWidth / 2.0f);
+            float centerWindowY = height / 2.0f;
+            
+            float signScaleFactor = (artworkWidth / 320.0f);
+            if (signScaleFactor > 1.2f)  signScaleFactor = 1.2f;
+            if (signScaleFactor < 0.65f) signScaleFactor = 0.65f;
+
+            // --- 2D ORGANIC SHIMMER ENGINE ---
+            bigtime_t sysTime = system_time();
+            const float basePeriodSeconds = 8.0f; 
+            float timeSeconds = (float)sysTime / 1000000.0f;
+            float wavePhase = (timeSeconds / basePeriodSeconds) * 2.0f * (float)M_PI;
+            
+            float shimmerCenterX = (0.5f + 0.5f * sinf(wavePhase)) * (float)numBars;
+            float shimmerCenterY = (0.5f + 0.5f * cosf(wavePhase * 1.4f)) * height;
+
+            const float shimmerHalfWidthX = 12.0f;
+            const float shimmerHalfWidthY = height * 0.4f; 
+
+            float bassDrive = fNeonBassSmooth;
+            bool gasFlicker2 = (fNeonFlickerTimer2 > 0.0f) && ((rand() % 100) > 45);
+
+            float auraPulseIntensity = 0.35f + (bassDrive * 0.65f);
+
+            PushState();
+            SetFlags(Flags() | B_SUBPIXEL_PRECISE);
+            
+            // Layout metrics for vector tube boxes
+            float letterWidth = 40.0f * signScaleFactor;
+            float letterPadding = 12.0f * signScaleFactor;
+            float totalOpenWidth = (letterWidth * 4.0f) + (letterPadding * 3.0f);
+            
+            // Re-centered vertically since the top cursive element is gone
+            BPoint posOpen(centerWindowX - (totalOpenWidth / 2.0f), centerWindowY - (30.0f * signScaleFactor));
+
+            // --- LAYER 1: BACKDROP AMBIENT WALL GLOW ---
+            SetLineMode(B_ROUND_CAP, B_ROUND_JOIN);
+            
+            float openPulse = auraPulseIntensity * (gasFlicker2 ? 0.35f : 1.0f);
+            
+            // --- THICKNESS BOOST ---
+            // Increased wide aura glow pen size from 16.0f to 26.0f
+            SetPenSize(26.0f * signScaleFactor); 
+
+            for (int i = 0; i < 4; i++) {
+                float letterX = posOpen.x + (i * (letterWidth + letterPadding));
+                float letterCenterX = letterX + (letterWidth / 2.0f);
+                float letterCenterY = posOpen.y + (30.0f * signScaleFactor);
+
+                float openSegmentIndex = (letterCenterX - startX) / (artworkWidth / (float)numBars);
+                int openPaletteIdx = (int)((openSegmentIndex / (float)numBars) * 63.0f);
+                if (openPaletteIdx < 0) openPaletteIdx = 0;
+                if (openPaletteIdx >= numBars) openPaletteIdx = numBars - 1;
+                rgb_color openLetterColor = fArtworkPalette[openPaletteIdx];
+
+                float openDistX = fabsf(openSegmentIndex - shimmerCenterX);
+                float openDistY = fabsf(letterCenterY - shimmerCenterY);
+                float openShimmerIntensity = 0.0f;
+
+                if (openDistX < shimmerHalfWidthX && openDistY < shimmerHalfWidthY) {
+                    float normX = openDistX / shimmerHalfWidthX;
+                    float intensityX = 0.5f * (1.0f + cosf(normX * (float)M_PI));
+                    float normY = openDistY / shimmerHalfWidthY;
+                    float intensityY = 0.5f * (1.0f + cosf(normY * (float)M_PI));
+                    openShimmerIntensity = intensityX * intensityY;
+                }
+                int16 openLightBoost = 25 + (int16)(75.0f * openShimmerIntensity);
+
+                rgb_color letterAuraColor = openLetterColor;
+                letterAuraColor.red   = (uint8)min_c(255, letterAuraColor.red   + (openLightBoost / 2));
+                letterAuraColor.green = (uint8)min_c(255, letterAuraColor.green + (openLightBoost / 2));
+                letterAuraColor.blue  = (uint8)min_c(255, letterAuraColor.blue  + (openLightBoost / 2));
+                letterAuraColor.alpha = (uint8)(50.0f * openPulse);
+
+                SetHighColor(letterAuraColor);
+                BShape letterShape = GenerateNeonLetterShape(i, BPoint(letterX, posOpen.y), signScaleFactor);
+                StrokeShape(&letterShape);
+            }
+
+            // --- LAYER 2: INTERMEDIATE MAIN COLOR GAS TUBE ---
+            SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+
+            // --- THICKNESS BOOST ---
+            // Increased color glass tube gas core pen size from 5.0f to 9.5f
+            SetPenSize(9.5f * signScaleFactor); 
+            
+            for (int i = 0; i < 4; i++) {
+                float letterX = posOpen.x + (i * (letterWidth + letterPadding));
+                float letterCenterX = letterX + (letterWidth / 2.0f);
+                float letterCenterY = posOpen.y + (30.0f * signScaleFactor);
+
+                float openSegmentIndex = (letterCenterX - startX) / (artworkWidth / (float)numBars);
+                int openPaletteIdx = (int)((openSegmentIndex / (float)numBars) * 63.0f);
+                if (openPaletteIdx < 0) openPaletteIdx = 0;
+                if (openPaletteIdx >= numBars) openPaletteIdx = numBars - 1;
+                rgb_color openLetterColor = fArtworkPalette[openPaletteIdx];
+
+                float openDistX = fabsf(openSegmentIndex - shimmerCenterX);
+                float openDistY = fabsf(letterCenterY - shimmerCenterY);
+                float openShimmerIntensity = 0.0f;
+
+                if (openDistX < shimmerHalfWidthX && openDistY < shimmerHalfWidthY) {
+                    float normX = openDistX / shimmerHalfWidthX;
+                    float intensityX = 0.5f * (1.0f + cosf(normX * (float)M_PI));
+                    float normY = openDistY / shimmerHalfWidthY;
+                    float intensityY = 0.5f * (1.0f + cosf(normY * (float)M_PI));
+                    openShimmerIntensity = intensityX * intensityY;
+                }
+                int16 openLightBoost = 25 + (int16)(75.0f * openShimmerIntensity);
+
+                rgb_color letterCoreColor = openLetterColor;
+                letterCoreColor.red   = (uint8)min_c(255, letterCoreColor.red   + openLightBoost);
+                letterCoreColor.green = (uint8)min_c(255, letterCoreColor.green + openLightBoost);
+                letterCoreColor.blue  = (uint8)min_c(255, letterCoreColor.blue  + openLightBoost);
+                letterCoreColor.alpha = gasFlicker2 ? (uint8)45 : (uint8)215;
+
+                SetHighColor(letterCoreColor);
+                BShape letterShape = GenerateNeonLetterShape(i, BPoint(letterX, posOpen.y), signScaleFactor);
+                StrokeShape(&letterShape);
+            }
+
+            // --- LAYER 3: INNER HOT CENTER FILAMENTS ---
+            // --- THICKNESS BOOST ---
+            // Increased hot inner filament stroke pen size from 1.5f to 2.8f
+            SetPenSize(2.8f * signScaleFactor); 
+            uint8 whiteAlphaValue = gasFlicker2 ? 80 : 190;
+
+            for (int i = 0; i < 4; i++) {
+                float letterX = posOpen.x + (i * (letterWidth + letterPadding));
+                float letterCenterX = letterX + (letterWidth / 2.0f);
+
+                float openSegmentIndex = (letterCenterX - startX) / (artworkWidth / (float)numBars);
+                int openPaletteIdx = (int)((openSegmentIndex / (float)numBars) * 63.0f);
+                if (openPaletteIdx < 0) openPaletteIdx = 0;
+                if (openPaletteIdx >= numBars) openPaletteIdx = numBars - 1;
+                rgb_color openLetterColor = fArtworkPalette[openPaletteIdx];
+
+                rgb_color blendedFilament;
+                blendedFilament.red   = (uint8)((openLetterColor.red   * 0.35f) + (255.0f * 0.65f));
+                blendedFilament.green = (uint8)((openLetterColor.green * 0.35f) + (255.0f * 0.65f));
+                blendedFilament.blue  = (uint8)((openLetterColor.blue  * 0.35f) + (255.0f * 0.65f));
+                blendedFilament.alpha = whiteAlphaValue;
+
+                SetHighColor(blendedFilament);
+                BShape letterShape = GenerateNeonLetterShape(i, BPoint(letterX, posOpen.y), signScaleFactor);
+                StrokeShape(&letterShape);
+            }
+
+            PopState();
+            SetDrawingMode(B_OP_COPY);
+            SetPenSize(1.0f);
+        }
+
+
+
+
         
 		else if (fVisualizerMode == MODE_MOTO_RIDER) {
             // Mode 6: Endless Motorcycle Runner with Parallax & Scoreboard Display
@@ -3263,6 +3554,14 @@ private:
     bool      fDogDrawActive;
     float     fDogDrawX;
     float     fDogDrawY;
+
+    float fNeonBassSmooth;    // Capacitor for smooth background aura pulse
+    float fNeonTrebleSmooth;  // Capacitor for crisp text flicker tracking
+    float fNeonFlickerTimer1; // Active cooling timer for "We're" sputter state
+    float fNeonFlickerTimer2; // Active cooling timer for "OPEN" sputter state
+    
+    
+
 };
 
 

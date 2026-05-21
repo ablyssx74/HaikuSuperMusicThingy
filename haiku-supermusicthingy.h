@@ -103,16 +103,16 @@ enum {
     MSG_SHUFFLE_FAVS_CHANGED = 'sfch',
     MSG_VOL_CHANGED= 'bvci',
     MSG_MUTE_TOGGLED = 'mute',
+    MSG_SHOW_TITLE = 'msct',
+    MSG_SHOW_DESC = 'mscd',
     MODE_BARS = 0,
     MODE_LINE_WAVE,
     MODE_LONG_WAVE, 
     MODE_PONG_BALLS, 
     MODE_RAINDROPS, 
     MODE_MOTO_RIDER,
-    MODE_COUNT,
-    MSG_SHOW_TITLE = 'msct',
-    MSG_SHOW_DESC = 'mscd'
- 
+    MODE_WERE_OPEN_NEON_SIGN,
+    MODE_COUNT
 };
 
 
