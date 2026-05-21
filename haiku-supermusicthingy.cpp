@@ -5,32 +5,32 @@
 
 // --- Haiku Interface Kit ---
 #include <Application.h>
-#include <Window.h>
-#include <View.h>
-#include <Message.h>
 #include <Bitmap.h>
-#include <TranslationUtils.h>
-#include <Notification.h>
-#include <PopUpMenu.h>
-#include <MenuItem.h>
-#include <MenuField.h>
 #include <CheckBox.h>
-#include <TextView.h>
-#include <map>
-#include <string>
-#include <ListView.h>
-#include <IconUtils.h>
-#include <Roster.h>
-#include <StringView.h>
 #include <ControlLook.h>
-#include <NodeInfo.h>
 #include <Deskbar.h>
 #include <Dragger.h>
-#include <MessageRunner.h>
+#include <IconUtils.h>
 #include <InterfaceDefs.h>
+#include <ListView.h>
+#include <map>
+#include <MenuItem.h>
+#include <MenuField.h>
+#include <Message.h>
+#include <MessageRunner.h>
+#include <NodeInfo.h>
+#include <Notification.h>
+#include <PopUpMenu.h>
+#include <TextView.h>
+#include <TranslationUtils.h>
 #include <Region.h>
+#include <Roster.h>
 #include <Slider.h>
+#include <string>
 #include <StringList.h>
+#include <StringView.h>
+#include <View.h>
+#include <Window.h>
 
 // --- Haiku Storage Kit ---
 #include <Path.h>
@@ -4305,7 +4305,6 @@ public:
     CreditsSlider(const char* name) : BView(name, B_WILL_DRAW | B_PULSE_NEEDED) {
         SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
         fScrollY = 0.0f;
-        fTicker = nullptr;
         
         // Populate text matrix lines
         fLines.Add(""); 
@@ -4330,36 +4329,33 @@ public:
     }
 
     ~CreditsSlider() {
-        delete fTicker;
+        // No asynchronous pointers to clean up anymore!
     }
 
     void AttachedToWindow() override {
         BView::AttachedToWindow();
-        BMessage tick(B_PULSE);
-        fTicker = new BMessageRunner(BMessenger(this), &tick, 35000, -1);
         if (Parent()) SetViewColor(Parent()->ViewColor());
+        
+        // Define the global window pulse interval in microseconds (35000 µs = 35ms)
+        if (Window()) Window()->SetPulseRate(35000);
     }
 
-    void MessageReceived(BMessage* message) override {
-        if (message->what == B_PULSE) {
-            fScrollY += 0.28f; 
-            
-            BFont textFont(be_plain_font);
-            font_height fh;
-            textFont.GetHeight(&fh);
-            float lineHeight = fh.ascent + fh.descent + fh.leading + 6.0f;
-            
-            // Calculate the exact height of just the text block itself (no empty screen adding)
-            float textBlockHeight = (fLines.CountStrings() * lineHeight);
+    void Pulse() override {
+        fScrollY += 0.28f; 
+        
+        BFont textFont(be_plain_font);
+        font_height fh;
+        textFont.GetHeight(&fh);
+        float lineHeight = fh.ascent + fh.descent + fh.leading + 6.0f;
+        
+        // Calculate the exact height of just the text block itself
+        float textBlockHeight = (fLines.CountStrings() * lineHeight);
 
-            // Add a small padding cushion (e.g., 40 pixels) for a clean pause before looping
-            if (fScrollY > (textBlockHeight + 40.0f)) {
-                fScrollY = 0.0f; // Instantly snap back to the top right away!
-            }
-            Invalidate();
-        } else {
-            BView::MessageReceived(message);
+        // Add a small padding cushion for a clean pause before looping
+        if (fScrollY > (textBlockHeight + 40.0f)) {
+            fScrollY = 0.0f; // Instantly snap back to the top right away!
         }
+        Invalidate();
     }
 
     BSize MinSize() override { return BSize(150.0f, 100.0f); }
@@ -4434,19 +4430,14 @@ public:
         SetDrawingMode(B_OP_COPY);
 
         for (int y = 0; y < (int)fadeZoneHeight; y++) {
-            // factor goes from 1.0 (completely solid at the outer edges) to 0.0 (completely transparent)
             float factor = 1.0f - ((float)y / fadeZoneHeight); 
             
-            // Mathematically blend the text color (or dark panel background) manually
-            // to avoid depending on hardware alpha transparency channels
             rgb_color blendedColor;
             blendedColor.red   = (uint8)(bgColor.red   * factor + bgColor.red   * (1.0f - factor));
             blendedColor.green = (uint8)(bgColor.green * factor + bgColor.green * (1.0f - factor));
             blendedColor.blue  = (uint8)(bgColor.blue  * factor + bgColor.blue  * (1.0f - factor));
             blendedColor.alpha = 255; // Keep it fully opaque to fix the 32-bit Haiku bug!
 
-            // Alternatively, if blending against a true dark theme background:
-            // We are changing the brightness of the background color brush as it moves inward
             SetHighColor(blendedColor);
 
             // Draw Top Fade Line
@@ -4457,16 +4448,14 @@ public:
             StrokeLine(BPoint(0.0f, bottomY), BPoint(viewWidth, bottomY), B_SOLID_HIGH);
         }
 
-
         PopState();
     }
 
-
 private:
     float          fScrollY;
-    BMessageRunner* fTicker;
     BStringList    fLines;
 };
+
 
 
 

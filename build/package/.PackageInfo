@@ -1,0 +1,32 @@
+name			HaikuSuperMusicThingy
+version			1.0.0-1
+architecture	x86_64
+summary 		"SomaFM music player"
+description 	"HaikuSuperMusicThingy is a free streaming media client for SomaFM. Fast, light, and fun!"
+packager		"ablyss <supermusicthingy@epluribusunix.net>"
+vendor			"Haiku Project"
+licenses {
+	"MIT"
+}
+copyrights {
+	"2026 ablyss"
+}
+provides {
+	HaikuSuperMusicThingy = 1.0.0-1
+}
+requires {
+	haiku
+	haiku_datatranslators
+	nlohmann_json
+	mpv
+	openal
+	curl
+	
+}	
+urls {
+	"https://github.com/ablyssx74/HaikuSuperMusicThingy"
+}
+source-urls {
+# Download
+	"https://github.com/ablyssx74/HaikuSuperMusicThingy/archive/refs/tags/v1.0.0.tar.gz"
+}
