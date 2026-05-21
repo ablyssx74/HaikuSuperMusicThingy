@@ -259,7 +259,7 @@ public:
             rgb_color neonLime  = {65, 255, 75, 255};   
             rgb_color neonCyan  = {0, 220, 255, 255};    
 
-            for (int i = 0; i <= 100; i += 5) {
+              for (int i = 0; i <= 100; i += 5) {
                 // --- CRUCIAL FILTER CHANGE ---
                 // Only process active lit angles. Skipping unlit angles entirely
                 // eliminates the dark background contrail calculation block.
@@ -273,9 +273,7 @@ public:
                 t.RotateBy(BPoint(cx, cy), angleRad);
                 SetTransform(t);
 
-                SetDrawingMode(B_OP_ALPHA);
-                SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
-
+                // Calculate the dynamic neon color matching your existing gradient logic
                 float mixRatio = (float)i / 100.0f;
                 rgb_color finalNeon = neonLime;
                 if (mixRatio > 0.5f) {
@@ -285,15 +283,40 @@ public:
                     finalNeon.blue  = (uint8)(neonLime.blue * (1.0f - factor) + neonCyan.blue * factor);
                 }
 
+                // --- FUTURE-PROOF OFFSCREEN BLENDING ---
+                // Create a temporary offscreen canvas matching the exact size of the tick icon
+                BBitmap tintCanvas(tickBounds, B_BITMAP_ACCEPTS_VIEWS, B_RGBA32);
+                BView* tintView = new BView(tickBounds, "tint_view", B_FOLLOW_NONE, B_WILL_DRAW);
+                tintCanvas.AddChild(tintView);
+
+                if (tintCanvas.Lock()) {
+                    // Clear the offscreen canvas with total transparency (0 alpha)
+                    tintView->SetHighColor(0, 0, 0, 0);
+                    tintView->FillRect(tickBounds, B_SOLID_HIGH);
+
+                    // 1. Draw your original gray/white tick icon into the buffer
+                    tintView->SetDrawingMode(B_OP_ALPHA);
+                    tintView->SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+                    tintView->DrawBitmap(fTickIcon, tickBounds, tickBounds, B_FILTER_BITMAP_BILINEAR);
+
+                    // 2. Run your original working dark-theme blending trick safely in isolation
+                    tintView->SetDrawingMode(B_OP_MIN);
+                    tintView->SetHighColor(finalNeon);
+                    tintView->FillRect(tickBounds);
+
+                    tintView->Sync();
+                    tintCanvas.Unlock();
+                }
+
+                // --- 3. STAMP THE FINAL COLORIZED TICK ONTO THE WINDOW ---
+                // This single pass uses standard alpha compositing and works flawlessly on any theme.
                 SetDrawingMode(B_OP_ALPHA);
-                DrawBitmap(fTickIcon, tickBounds, destRect, B_FILTER_BITMAP_BILINEAR);
-                
-                SetDrawingMode(B_OP_MIN);
-                SetHighColor(finalNeon);
-                FillRect(destRect);
+                SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+                DrawBitmap(&tintCanvas, tickBounds, destRect, B_FILTER_BITMAP_BILINEAR);
 
                 SetTransform(BAffineTransform()); 
             }
+
         }
 
         PopState(); 
