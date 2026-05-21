@@ -5820,7 +5820,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				}
 				
 				// Reset Spectrum Height to exact constructor fallback sizes
-				float normalSpectrumHeight = cfg.showSpectrumVisuals ? 150.0f : 0.0f;
+				float normalSpectrumHeight = cfg.showSpectrumVisuals && cfg.eqEnabled ? 150.0f : 0.0f;
 				fSpectrum->SetExplicitMinSize(BSize(350.0f * scale, normalSpectrumHeight));
 				fSpectrum->SetExplicitMaxSize(BSize(350.0f * scale, normalSpectrumHeight));
 				fSpectrum->SetExplicitPreferredSize(BSize(350.0f * scale, normalSpectrumHeight));  
