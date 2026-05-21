@@ -1,5 +1,5 @@
 /*
- * Copyright 2026, Kris Beazley jb@epluribusunix.net
+ * Copyright 2026, Kris Beazley supermusicthingy@epluribusunix.net
  * All rights reserved. Distributed under the terms of the MIT license.
  */
 
@@ -5061,7 +5061,7 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     ClickableURLIcon* iconLink = new ClickableURLIcon("abt_url", URLIcon, "https://github.com/ablyssx74/HaikuSuperMusicThingy"); 
     
     BString copyString;
-    copyString.SetToFormat("Copyright " B_UTF8_COPYRIGHT " %d Kris Beazley", currentYear);
+    copyString.SetToFormat("MIT License | Copyright " B_UTF8_COPYRIGHT " %d Kris Beazley", currentYear);
 
     BStringView* txtCopy = new BStringView("abt_copy", copyString.String());
     txtCopy->SetAlignment(B_ALIGN_CENTER);

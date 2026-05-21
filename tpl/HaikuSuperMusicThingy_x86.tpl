@@ -3,7 +3,7 @@ version			$(VERSION)-1
 architecture	$(ARCH)
 summary 		"SomaFM music player"
 description 	"HaikuSuperMusicThingy is a free streaming media client for SomaFM. Fast, light, and fun!"
-packager		"ablyss <jb@epluribusunix.net>"
+packager		"ablyss <supermusicthingy@epluribusunix.net>"
 vendor			"Haiku Project"
 licenses {
 	"MIT"

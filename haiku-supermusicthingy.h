@@ -1,5 +1,5 @@
 /*
- * Copyright 2026, Kris Beazley jb@epluribusunix.net
+ * Copyright 2026, Kris Beazley supermusicthingy@epluribusunix.net
  * All rights reserved. Distributed under the terms of the MIT license.
  */
 #ifndef SUPER_MUSIC_WINDOW_H
