@@ -3028,9 +3028,8 @@ void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
             SetPenSize(1.0f);
         }
 
-        else if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
+              else if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
             SetDrawingMode(B_OP_ALPHA);
-           
 
             float centerWindowX = startX + (artworkWidth / 2.0f);
             float centerWindowY = height / 2.0f;
@@ -3038,6 +3037,14 @@ void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
             float signScaleFactor = (artworkWidth / 320.0f);
             if (signScaleFactor > 1.2f)  signScaleFactor = 1.2f;
             if (signScaleFactor < 0.65f) signScaleFactor = 0.65f;
+
+            // Layout metrics for vector tube boxes
+            float letterWidth = 40.0f * signScaleFactor;
+            float letterPadding = 12.0f * signScaleFactor;
+            float totalOpenWidth = (letterWidth * 4.0f) + (letterPadding * 3.0f);
+            
+            // Re-centered layout that handles both full-size and compact aspect bounds smoothly
+            BPoint posOpen(centerWindowX - (totalOpenWidth / 2.0f), centerWindowY - (30.0f * signScaleFactor));
 
             // --- 2D ORGANIC SHIMMER ENGINE ---
             bigtime_t sysTime = system_time();
@@ -3053,29 +3060,45 @@ void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
 
             float bassDrive = fNeonBassSmooth;
             bool gasFlicker2 = (fNeonFlickerTimer2 > 0.0f) && ((rand() % 100) > 45);
-
             float auraPulseIntensity = 0.35f + (bassDrive * 0.65f);
 
             PushState();
             SetFlags(Flags() | B_SUBPIXEL_PRECISE);
-            
-            // Layout metrics for vector tube boxes
-            float letterWidth = 40.0f * signScaleFactor;
-            float letterPadding = 12.0f * signScaleFactor;
-            float totalOpenWidth = (letterWidth * 4.0f) + (letterPadding * 3.0f);
-            
-            // Re-centered vertically since the top cursive element is gone
-            BPoint posOpen(centerWindowX - (totalOpenWidth / 2.0f), centerWindowY - (30.0f * signScaleFactor));
-
-            // --- LAYER 1: BACKDROP AMBIENT WALL GLOW ---
             SetLineMode(B_ROUND_CAP, B_ROUND_JOIN);
             
             float openPulse = auraPulseIntensity * (gasFlicker2 ? 0.35f : 1.0f);
-            
-            // --- THICKNESS BOOST ---
-            // Increased wide aura glow pen size from 16.0f to 26.0f
-            SetPenSize(26.0f * signScaleFactor); 
 
+            // ================================================================
+            // --- LAYER 0: PHYSICAL UNLIT "DEAD" GLASS TUBE SILHOUETTE ---
+            // ================================================================
+            SetPenSize(9.5f * signScaleFactor); 
+
+            for (int i = 0; i < 4; i++) {
+                float letterX = posOpen.x + (i * (letterWidth + letterPadding));
+                float letterCenterX = letterX + (letterWidth / 2.0f);
+
+                float openSegmentIndex = (letterCenterX - startX) / (artworkWidth / (float)numBars);
+                int openPaletteIdx = (int)((openSegmentIndex / (float)numBars) * 63.0f);
+                if (openPaletteIdx < 0) openPaletteIdx = 0;
+                if (openPaletteIdx >= numBars) openPaletteIdx = numBars - 1;
+                rgb_color openLetterColor = fArtworkPalette[openPaletteIdx];
+
+                rgb_color deadTubeColor;
+                deadTubeColor.red   = (uint8)(openLetterColor.red   * 0.12f);
+                deadTubeColor.green = (uint8)(openLetterColor.green * 0.12f);
+                deadTubeColor.blue  = (uint8)(openLetterColor.blue  * 0.12f);
+                deadTubeColor.alpha = 110; 
+
+                SetHighColor(deadTubeColor);
+                // Stateless generation creates shapes exactly on current frame dimensions
+                BShape letterShape = GenerateNeonLetterShape(i, BPoint(letterX, posOpen.y), signScaleFactor);
+                StrokeShape(&letterShape);
+            }
+
+            // ================================================================
+            // --- LAYER 1: BACKDROP AMBIENT WALL GLOW ---
+            // ================================================================
+            SetPenSize(26.0f * signScaleFactor); 
             for (int i = 0; i < 4; i++) {
                 float letterX = posOpen.x + (i * (letterWidth + letterPadding));
                 float letterCenterX = letterX + (letterWidth / 2.0f);
@@ -3103,7 +3126,7 @@ void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
                 rgb_color letterAuraColor = openLetterColor;
                 letterAuraColor.red   = (uint8)min_c(255, letterAuraColor.red   + (openLightBoost / 2));
                 letterAuraColor.green = (uint8)min_c(255, letterAuraColor.green + (openLightBoost / 2));
-                letterAuraColor.blue  = (uint8)min_c(255, letterAuraColor.blue  + (openLightBoost / 2));
+                letterAuraColor.blue  = (uint8)min_c(255, letterAuraColor.blue  + (openLetterColor.blue  * 0.0f)); 
                 letterAuraColor.alpha = (uint8)(50.0f * openPulse);
 
                 SetHighColor(letterAuraColor);
@@ -3111,11 +3134,10 @@ void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
                 StrokeShape(&letterShape);
             }
 
+            // ================================================================
             // --- LAYER 2: INTERMEDIATE MAIN COLOR GAS TUBE ---
+            // ================================================================
             SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
-
-            // --- THICKNESS BOOST ---
-            // Increased color glass tube gas core pen size from 5.0f to 9.5f
             SetPenSize(9.5f * signScaleFactor); 
             
             for (int i = 0; i < 4; i++) {
@@ -3153,9 +3175,9 @@ void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
                 StrokeShape(&letterShape);
             }
 
+            // ================================================================
             // --- LAYER 3: INNER HOT CENTER FILAMENTS ---
-            // --- THICKNESS BOOST ---
-            // Increased hot inner filament stroke pen size from 1.5f to 2.8f
+            // ================================================================
             SetPenSize(2.8f * signScaleFactor); 
             uint8 whiteAlphaValue = gasFlicker2 ? 80 : 190;
 
