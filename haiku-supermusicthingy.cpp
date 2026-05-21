@@ -177,7 +177,7 @@ public:
         SetFlags(Flags() | B_POINTER_EVENTS);
     }
 
-    // --- NEW: TELL HAIKU TO ALLOCATE EXTRA DRAWING ROOM ---
+    // ---TELL HAIKU TO ALLOCATE EXTRA DRAWING ROOM ---
     void GetPreferredSize(float* width, float* height) override {
         if (fIcon) {
             // Provide an extra 16 pixels of margin beyond the icon size
@@ -329,8 +329,8 @@ const float kPresetJazz[] = {
 };
 
 const float kPresetBass[] = {
-    6.0, 5.5, 5.0, 4.0, 2.0, 1.0, 0.0, 0.0, 
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    11.0, 9.0, 4.0, 2.0, 1.0, 1.0, 0.0, 0.0, 
+    0.0, 0.0, 1.0, 3.0, 4.0, 7.0, 9.0
 };
 
 const float kPresetFlat[] = {
@@ -692,7 +692,7 @@ struct Config {
     bool shuffleFavsOnly = false;
     bool compactMode = false;
     int notifyIconSize = 64; 
-    std::string updateTheme = "Default";
+    std::string uTheme = "Default";
     std::string quality = "128k";
     bool eqEnabled = true;
     float eqBands[15] = {0.0f}; 
@@ -709,7 +709,7 @@ void save_config() {
     j["quality"] = cfg.quality;
     j["compactMode"] = cfg.compactMode;
     j["notifyIconSize"] = cfg.notifyIconSize;
-    j["updateTheme"] = cfg.updateTheme;
+    j["uTheme"] = cfg.uTheme;
     j["showNotifications"] = cfg.showNotifications;
     j["autoShuffle"] = cfg.autoShuffle;
     j["sysTray"] = cfg.sysTray;
@@ -752,7 +752,7 @@ void load_config() {
     cfg.compactMode = false;
     cfg.compactModeTitle = true;
     cfg.compactModeDesc = true;
-    cfg.updateTheme = "Default";
+    cfg.uTheme = "Dark";
     cfg.showNotifications = false;
     cfg.autoShuffle = false;
 #ifdef USE_SYSTRAY
@@ -791,7 +791,7 @@ void load_config() {
                 cfg.compactMode = j.value("compactMode", false);
                 cfg.compactModeDesc = j.value("compactModeDesc", false);
                 cfg.compactModeTitle = j.value("compactModeTitle", true);
-                cfg.updateTheme = j.value("updateTheme", "Default");
+                cfg.uTheme = j.value("uTheme", "Dark");
                 cfg.showNotifications = j.value("showNotifications", false);
                 cfg.autoShuffle = j.value("autoShuffle", false);
                 #ifdef USE_SYSTRAY
@@ -3313,7 +3313,7 @@ public:
     ColorItem(const char* text) : BStringItem(text) {}
 
     virtual void DrawItem(BView* owner, BRect frame, bool complete = false) {
-        if (cfg.updateTheme == "Dark") {
+        if (cfg.uTheme == "Dark") {
             if (IsSelected()) {
                 owner->SetHighColor(ui_color(B_LIST_SELECTED_ITEM_TEXT_COLOR));
             } else {
@@ -3383,11 +3383,11 @@ void SuperMusicWindow::ApplyTheme() {
     if (Lock()) {
         // Run a linear two-pass execution to shake loose Haiku's color caches 
         // without invoking dangerous recursive function deadlocks.
-        int totalPasses = (cfg.updateTheme == "Default") ? 2 : 1;
+        int totalPasses = (cfg.uTheme == "Default") ? 2 : 1;
 
 
         for (int pass = 1; pass <= totalPasses; pass++) {
-            if (cfg.updateTheme == "Dark" || (cfg.updateTheme == "Default" && pass == 1)) {
+            if (cfg.uTheme == "Dark" || (cfg.uTheme == "Default" && pass == 1)) {
 
                 // Pass 1 (or Dark Mode): Load dark colors to force cache invalidation
                 bgVal = {40, 40, 40, 255};      // Dark Grey
@@ -4403,7 +4403,7 @@ public:
             // --- DYNAMIC THEME COLOR EVALUATOR ---
             rgb_color textColor;
             rgb_color headerColor;
-			if (cfg.updateTheme == "Dark") {
+			if (cfg.uTheme == "Dark") {
                 textColor = make_color(255, 255, 255, 255);
                 headerColor = make_color(240, 180, 40, 255); 
             } else {
@@ -4427,36 +4427,26 @@ public:
             DrawString(currentText, BPoint(textX, textY + fh.ascent));
         }
 
-        // --- CLEAN INTERPOLATED EDGE FADER GRADIENT OVERLAYS ---
+        // --- SMOOTH EDGE FADER GRADIENT OVERLAYS ---
         float fadeZoneHeight = 45.0f; 
         
-        // Switch to B_OP_COPY to avoid alpha channel buffer corruption bugs
-        SetDrawingMode(B_OP_COPY);
+        // (This section keeps its drawing mode setup intact as well)
+        SetDrawingMode(B_OP_ALPHA);
+        SetBlendingMode(B_CONSTANT_ALPHA, B_ALPHA_OVERLAY);
 
         for (int y = 0; y < (int)fadeZoneHeight; y++) {
-            // factor goes from 1.0 (completely solid at the outer edges) to 0.0 (completely transparent)
             float factor = 1.0f - ((float)y / fadeZoneHeight); 
+            uint8 alphaVal = (uint8)(factor * 255);
             
-            // Mathematically blend the text color (or dark panel background) manually
-            // to avoid depending on hardware alpha transparency channels
-            rgb_color blendedColor;
-            blendedColor.red   = (uint8)(bgColor.red   * factor + bgColor.red   * (1.0f - factor));
-            blendedColor.green = (uint8)(bgColor.green * factor + bgColor.green * (1.0f - factor));
-            blendedColor.blue  = (uint8)(bgColor.blue  * factor + bgColor.blue  * (1.0f - factor));
-            blendedColor.alpha = 255; // Keep it fully opaque to fix the 32-bit Haiku bug!
+            rgb_color maskColor = bgColor;
+            maskColor.alpha = alphaVal;
+            SetHighColor(maskColor);
 
-            // Alternatively, if blending against a true dark theme background:
-            // We are changing the brightness of the background color brush as it moves inward
-            SetHighColor(blendedColor);
+            FillRect(BRect(0.0f, (float)y, viewWidth, (float)y), B_SOLID_HIGH);
 
-            // Draw Top Fade Line
-            StrokeLine(BPoint(0.0f, (float)y), BPoint(viewWidth, (float)y), B_SOLID_HIGH);
-
-            // Draw Bottom Fade Line
             float bottomY = viewHeight - 1.0f - y;
-            StrokeLine(BPoint(0.0f, bottomY), BPoint(viewWidth, bottomY), B_SOLID_HIGH);
+            FillRect(BRect(0.0f, bottomY, viewWidth, bottomY), B_SOLID_HIGH);
         }
-
 
         PopState();
     }
@@ -4636,36 +4626,32 @@ BLayoutBuilder::Group<>(fControlStack, B_VERTICAL, 5)
     .End()
 .End();
 
-BGroupView* fMetaAndSpectrumStack = new BGroupView(B_VERTICAL, 5);
-BLayoutBuilder::Group<>(fMetaAndSpectrumStack, B_VERTICAL, 5)
+BGroupView* fMetaAndSpectrumStack = new BGroupView(B_VERTICAL, 0);
+BLayoutBuilder::Group<>(fMetaAndSpectrumStack, B_VERTICAL, 0)
     .SetInsets(0)
-    //.AddStrut(1)
     .Add(fDescView)
     .Add(fSongView)  
     .Add(fSpectrum)
 .End();
 
-
 BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     .SetInsets(0)
     .Add(fArtView, B_ALIGN_HORIZONTAL_CENTER) 
-    .Add(fMetaAndSpectrumStack, B_ALIGN_HORIZONTAL_CENTER)    
-    
-    .AddStrut(0)    
-    
+    .Add(fMetaAndSpectrumStack, B_ALIGN_HORIZONTAL_CENTER)     
+    .AddStrut(0)        
     // Stats Block Row
-    .AddGroup(B_HORIZONTAL, 10) 
-        .AddGroup(B_VERTICAL, 6) 
-            .SetInsets(20) 	
+    .AddGroup(B_HORIZONTAL, 5) 
+        .AddGroup(B_VERTICAL, 0) 
+            .SetInsets(20, 0, 20, 0) 		
             .Add(fListenersView)
             .Add(fquality)
             .Add(fCompactModeRadio)               
-        .End() 
-        .AddGlue() 
-        .Add(fBtnAddFav) 
-    .End()        
-    .Add(fControlStack)
-    .AddGlue();
+         .End() 
+       .AddGlue() 
+     .Add(fBtnAddFav) 
+     .End()        
+   .Add(fControlStack)
+.AddGlue();
 
 
 
@@ -4847,8 +4833,8 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     fChkSysTray->SetEnabled(false);    
     
     // Theme and Presets
-    fChkTheme = new BCheckBox("chk_theme", "Dark Theme (Experimental)", new BMessage(MSG_CFG_THEME));
-    fChkTheme->SetValue(cfg.updateTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);
+    fChkTheme = new BCheckBox("chk_theme", "Dark Theme", new BMessage(MSG_CFG_THEME));
+    fChkTheme->SetValue(cfg.uTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);
     
     fCmpTitle = new BCheckBox("fCmpTitle_toggle", "Compact Mode: Show Title", new BMessage(MSG_SHOW_TITLE));
     fCmpTitle->SetValue(cfg.compactModeTitle ? B_CONTROL_ON : B_CONTROL_OFF);
@@ -5499,7 +5485,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
        		#ifdef IS_HAIKU_32BIT
        		        BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_theme"));
         			if (chk) {
-            			cfg.updateTheme = (chk->Value() == B_CONTROL_ON) ? "Dark" : "Default";
+            			cfg.uTheme = (chk->Value() == B_CONTROL_ON) ? "Dark" : "Default";
             			save_config();
   						ApplyTheme(); 
         					}
@@ -5510,7 +5496,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             if (chk) {
                 // Fix 1: Declare isDark explicitly
                 bool isDark = (chk->Value() == B_CONTROL_ON);
-                cfg.updateTheme = isDark ? "Dark" : "Default";
+                cfg.uTheme = isDark ? "Dark" : "Default";
                 save_config();
                 ApplyTheme(); 
                 
