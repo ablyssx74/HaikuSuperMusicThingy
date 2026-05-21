@@ -101,6 +101,8 @@ enum {
     MSG_SLEEP_CHANGED    = 'slpc',
     MSG_TOGGLE_Spectrum  = 'tsmb',
     MSG_SHUFFLE_FAVS_CHANGED = 'sfch',
+    MSG_VOL_CHANGED= 'bvci',
+    MSG_MUTE_TOGGLED = 'mute',
     MODE_BARS = 0,
     MODE_LINE_WAVE,
     MODE_LONG_WAVE, 
@@ -208,7 +210,8 @@ private:
     BStringView*  fListenersView;
     BStringView*  fquality; 
     BTextView*    fSongView;
-    BSlider*      fVolumeSlider;
+    //BSlider*      fVolumeSlider;
+    BControl* fVolumeSlider; 
     BButton*      fShuffleBtn;
     BButton* 	  fApplyEQBtn;
     BCheckBox*    fVisualsCheckbox; 

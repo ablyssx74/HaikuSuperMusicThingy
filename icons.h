@@ -10,6 +10,12 @@
 extern const unsigned char kIconShuffle[];
 extern const size_t kIconShuffleSize;
 
+extern const unsigned char kIconSpeaker[];
+extern const size_t kIconSpeakerSize;
+
+extern const unsigned char kIconVol[];
+extern const size_t kIconVolSize;
+
 extern const unsigned char kIconFav[];
 extern const size_t kIconFavSize;
 

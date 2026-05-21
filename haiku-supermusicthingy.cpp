@@ -31,6 +31,9 @@
 #include <StringView.h>
 #include <View.h>
 #include <Window.h>
+#include <Control.h>
+#include <AffineTransform.h>
+
 
 // --- Haiku Storage Kit ---
 #include <Path.h>
@@ -123,6 +126,276 @@ int32 mpv_loop_thread(void* data);
 using json = nlohmann::json;
 
 class SuperMusicWindow; 
+
+
+
+
+
+
+
+
+
+
+
+class RadialVolumeControl : public BControl {
+public:
+    RadialVolumeControl(BRect frame, const char* name, BMessage* msg, int32 multiplier = 2)
+        : BControl(frame, name, NULL, msg, B_FOLLOW_NONE, B_WILL_DRAW | B_NAVIGABLE),
+          fMultiplier(multiplier),
+          fVolCenterIcon(NULL),
+          fTickIcon(NULL),
+          fIsMuted(false),
+          fIsHovered(false),      
+          fHoverAlpha(0.0f),      
+          fLastTime(system_time()) 
+    {
+        SetViewColor(B_TRANSPARENT_COLOR);
+        SetValue(100);
+        
+        SetFlags(Flags() | B_POINTER_EVENTS);
+
+        // 1. Center View Icon (Rendered clean at 32x32)      
+        fVolCenterIcon = new BBitmap(BRect(0, 0, 31, 31), B_RGBA32);
+        if (BIconUtils::GetVectorIcon(kIconSpeaker, kIconSpeakerSize, fVolCenterIcon) != B_OK) {
+            delete fVolCenterIcon; 
+            fVolCenterIcon = NULL;
+        }
+
+        // 2. Radial Ticks (Rendered clean at 12x12)
+        fTickIcon = new BBitmap(BRect(0, 0, 11, 11), B_RGBA32);
+        if (BIconUtils::GetVectorIcon(kIconVol, kIconVolSize, fTickIcon) != B_OK) {
+             delete fTickIcon; 
+             fTickIcon = NULL;
+        }
+    }
+
+    virtual ~RadialVolumeControl() {
+        delete fVolCenterIcon;
+        delete fTickIcon;
+    }
+
+    virtual BSize MinSize() override { return BSize(76, 76); }
+    virtual BSize MaxSize() override { return BSize(88, 88); }
+    virtual BSize PreferredSize() override { return BSize(80, 80); }
+
+    BRect CenterIconRect() const {
+        if (!fVolCenterIcon) return BRect();
+        float cx = Bounds().Width() / 2.0f;
+        float cy = Bounds().Height() / 2.0f;
+        BRect knobBounds = fVolCenterIcon->Bounds();
+        float ix = cx - (knobBounds.Width() / 2.0f);
+        float iy = cy - (knobBounds.Height() / 2.0f);
+        return BRect(ix, iy, ix + knobBounds.Width(), iy + knobBounds.Height());
+    }
+
+    virtual void MouseMoved(BPoint point, uint32 transit, const BMessage* message) override {
+        BControl::MouseMoved(point, transit, message);
+        bool wasHovered = fIsHovered;
+        if (transit == B_ENTERED_VIEW) fIsHovered = true;
+        else if (transit == B_EXITED_VIEW) fIsHovered = false;
+        if (wasHovered != fIsHovered) Invalidate();
+    }
+
+     virtual void Draw(BRect updateRect) override {
+        float cx = Bounds().Width() / 2.0f;
+        float cy = Bounds().Height() / 2.0f;
+        float radius = std::min(cx, cy) - 2.0f; 
+        float markerRadius = radius * 0.78f; 
+
+        float startAngle = 135.0f;
+        float totalSweep = 270.0f;
+
+        // --- 1. HOVER TIMER ---
+        bigtime_t currentTime = system_time();
+        float deltaTime = (float)(currentTime - fLastTime) / 1000000.0f;
+        fLastTime = currentTime;
+        if (deltaTime > 0.1f) deltaTime = 0.1f;
+
+        const float fadeSpeed = 1.8f; 
+        if (fIsHovered) {
+            fHoverAlpha += deltaTime * fadeSpeed;
+            if (fHoverAlpha > 1.0f) fHoverAlpha = 1.0f;
+        } else {
+            fHoverAlpha -= deltaTime * fadeSpeed;
+            if (fHoverAlpha < 0.0f) fHoverAlpha = 0.0f;
+        }
+
+        if (fHoverAlpha > 0.0f && fHoverAlpha < 1.0f) {
+            Invalidate();
+        }
+
+        rgb_color bgCol = (Parent() != nullptr) ? Parent()->ViewColor() : ui_color(B_PANEL_BACKGROUND_COLOR);
+        bool isLightTheme = (bgCol.red > 150 && bgCol.green > 150 && bgCol.blue > 150);
+
+        PushState();
+        SetFlags(Flags() | B_SUBPIXEL_PRECISE);
+
+        // --- 2. DRAW RADIAL TICKS ---
+        if (fTickIcon) {
+            BRect tickBounds = fTickIcon->Bounds();
+            float mWidth = tickBounds.Width();
+            float mHeight = tickBounds.Height();
+            
+            BRect destRect(
+                cx + markerRadius, 
+                cy - (mHeight / 2.0f),
+                cx + markerRadius + mWidth,
+                cy + (mHeight / 2.0f)
+            );
+
+            // --- PALETTE VARIABLES RE-DECLARED HERE ---
+            rgb_color neonLime  = {65, 255, 75, 255};   
+            rgb_color neonCyan  = {0, 220, 255, 255};    
+            rgb_color dimUnlit  = isLightTheme ? rgb_color{200, 200, 205, 255} : rgb_color{45, 45, 48, 255};
+
+            for (int i = 0; i <= 100; i += 5) {
+                float angleDeg = startAngle + (totalSweep * (i / 100.0f));
+                float angleRad = angleDeg * (M_PI / 180.0f);
+
+                BAffineTransform t;
+                t.RotateBy(BPoint(cx, cy), angleRad);
+                SetTransform(t);
+
+                SetDrawingMode(B_OP_ALPHA);
+                SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+
+                bool isLit = !fIsMuted && (Value() > 0 && i <= Value());
+
+                if (isLit) {
+                    float mixRatio = (float)i / 100.0f;
+                    rgb_color finalNeon = neonLime;
+                    if (mixRatio > 0.5f) {
+                        float factor = (mixRatio - 0.5f) * 2.0f;
+                        finalNeon.red   = (uint8)(neonLime.red * (1.0f - factor) + neonCyan.red * factor);
+                        finalNeon.green = (uint8)(neonLime.green * (1.0f - factor) + neonCyan.green * factor);
+                        finalNeon.blue  = (uint8)(neonLime.blue * (1.0f - factor) + neonCyan.blue * factor);
+                    }
+
+                    SetDrawingMode(B_OP_ALPHA);
+                    DrawBitmap(fTickIcon, tickBounds, destRect, B_FILTER_BITMAP_BILINEAR);
+                    
+                    SetDrawingMode(B_OP_MIN);
+                    SetHighColor(finalNeon);
+                    FillRect(destRect);
+                } 
+                else {
+                    SetDrawingMode(B_OP_ALPHA);
+                    SetHighColor(dimUnlit);
+                    DrawBitmap(fTickIcon, tickBounds, destRect, B_FILTER_BITMAP_BILINEAR);
+                    SetDrawingMode(B_OP_MIN);
+                    FillRect(destRect);
+                }
+
+                SetTransform(BAffineTransform()); 
+            }
+        }
+
+        PopState(); 
+
+        // --- 3. RENDER HOVER GLOW LAYER (Around Center Knob Only) ---
+        if (fHoverAlpha > 0.0f && IsEnabled() && fVolCenterIcon) {
+            SetDrawingMode(B_OP_ALPHA);
+            SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+            rgb_color glowColor = isLightTheme ? rgb_color{40, 40, 45, 255} : rgb_color{235, 235, 240, 255};
+
+            float baseRadius = (fVolCenterIcon->Bounds().Width() / 2.0f) + 1.0f;
+            const int glowSteps = 6;
+            float maxGlowSpread = fVolCenterIcon->Bounds().Width() * 0.125f; 
+
+            for (int step = 0; step < glowSteps; step++) {
+                float progress = (float)step / (float)glowSteps;
+                float gRadius = baseRadius + (progress * maxGlowSpread);
+                
+                float alphaFactor = 0.30f * (1.0f - cosf((1.0f - progress) * (float)M_PI)) * fHoverAlpha;
+                glowColor.alpha = (uint8)(255.0f * alphaFactor);
+                
+                SetHighColor(glowColor);
+                StrokeEllipse(BPoint(cx, cy), gRadius, gRadius);
+            }
+        }
+
+        // --- 4. DRAW CENTER SPEAKER KNOB ---
+        if (fVolCenterIcon) {
+            if (fIsMuted) {
+                SetDrawingMode(B_OP_BLEND);
+            } else {
+                SetDrawingMode(B_OP_ALPHA);
+                SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+            }
+            
+            BRect knobBounds = fVolCenterIcon->Bounds();
+            BRect destinationRect = CenterIconRect();
+            
+            DrawBitmap(fVolCenterIcon, knobBounds, destinationRect, B_FILTER_BITMAP_BILINEAR);
+        }
+        
+        SetDrawingMode(B_OP_COPY);
+    }
+
+
+    virtual void MouseDown(BPoint point) override {
+        if (CenterIconRect().Contains(point)) {
+            fIsMuted = !fIsMuted;
+            
+            BMessage muteMsg(MSG_MUTE_TOGGLED);
+            muteMsg.AddBool("muted", fIsMuted);
+            InvokeNotify(&muteMsg, B_CONTROL_MODIFIED);
+            
+            Invalidate(); 
+            return;
+        }
+        BControl::MouseDown(point);
+    }
+
+    virtual void MessageReceived(BMessage* msg) override {
+        if (msg->what == B_MOUSE_WHEEL_CHANGED) {
+            float dy;
+            if (msg->FindFloat("be:wheel_delta_y", &dy) == B_OK) {
+                if (fIsMuted) {
+                    fIsMuted = false;
+                    BMessage muteMsg(MSG_MUTE_TOGGLED);
+                    muteMsg.AddBool("muted", false);
+                    InvokeNotify(&muteMsg, B_CONTROL_MODIFIED);
+                }
+
+                int32 delta = (int32)(dy * fMultiplier); 
+                int32 newValue = Value() - delta;
+                if (newValue < 0) newValue = 0;
+                if (newValue > 100) newValue = 100;
+                if (newValue != Value()) {
+                    SetValue(newValue);
+                    Invoke();
+                    Invalidate();
+                }
+            }
+        } else {
+            BControl::MessageReceived(msg);
+        }
+    }
+
+    bool IsMuted() const { return fIsMuted; }
+    void SetMuted(bool mute) { 
+        if (fIsMuted != mute) {
+            fIsMuted = mute;
+            Invalidate();
+        }
+    }
+
+private:
+    int32 fMultiplier;
+    BBitmap* fVolCenterIcon;
+    BBitmap* fTickIcon;
+    bool fIsMuted;
+    
+    bool fIsHovered;
+    float fHoverAlpha;       
+    bigtime_t fLastTime;    
+};
+
+
+
+
+
 
 
 
@@ -4605,18 +4878,25 @@ SuperMusicWindow::SuperMusicWindow()
 	BBitmap* shuffleIcon = GetVectorIcon(kIconShuffle, kIconShuffleSize, 40);
    	fShuffleBtn = new IconButton("btn_shuffle", shuffleIcon, new BMessage(MSG_SHUFFLE));
 	fShuffleBtn->SetExplicitSize(BSize(75, 75)); 	
+	
+	
+    BRect volRect(0, 0, 64, 64); 
+    fVolumeSlider = new RadialVolumeControl(volRect, "Volume", new BMessage(MSG_VOL_CHANGED), 5);
+    fVolumeSlider->SetTarget(this);
+
     
-    fVolumeSlider = new WheelSlider("volume", "", new BMessage(MSG_VOL_CHANGE), 0, 100, B_HORIZONTAL, 5);
-    fVolumeSlider->SetValue(100);
-    fVolumeSlider->SetTarget(this); 
-    fVolumeSlider->SetModificationMessage(new BMessage(MSG_VOL_CHANGE));
+    //fVolumeSlider = new WheelSlider("volume", "", new BMessage(MSG_VOL_CHANGE), 0, 100, B_HORIZONTAL, 5);
+    //fVolumeSlider->SetValue(100);
+    //fVolumeSlider->SetTarget(this); 
+    //fVolumeSlider->SetModificationMessage(new BMessage(MSG_VOL_CHANGE));
+	
 
 
 // --- LAYOUT BUILDER FOR PLAYER TAB ---
 
+// 1. Bottom controls without the slider (just the play/pause row)
 fControlStack = new BGroupView(B_VERTICAL, 5); 
 BLayoutBuilder::Group<>(fControlStack, B_VERTICAL, 5)
-    .Add(fVolumeSlider)
     .AddGroup(B_HORIZONTAL, 5)
         .Add(fStopBtn)
         .Add(fPauseBtn)
@@ -4637,20 +4917,26 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     .SetInsets(0)
     .Add(fArtView, B_ALIGN_HORIZONTAL_CENTER) 
     .Add(fMetaAndSpectrumStack, B_ALIGN_HORIZONTAL_CENTER)     
-    .AddStrut(0)        
-    // Stats Block Row
+    .AddStrut(0)            
     .AddGroup(B_HORIZONTAL, 5) 
+        // Left Side: Stats and check boxes
         .AddGroup(B_VERTICAL, 0) 
-            .SetInsets(20, 0, 20, 0) 		
+            .SetInsets(20, 0, 0, 0) 
             .Add(fListenersView)
             .Add(fquality)
             .Add(fCompactModeRadio)               
-         .End() 
-       .AddGlue() 
-     .Add(fBtnAddFav) 
+         .End()          
+         .AddGlue(2)
+         .Add(fVolumeSlider, B_ALIGN_HORIZONTAL_CENTER | B_ALIGN_VERTICAL_CENTER) 
+         .AddGlue() 
+         .Add(fBtnAddFav) 
+         .SetInsets(0, 0, 20, 0) 
      .End()        
+      
+     
    .Add(fControlStack)
-.AddGlue();
+   .AddGlue();
+
 
 
 
@@ -5657,9 +5943,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			// --- 1. GLOBAL LAYOUT SCALE METRICS ---
 			float scale = be_plain_font->Size() / 12.0f; 
 			float artSize = cfg.compactMode ? (135 * scale) : (350 * scale);
-			float btnSize = cfg.compactMode ? (40 * scale) : (75 * scale);
-			float favSize = cfg.compactMode ? (40 * scale) : (75 * scale);
-
+			float btnSize = cfg.compactMode ? (40 * scale)  : (75 * scale);
+			float favSize = cfg.compactMode ? (40 * scale)  : (75 * scale);
+			float VolSize = cfg.compactMode ? (40 * scale)  : (75 * scale);
 			// Dynamic Override for Special Compact Layout Variant
 			if (cfg.compactMode && cfg.compactModeDesc && cfg.compactModeTitle) { 
 				artSize = 150.0f * scale; 
@@ -5857,15 +6143,18 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			fArtView->SetExplicitMinSize(BSize(artSize, artSize));
 			fArtView->SetExplicitMaxSize(BSize(artSize, artSize));
 			
+
+			float paddedVolumeSliderSize = cfg.compactMode ? VolSize + (6.0f * scale) : VolSize + (16.0f * scale);
 			float paddedBtnSize = cfg.compactMode ? btnSize + (6.0f * scale) : btnSize + (16.0f * scale);
 			float paddedFavSize = cfg.compactMode ? favSize + (6.0f * scale) : favSize + (16.0f * scale);
 			
 			// Use clean Explicit Size setting
-			if (fBtnAddFav)   fBtnAddFav->SetExplicitSize(BSize(paddedFavSize, paddedFavSize));
-			if (fStopBtn)     fStopBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize));
-			if (fPauseBtn)    fPauseBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize));
-			if (fPlayBtn)     fPlayBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize)); 
-			if (fShuffleBtn)  fShuffleBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize));
+			if (fVolumeSlider)   fVolumeSlider->SetExplicitSize(BSize(paddedVolumeSliderSize, paddedVolumeSliderSize));
+			if (fBtnAddFav)  	 fBtnAddFav->SetExplicitSize(BSize(paddedFavSize, paddedFavSize));
+			if (fStopBtn)     	 fStopBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize));
+			if (fPauseBtn)    	 fPauseBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize));
+			if (fPlayBtn)     	 fPlayBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize)); 
+			if (fShuffleBtn)  	 fShuffleBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize));
 			
 			if (fquality)       fquality->Show();
 			if (fListenersView) fListenersView->Show();
@@ -6172,6 +6461,14 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             if (fSongView) fSongView->SetText("Stopped");
             break;
             
+        case MSG_MUTE_TOGGLED: {
+            mpv_command_string(mpv, "cycle mute");            
+            int is_muted = 0;
+            mpv_get_property(mpv, "mute", MPV_FORMAT_FLAG, &is_muted);          
+            break;
+        }
+
+            
 		case MSG_PAUSE: {
     		mpv_command_string(mpv, "cycle pause");
 			const char* song = message->GetString("song", "Unknown");
@@ -6247,7 +6544,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
             
     		
-        case MSG_VOL_CHANGE: {
+        case MSG_VOL_CHANGED: {
             if (fVolumeSlider) {
                 int32 value = fVolumeSlider->Value();
                 double vol = (double)value;
