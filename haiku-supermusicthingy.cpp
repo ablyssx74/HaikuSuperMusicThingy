@@ -1909,7 +1909,7 @@ virtual void Pulse() override {
         }
 
 
-              // ====================================================================
+        // ====================================================================
         // 4.5 MODE 6 NEON SIGN GAS PHYSICS ENGINE
         // ====================================================================
         if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
@@ -2241,15 +2241,15 @@ virtual void Pulse() override {
 
 
 
-void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
-    // FIX: Assign each unique control point to its own explicit array index slot
-    BPoint controlArray[3];
-    controlArray[0] = cp1;
-    controlArray[1] = cp2;
-    controlArray[2] = endPoint;
+	void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
+    	// FIX: Assign each unique control point to its own explicit array index slot
+    	BPoint controlArray[3];
+    	controlArray[0] = cp1;
+    	controlArray[1] = cp2;
+    	controlArray[2] = endPoint;
     
-    shape.BezierTo(controlArray);
-}
+    	shape.BezierTo(controlArray);
+	}
 
 
 
@@ -3055,7 +3055,7 @@ void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
             SetPenSize(1.0f);
         }
 
-              else if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
+       else if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
             SetDrawingMode(B_OP_ALPHA);
 
             float centerWindowX = startX + (artworkWidth / 2.0f);
@@ -3239,23 +3239,29 @@ void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
 
         
 		else if (fVisualizerMode == MODE_MOTO_RIDER) {
+			
             // Mode 6: Endless Motorcycle Runner with Parallax & Scoreboard Display
             SetDrawingMode(B_OP_ALPHA);
             float baselineY = height - 2.0f; float bgBrightness = (bgCol.red * 0.299f) + (bgCol.green * 0.587f) + (bgCol.blue * 0.114f); bool isDarkBg = (bgBrightness < 100.0f);
+            
             // Fetch live audio vars to match the physics thread scaling calculations exactly
-            float lowBassPulse = (fBarHeights[2] + fBarHeights[3] + fBarHeights[4]) / 3.0f; float bassNormalized = (height > 0.0f) ? (lowBassPulse / height) : 0.0f;             
+            float lowBassPulse = (fBarHeights[2] + fBarHeights[3] + fBarHeights[4]) / 3.0f; float bassNormalized = (height > 0.0f) ? (lowBassPulse / height) : 0.0f;  
+                       
             // --- LAYER 0: SKY RESIDENT LAYER (Drifting Clouds) ---
             SetPenSize(1.0f); SetHighColor(isDarkBg ? rgb_color{110, 125, 140, 120} : rgb_color{200, 205, 210, 150});
             for (int c = 0; c < 3; c++) {
                 float cx = startX + fCloudX[c]; float cy = fCloudY[c]; float cw = fCloudSize[c];
                 FillEllipse(BPoint(cx, cy), cw / 2.0f, 3.5f); FillEllipse(BPoint(cx + (cw * 0.2f), cy - 2.0f), cw / 3.0f, 3.0f); FillEllipse(BPoint(cx - (cw * 0.2f), cy - 1.0f), cw / 3.5f, 2.5f);
-            }             
+            }   
+                      
             // --- LAYER 1: DISTANT PARALLAX MOUNTAINS (FIXED STUTTER & RANDOM SIZES) ---
             // Loops 4 cleanly separated sequential indices across the pre-calculated width buffers
             for (int m = 0; m < 4; m++) {
+            	
                 // Read custom sizing profile scalar set inside your math loop
                 float currentMtnScale = (fMtnHeightScale[m] > 0.01f) ? fMtnHeightScale[m] : (0.8f + (m * 0.15f));
-                float peakHeight = 26.0f * currentMtnScale;                
+                float peakHeight = 26.0f * currentMtnScale;    
+                            
                 // Matches the strict 240px wide modular boundary step to keep the scrolling continuous
                 float mx = fMtnScrollX + (m * 240.0f);                
                 BPoint triangle[3] = {
@@ -3264,10 +3270,12 @@ void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
                     BPoint(startX + mx + 240.0f, baselineY)
                 };                
                 // Base Solid Mountain Color
-                SetHighColor(isDarkBg ? rgb_color{55, 68, 82, 255} : rgb_color{190, 198, 205, 255}); FillPolygon(triangle, 3);                 
+                SetHighColor(isDarkBg ? rgb_color{55, 68, 82, 255} : rgb_color{190, 198, 205, 255}); FillPolygon(triangle, 3);      
+                           
                 // Outer Structural Depth Accent Edging Line
                 SetHighColor(isDarkBg ? rgb_color{85, 100, 115, 255} : rgb_color{165, 175, 185, 255}); SetPenSize(1.2f); StrokePolygon(triangle, 3);                
-            }             
+            }
+                         
             // --- LAYER 2: MIDGROUND LAYER (Random Green Stick Trees) ---
             SetHighColor(35, 155, 75, 255); SetPenSize(1.5f);   
             for (int t = 0; t < 4; t++) {
@@ -3275,7 +3283,8 @@ void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
                 StrokeLine(BPoint(tx, baselineY), BPoint(tx, baselineY - th));
                 StrokeLine(BPoint(tx, baselineY - th), BPoint(tx - 4.0f, baselineY - th + 5.0f)); StrokeLine(BPoint(tx, baselineY - th), BPoint(tx + 4.0f, baselineY - th + 5.0f));
                 StrokeLine(BPoint(tx, baselineY - th + 4.0f), BPoint(tx - 6.0f, baselineY - th + 10.0f)); StrokeLine(BPoint(tx, baselineY - th + 4.0f), BPoint(tx + 6.0f, baselineY - th + 10.0f));
-            }                 
+            }
+                             
             // --- LAYER 3: LIVE GAME GROUND RUNNER horizon tracks ---
             SetHighColor(isDarkBg ? rgb_color{80, 90, 100, 255} : rgb_color{180, 185, 190, 255}); 
             SetPenSize(2.0f);  StrokeLine(BPoint(startX, baselineY), BPoint(startX + artworkWidth, baselineY)); SetHighColor(bgCol); 
@@ -3284,7 +3293,8 @@ void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
                 if (fObsIsPit[o] == 1 || fObsIsPit[o] == 2) {
                     StrokeLine(BPoint(startX + fObsX[o] + 1.0f, baselineY), BPoint(startX + fObsX[o] + 23.0f, baselineY));
                 }
-            }            
+            }
+                        
             // --- LAYER 4: MULTI-HAZARD DRAW ENGINES (High Contrast Rocks, Pits, Water Blue Pools, & Spikes) ---
             int32 themeColorIndex = 20; 
             for (int o = 0; o < 2; o++) {
@@ -3300,20 +3310,24 @@ void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
                     if (fObsHeightScale[o] > 1.2f) {
                         SetHighColor(240, 70, 70, 255); 
                         FillRect(BRect(startX + fObsX[o], baselineY - finalObsHeight, startX + fObsX[o] + obsWidth, baselineY - finalObsHeight + 2.0f));
-                    }                    
+                    } 
+                                       
                     // CRITICAL VISIBILITY CORRECTION: Wrap stone geometry in bright safety strokes if background is dark
                     SetPenSize(1.0f);
                     SetHighColor(isDarkBg ? rgb_color{255, 255, 255, 220} : rgb_color{0, 0, 0, 220});
                     StrokeRect(rockBounds);                    
                 } else if (fObsIsPit[o] == 1) {
+                	
                     // --- HAZARD TYPE 1: EMPTY GROUND PIT GAP ---
                     SetHighColor(fArtworkPalette[themeColorIndex]);
                     FillRect(BRect(startX + fObsX[o] - 2.0f, baselineY - 3.0f, startX + fObsX[o], baselineY));
-                    FillRect(BRect(startX + fObsX[o] + 24.0f, baselineY - 3.0f, startX + fObsX[o] + 26.0f, baselineY));                    
+                    FillRect(BRect(startX + fObsX[o] + 24.0f, baselineY - 3.0f, startX + fObsX[o] + 26.0f, baselineY));   
+                                     
                     // Add high contrast neon warning trim to edges
                     SetHighColor(255, 60, 60, 255);
                     StrokeLine(BPoint(startX + fObsX[o], baselineY), BPoint(startX + fObsX[o] + 24.0f, baselineY));                    
                 } else if (fObsIsPit[o] == 2) {
+                	
                     // --- HAZARD TYPE 2: NEON WATER POOL (BLUE OBSTACLE) ---
                     BRect waterBounds(startX + fObsX[o], baselineY + 1.0f, startX + fObsX[o] + 24.0f, baselineY + 6.0f);                    
                     SetHighColor(0, 130, 255, 255); 
@@ -3431,9 +3445,6 @@ void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
                 }
             }
 
-
-            
-            
             
             // --- LAYER 6: MOTORCYCLE RIDER VEHICLE BODY & FLIP MECHANIC ---
             float riderX = startX + 45.0f; 
@@ -3444,6 +3455,7 @@ void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
                 StrokeLine(BPoint(riderX - 8, baselineY - 4), BPoint(riderX + 8, baselineY - 8));
                 StrokeLine(BPoint(riderX - 4, baselineY - 10), BPoint(riderX + 6, baselineY - 4));
             } else {
+            	
                 // Compute rotation transformation matrices if mid-air stunt is active
                 float rad = fFlipRotation * (M_PI / 180.0f);
                 float cosR = cosf(rad);
@@ -3497,9 +3509,6 @@ void AddCubicSegment(BShape& shape, BPoint cp1, BPoint cp2, BPoint endPoint) {
                 StrokeLine(driverHip, handlebarsGrip); 
             }
             
-
-
-
             SetDrawingMode(B_OP_COPY);
             SetPenSize(1.0f);
         }
