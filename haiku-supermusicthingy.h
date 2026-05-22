@@ -143,11 +143,15 @@ public:
     void ApplyPreset(const float* values); 
 	void UpdateTrayState(bool enabled, bool hideWindow = true);
 	void ResizeWindowToFit();
+	void      DoDownloadLoop(); 
 	
 	  
 private:
 
-	
+  	thread_id fDownloadThreadID; // Tracks the running download worker loop thread
+    bool      fIsQuitting;    
+
+	bigtime_t fPrevFrameTime = 0;
 	BGroupView* fMetaAndSpectrumStack = nullptr; 
 	BTab* fRadioTab = nullptr; 
     BTab* fStationTab = nullptr; 
