@@ -87,7 +87,6 @@ enum {
     MSG_TOGGLE_EQ  = 'eqtg',
 	MSG_AUDIO_READY = 'AudR',
 	MSG_UPDATE_BOUNCE = 'bnce',
-	MSG_EQ_RESET 	  = 'eqrs',
 	MSG_TOGGLE_LADSPA = 'tlad',	
 	MSG_SET_PRESET_ROCK = 'prsr',
 	MSG_SET_PRESET_BASS = 'prsb',	
