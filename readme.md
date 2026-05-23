@@ -6,13 +6,14 @@
 
 
 ### Includes
-- shuffle stations.
-- save/delete/play favorites.
-- optional notifications.
-- fade in/out on song change. 
-- config manager.
-- 15 Band EQ
-- Visualizer window for supported platforms.
+- Shuffle stations or shuffle favorits only
+- Save/delete/play favorites.
+- Optional notifications.
+- Fade in/out on song change. 
+- Config manager.
+- 15 Band EQ w/ Limiter
+- Custom made spectrums and two spectrum games.
+- Experimental Visualizer Window for supported platforms.
 
 ### Tested Haiku OS x86_64 and x86
 
