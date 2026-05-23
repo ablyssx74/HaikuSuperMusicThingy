@@ -147,7 +147,10 @@ public:
 	
 	  
 private:
-
+	BGroupView* fNormalControlsWrapper;
+	BGroupView* fCompactControlsWrapper;
+	BGroupView* fCompactSpectrumWrapper;
+    BGroupView* fRightSideControlGroup;
   	thread_id fDownloadThreadID; // Tracks the running download worker loop thread
     bool      fIsQuitting;    
 

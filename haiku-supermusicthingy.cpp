@@ -462,42 +462,24 @@ BBitmap* GetVectorIcon(const unsigned char* data, size_t size, float dimensions)
 
 class IconButton : public BButton {
 public:
-    IconButton(const char* name, BBitmap* icon, BMessage* msg, float scale = 1.0f)
+    IconButton(const char* name, BBitmap* icon, BMessage* msg)
         : BButton(name, "", msg), fIcon(icon), fIsFavorite(false),
-          fIsHovered(false), fHoverAlpha(0.0f), fLastTime(system_time()),
-          fScale(scale)
+          fIsHovered(false), fHoverAlpha(0.0f), fLastTime(system_time())
     {
         SetViewColor(B_TRANSPARENT_COLOR);
         SetFlags(Flags() | B_POINTER_EVENTS);
-        
-        // Default padding fallback matches standard normal mode requirements
-        fPadding = 16.0f * fScale; 
     }
 
-    // --- TELL HAIKU TO ALLOCATE EXACT ROOM DYNAMICALLY ---
+    // ---ALLOCATE EXTRA DRAWING ROOM ---
     void GetPreferredSize(float* width, float* height) override {
         if (fIcon) {
-            // Use the variable padding value computed from your compact/normal mode geometry branches
-            *width = fIcon->Bounds().Width() + fPadding;
-            *height = fIcon->Bounds().Height() + fPadding;
+            // Provide an extra 16 pixels of margin beyond the icon size
+            // This ensures the 8px glow ring never hits the bounding box edge
+            *width = fIcon->Bounds().Width() + 16.0f;
+            *height = fIcon->Bounds().Height() + 16.0f;
         } else {
             BButton::GetPreferredSize(width, height);
         }
-    }
-
-    // Call this during your geometry branch switches to sync padding changes instantly
-    void SetPadding(float padding) {
-        if (fPadding != padding) {
-            fPadding = padding;
-            InvalidateLayout(); // Tells parent group matrix to re-evaluate GetPreferredSize()
-            Invalidate();
-        }
-    }
-
-    // Sync global high-DPI scaling factor updates
-    void SetScale(float scale) {
-        fScale = scale;
-        InvalidateLayout();
     }
 
     void SetFavorite(bool fav) {
@@ -507,10 +489,10 @@ public:
         }
     }
 
-    // Call this when swapping icon assets between sizes to force a clean re-flow
+    // Call this whenever you swap icons between 64 and 40 to force a layout refresh
     void UpdateIcon(BBitmap* newIcon) {
         fIcon = newIcon;
-        InvalidateLayout(); 
+        InvalidateLayout(); // Tells parent group to re-evaluate GetPreferredSize()
         Invalidate();
     }
 
@@ -531,8 +513,6 @@ public:
 
     void Draw(BRect updateRect) override {
         BRect b = Bounds();
-        if (!b.IsValid() || b.Width() <= 0x01 || b.Height() <= 0x01) return; // Layout safety cutoff guardrail
-
         float x = fIcon ? (b.Width() - fIcon->Bounds().Width()) / 2.0f : 0.0f;
         float y = fIcon ? (b.Height() - fIcon->Bounds().Height()) / 2.0f : 0.0f;
 
@@ -562,7 +542,7 @@ public:
 
         rgb_color bgCol = (Parent() != nullptr) ? Parent()->ViewColor() : ui_color(B_PANEL_BACKGROUND_COLOR);
 
-        // --- RENDER HOVER GLOW LAYER (DYNAMICALLY CLAMPED) ---
+        // --- 2. RENDER HOVER GLOW LAYER (DYNAMICALLY SCALED) ---
         if (fHoverAlpha > 0.0f && IsEnabled() && fIcon) {
             SetDrawingMode(B_OP_ALPHA);
             
@@ -574,12 +554,13 @@ public:
             float midX = b.Width() / 2.0f;
             float midY = b.Height() / 2.0f;
             
+            // Base radius attaches cleanly to the rim of either the 64px or 40px icon assets
             float baseRadius = (fIcon->Bounds().Width() / 2.0f) + 1.0f;
             const int glowSteps = 6;
 
-            // DYNAMIC SPREAD: Scales maximum glow ring dispersion to tightly fit the current padding envelope
-            float maxGlowSpread = (fPadding / 2.0f) - (2.0f * fScale); 
-            if (maxGlowSpread < 2.0f) maxGlowSpread = 2.0f;
+            // DYNAMIC SPREAD: Scale maximum glow ring width proportional to icon width
+            // This prevents a huge 8px halo from bloating over the smaller 40px circle
+            float maxGlowSpread = fIcon->Bounds().Width() * 0.125f; 
 
             for (int step = 0; step < glowSteps; step++) {
                 float progress = (float)step / (float)glowSteps;
@@ -593,7 +574,7 @@ public:
             }
         }
 
-        // --- RENDER THE ICON ---
+        // --- 3. RENDER THE ICON ---
         if (fIcon) {
             bool isFavBtn = (strcmp(Name(), "btn_add_fav") == 0);
 
@@ -624,8 +605,6 @@ private:
     bool fIsHovered;
     float fHoverAlpha;       
     bigtime_t fLastTime;    
-    float fScale;
-    float fPadding; // Dynamically adjusted safety envelope property
 };
 
 
@@ -839,10 +818,6 @@ private:
     Channel fChannel;
     BBitmap* fIcon; 
 };
-
-
-
-
 
 
 
@@ -1177,11 +1152,11 @@ public:
         
         // Force a staggering pipeline gap so obstacles do not stack on top of each other
         fObsX[0] = 340.0f;
-        fObsIsPit[0] = 0;       // FIX: Set as integer literal 0 (Matches 'int fObsIsPit[2]')
+        fObsIsPit[0] = 0;       // Set as integer literal 0 (Matches 'int fObsIsPit[2]')
         fObsHeightScale[0] = 1.0f;
 
         fObsX[1] = 520.0f;      // Positioned further right down the scrolling track line
-        fObsIsPit[1] = 1;       // FIX: Set as integer literal 1 (Corresponds to PIT type in Draw loop)
+        fObsIsPit[1] = 1;       // Set as integer literal 1 (Corresponds to PIT type in Draw loop)
         fObsHeightScale[1] = 0.8f;
         
         // Initialize exhaust particle arrays to an inactive starting state
@@ -1263,7 +1238,7 @@ public:
                         float scrollSensitivityMultiplier = 15.6f; 
                         fRightPaddlePos += deltaY * scrollSensitivityMultiplier;
                         
-                        // FIX: Query the view context height dynamically to accommodate both 150f and 100f modes
+                        // Query the view context height dynamically to accommodate both 150f and 100f modes
                         float fixedVisualizerHeight = Bounds().Height();
                         float paddleH = 21.0f;
                         
@@ -1355,7 +1330,7 @@ void UpdateLevel(double level) {
             sSmoothedNativeBufferUs = (bigtime_t)((sSmoothedNativeBufferUs * 0.90) + (current_native_buffer * 0.10));
         }
 
-        // Fix: Use a 1140ms baseline offset (matching your logs) to align with mpv playback pipeline,
+        // Use a 1140ms baseline offset (matching your logs) to align with mpv playback pipeline,
         // and dynamically add the native 190ms hardware buffer variation on top of it.
         bigtime_t basePlaybackDelayUs = 1140000; 
         fAudioHardwareDelayUs = basePlaybackDelayUs + sSmoothedNativeBufferUs + fManualSyncOffsetUs;
@@ -1490,7 +1465,7 @@ void UpdateLevel(double level) {
             float horizontalPercent = (float)i / 64.0f;
             int32 targetPixelX = (int32)(horizontalPercent * width);
             
-            // FIX: Prevent out-of-bounds index selection on the far right column edge
+            // Prevent out-of-bounds index selection on the far right column edge
             if (targetPixelX >= width) targetPixelX = width - 1;
             if (targetPixelX < 0) targetPixelX = 0;
 
@@ -1586,7 +1561,7 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
 
                     // --- AIR FLIP ENGINE ---
                     if (fMotoY > 0.05f) {
-                        // FIX: Use an absolute system clock delta cooldown (250,000 microseconds) 
+                        // Use an absolute system clock delta cooldown (250,000 microseconds) 
                         // instead of raw OS clicks to block infinite air flight exploit spamming.
                         if (now - fLastClickTime < 250000) {
                             fIsFlipping = true;
@@ -1628,12 +1603,23 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
 
 
 virtual void Pulse() override {
-    //BRect b = Bounds();
-    float w = 350.0f;
-    //float viewHeight = 100.0f;
-    float viewHeight = Bounds().Height() + 1.0f; 
+    // 1. Grab actual real-time drawing boundaries
+    BRect b = Bounds();
+    float w = b.Width() > 0.0f ? b.Width() + 1.0f : 350.0f;
+    float viewHeight = b.Height() + 1.0f; 
 
+    // 2. FALLBACK CRITICAL CHECK: If layout engines are recalculating and bounds are uninitialized,
+    // fetch the explicit size constraints assigned by your geometry branch code
+    if (viewHeight <= 1.0f) {
+        viewHeight = ExplicitMinSize().Height();
+    }
+    if (w <= 1.0f) {
+        w = ExplicitMinSize().Width();
+    }
+
+    // Safety Gate: Abandon processing if both fallbacks are still zero
     if (viewHeight <= 0.0f || w <= 0.0f) return;
+    
     
     // ====================================================================
     // 0. DYNAMIC DELTA TIME CALCULATION
@@ -1652,7 +1638,7 @@ virtual void Pulse() override {
     if (deltaTime <= 0.0f) deltaTime = 0.001f;
 
     // Baseline normalization factor: 20 FPS means 0.05 seconds per frame.
-    // FIX: Added absolute division-by-zero guard protection around the delta timeline divisor
+    // Added absolute division-by-zero guard protection around the delta timeline divisor
     float dtScale = 1.0f;
     if (deltaTime > 0.0f) {
         dtScale = deltaTime / 0.05f;
@@ -1813,7 +1799,7 @@ virtual void Pulse() override {
             // Restricts the AI's maximum clumsiness to exactly 20%
             float mistakeFactor = waveValue * 1.0f; 
             
-            // FIX: Scaled to actual pixel offsets so it impacts the viewHeight coordinate system noticeably
+            // Scaled to actual pixel offsets so it impacts the viewHeight coordinate system noticeably
             // This causes the AI to organically wander up to 40 pixels off target
             float dynamicMaxErrorOffset = 40.0f * mistakeFactor; 
             float dynamicErrorChance = 35.0f * mistakeFactor; 
@@ -1830,11 +1816,11 @@ virtual void Pulse() override {
                 }
                 
                 if (fBallX <= midPointX && !errorCalculated) {
-                    // FIX: Removed dtScale from probability check to keep it frame-rate independent
+                    // Removed dtScale from probability check to keep it frame-rate independent
                     if ((rand() % 100) < dynamicErrorChance) {
                         float halfErrorRange = dynamicMaxErrorOffset / 2.0f;
                         
-                        // FIX: Explicit integer truncation check ensures modulo never crashes on 0 or 1
+                        // Explicit integer truncation check ensures modulo never crashes on 0 or 1
                         int errorWindow = (int)dynamicMaxErrorOffset;
                         if (errorWindow > 1) {
                             currentAIError = (float)((rand() % errorWindow) - halfErrorRange); 
@@ -2182,7 +2168,7 @@ virtual void Pulse() override {
             float totalBass = 0.0f;
             float totalTreble = 0.0f;
             
-            // FIX: Replaced hardcoded 0.016f framework step with true hardware delta elapsed time
+            // Replaced hardcoded 0.016f framework step with true hardware delta elapsed time
             float dt = deltaTime; 
             
             // Apply gVolumeScaleFactor to match your bar draw logic exactly
@@ -2191,7 +2177,7 @@ virtual void Pulse() override {
             for (int b = 0; b < 12; b++)  totalBass += (fBarHeights[b] * volumeScale);
             for (int t = 35; t < 55; t++) totalTreble += (fBarHeights[t] * volumeScale);
             
-            // --- FIX: Extract structural viewport boundaries via Haiku API ---
+            // --- Extract structural viewport boundaries via Haiku API ---
             float viewBoundsHeight = Bounds().Height();
             if (viewBoundsHeight <= 0.0f) viewBoundsHeight = 1.0f; // Division-by-zero protection
 
@@ -2350,12 +2336,12 @@ virtual void Pulse() override {
                         if (fSparkLife[s] <= 0.0f) {
                             fSparkLife[s] = (8 + (rand() % 8)) * dtScale;  
                             
-                            // FIX: Pulled spawn coordinates forward from -12.0f to -2.0f 
+                            // Pulled spawn coordinates forward from -12.0f to -2.0f 
                             // to align them directly with the physical tip of the tailpipe
                             fSparkX[s] = -2.0f; 
                             fSparkY[s] = 0.0f; 
                             
-                            // FIX: Mellowed out the backward horizontal velocity from -2.2f to -0.8f
+                            // Mellowed out the backward horizontal velocity from -2.2f to -0.8f
                             // This lets the sparks pool naturally behind the tire instead of launching out
                             fSparkDX[s] = -0.8f - ((rand() % 10) / 10.0f);  
                             fSparkDY[s] = -0.3f + ((rand() % 20) / 10.0f);
@@ -2524,8 +2510,6 @@ virtual void Pulse() override {
         }
 
 
-
-
         Invalidate(); 
     }
 
@@ -2553,17 +2537,35 @@ virtual void Draw(BRect updateRect) override {
         return;
     }       
     
-    // Dynamically track your changing layout box container height splits!
-    float height = Bounds().Height() + 1.0f; 
-    int numBars = 64;
-    float artworkWidth = 350.0f; // Matches your updated layout spec boundaries
+    // 1. Dynamically track changing layout boundaries safely
+    BRect currentBounds = Bounds();
+    float height = currentBounds.Height() + 1.0f; 
+    float width = currentBounds.Width() + 1.0f;
+
+    // 2. FALLBACK CRITICAL CHECK: If layout engines are in-flight and bounds are uninitialized
+    if (height <= 1.0f) {
+        height = ExplicitMinSize().Height();
+    }
+    if (width <= 1.0f) {
+        width = ExplicitMinSize().Width();
+    }
     
+    // Safety Gate: Abandon drawing pass if dimensions are completely flattened
+    if (height <= 0.0f || width <= 0.0f) return;
+
+    int numBars = 64;
+    
+    // Use the dynamic 'width' variable instead of the hardcoded 350.0f limit!
+    // This allows the bar mathematical tracking to rescale cleanly inside your narrow compact box layout.
+    float artworkWidth = width; 
+
+
     BRect windowBounds = Bounds();
     float totalViewWidth = windowBounds.Width();
     float startX = (totalViewWidth - artworkWidth) / 2.0f;
 
     // ====================================================================
-    // FIX: GLOBAL VARIABLE DECLARATION FOR THE ENTIRE DRAW SCOPE
+    // GLOBAL VARIABLE DECLARATION FOR THE ENTIRE DRAW SCOPE
     // ====================================================================
     // Moving this here makes it available to MODE_BARS, MODE_LINE_WAVE, and all others!
     float barWidth = artworkWidth / (float)numBars; 
@@ -2588,7 +2590,7 @@ virtual void Draw(BRect updateRect) override {
         const float bottomFadeHeight = 42.0f; 
         
         // ====================================================================
-        // FIX: RE-DECLARE MISSING GEOMETRY STEP CONSTANTS FOR THIS MODE SCOPE
+        // RE-DECLARE MISSING GEOMETRY STEP CONSTANTS FOR THIS MODE SCOPE
         // ====================================================================
         const float barPadding = 1.0f;
         // artworkWidth represents the 350.0f layout dimension used at the top of Draw()
@@ -3147,7 +3149,7 @@ virtual void Draw(BRect updateRect) override {
             // Little wagging tail
             SetPenSize(1.5f);
             
-            // FIX: Replaced dirty local tick counters with an absolute microsecond clock oscillation.
+            // Replaced dirty local tick counters with an absolute microsecond clock oscillation.
             // This forces a 150ms real-time tail wag cycle regardless of whether your app is hitting 20 or 60 FPS.
             bigtime_t curTime = system_time();
             bool tailFlip = ((curTime / 150000) % 2 == 0);
@@ -3161,7 +3163,7 @@ virtual void Draw(BRect updateRect) override {
 
      // --- VICTORY WIN MESSAGE SCREEN OVERLAY WITH COUNTDOWN ---
         if (fLeftScore >= 10 || fRightScore >= 10) {
-            // FIX: Updated variable naming convention references to match private layout scope
+            // Updated variable naming convention references to match private layout scope
             bigtime_t elapsed = system_time() - fWinStartTime; 
             int secondsLeft = 3 - (int)(elapsed / 1000000);
             if (secondsLeft < 1) secondsLeft = 1; 
@@ -3220,7 +3222,7 @@ virtual void Draw(BRect updateRect) override {
             // Revert font adjustments back to defaults for remaining passes
             SetFont(&scoreFont);
         } else {
-            // FIX: Updated class member references to clean trailing variable mismatches
+            // Updated class member references to clean trailing variable mismatches
             fDrawTimerStarted = false;
             fDrawWinStartTime = 0;
         }
@@ -3253,7 +3255,7 @@ virtual void Draw(BRect updateRect) override {
         // --- LAYER: PROCEDURAL RADIAL ARC SHOCKWAVE EXPLOSION ---
 
         if (fPongExplosionTick > 0.0f) {
-            // FIX: Normalize timeline progress safely against the 20-frame baseline to prevent scaling distortion
+            // Normalize timeline progress safely against the 20-frame baseline to prevent scaling distortion
             float maxTicksBaseline = 20.0f * fDtScaleCached;
             if (maxTicksBaseline <= 0.0f) maxTicksBaseline = 1.0f;
             
@@ -3328,7 +3330,7 @@ virtual void Draw(BRect updateRect) override {
             const char* bonusText = "+2 Bonus Ball Activatd!!";
             float textWidth = StringWidth(bonusText);
             
-            // FIX: Pull layout height directly from the BView Bounds context
+            // Pull layout height directly from the BView Bounds context
             float drawBoundsHeight = Bounds().Height();
             
             // Perfectly centers the notification banner inside the dynamic view layout bounds
@@ -3368,7 +3370,7 @@ virtual void Draw(BRect updateRect) override {
             // --- STRICT READ-ONLY DRIVE METRICS ---
             float audioDrive = (fBarHeights[frequencyIndex] / height) * volumeScale; 
 
-            // FIX: Stripped the destructive 'fRainY[i] += ...' accumulator. 
+            // Stripped the destructive 'fRainY[i] += ...' accumulator. 
             // All position offsets are handled exclusively by your delta-time clock steps inside Pulse().
 
             float currentX = startX + (fRainX[i] * artworkWidth);
@@ -3442,7 +3444,7 @@ virtual void Draw(BRect updateRect) override {
 
         float bassDrive = fNeonBassSmooth;
         
-        // FIX: Decoupled random visual noise ticks. Because fNeonFlickerTimer2 decreases linearly by real-time seconds in Pulse(),
+        // Decoupled random visual noise ticks. Because fNeonFlickerTimer2 decreases linearly by real-time seconds in Pulse(),
         // checking the raw flag here provides clean, unified stutter triggers regardless of output FPS constraints.
         bool gasFlicker2 = (fNeonFlickerTimer2 > 0.0f) && ((rand() % 100) > 45);
         float auraPulseIntensity = 0.35f + (bassDrive * 0.65f);
@@ -3703,122 +3705,122 @@ virtual void Draw(BRect updateRect) override {
             	
             	
             	
-        // --- HAZARD TYPE 2: NEON WATER POOL (BLUE OBSTACLE) ---
-        BRect waterBounds(startX + fObsX[o], baselineY + 1.0f, startX + fObsX[o] + 24.0f, baselineY + 6.0f);                    
-        SetHighColor(0, 130, 255, 255); 
+        	// --- HAZARD TYPE 2: NEON WATER POOL (BLUE OBSTACLE) ---
+        	BRect waterBounds(startX + fObsX[o], baselineY + 1.0f, startX + fObsX[o] + 24.0f, baselineY + 6.0f);                    
+        	SetHighColor(0, 130, 255, 255); 
         
-        // Rich deep hazard blue pool fill
-        FillRect(waterBounds);                    
-        SetHighColor(0, 240, 255, 255); 
+        	// Rich deep hazard blue pool fill
+        	FillRect(waterBounds);                    
+        	SetHighColor(0, 240, 255, 255); 
         
-        // Radiant glowing surface layer line
-        StrokeLine(BPoint(startX + fObsX[o], baselineY + 1.0f), BPoint(startX + fObsX[o] + 24.0f, baselineY + 1.0f));                    
+        	// Radiant glowing surface layer line
+        	StrokeLine(BPoint(startX + fObsX[o], baselineY + 1.0f), BPoint(startX + fObsX[o] + 24.0f, baselineY + 1.0f));                    
         
-        // Safety shoreline markers
-        SetHighColor(isDarkBg ? rgb_color{255, 255, 255, 180} : rgb_color{0, 0, 0, 180});
-        StrokeLine(BPoint(startX + fObsX[o], baselineY), BPoint(startX + fObsX[o], baselineY + 4.0f));
-        StrokeLine(BPoint(startX + fObsX[o] + 24.0f, baselineY), BPoint(startX + fObsX[o] + 24.0f, baselineY + 4.0f));
+        	// Safety shoreline markers
+        	SetHighColor(isDarkBg ? rgb_color{255, 255, 255, 180} : rgb_color{0, 0, 0, 180});
+        	StrokeLine(BPoint(startX + fObsX[o], baselineY), BPoint(startX + fObsX[o], baselineY + 4.0f));
+        	StrokeLine(BPoint(startX + fObsX[o] + 24.0f, baselineY), BPoint(startX + fObsX[o] + 24.0f, baselineY + 4.0f));
     
-    } else if (fObsIsPit[o] == 3 || fObsIsPit[o] == 4) {
-        // --- HAZARD TYPE 3 & 4: PULSING SHARP SHOCK-SPIKE BLADES ---
-        int spikeCount = (fObsIsPit[o] == 3) ? 4 : 5;
-        float spikeWidth = 8.0f;
-        float spikeAudioScale = 1.0f + (bassNormalized * 1.2f);
+    		} else if (fObsIsPit[o] == 3 || fObsIsPit[o] == 4) {
+        		// --- HAZARD TYPE 3 & 4: PULSING SHARP SHOCK-SPIKE BLADES ---
+        		int spikeCount = (fObsIsPit[o] == 3) ? 4 : 5;
+        		float spikeWidth = 8.0f;
+        		float spikeAudioScale = 1.0f + (bassNormalized * 1.2f);
 
-        for (int sIdx = 0; sIdx < spikeCount; sIdx++) {
-            float leftX = startX + fObsX[o] + (sIdx * spikeWidth);
-            float rightX = leftX + spikeWidth;
-            float centerX = leftX + (spikeWidth / 2.0f);
+        		for (int sIdx = 0; sIdx < spikeCount; sIdx++) {
+            		float leftX = startX + fObsX[o] + (sIdx * spikeWidth);
+            		float rightX = leftX + spikeWidth;
+            		float centerX = leftX + (spikeWidth / 2.0f);
 
-            // Match physical sizing structure profile equations precisely
-            float sizeVariation = 0.7f + (((sIdx * 3) % 5) / 6.0f);
-            float currentSpikeHeight = 7.0f * fObsHeightScale[o] * sizeVariation * spikeAudioScale;
-            float tipY = baselineY - currentSpikeHeight;
+            		// Match physical sizing structure profile equations precisely
+            		float sizeVariation = 0.7f + (((sIdx * 3) % 5) / 6.0f);
+            		float currentSpikeHeight = 7.0f * fObsHeightScale[o] * sizeVariation * spikeAudioScale;
+            		float tipY = baselineY - currentSpikeHeight;
 
-            // Solid Semi-Translucent Triangle Body Fill
-            SetHighColor(255, 90, 0, 95); 
-            BPoint spikeTri[3] = { BPoint(leftX, baselineY), BPoint(centerX, tipY), BPoint(rightX, baselineY) };
-            FillPolygon(spikeTri, 3);
+            		// Solid Semi-Translucent Triangle Body Fill
+            		SetHighColor(255, 90, 0, 95); 
+            		BPoint spikeTri[3] = { BPoint(leftX, baselineY), BPoint(centerX, tipY), BPoint(rightX, baselineY) };
+            		FillPolygon(spikeTri, 3);
 
-            // High Contrast Solid Accent Border Outlines
-            SetPenSize(1.2f);
-            SetHighColor(isDarkBg ? rgb_color{255, 110, 50, 240} : rgb_color{210, 40, 10, 240});
-            StrokeLine(BPoint(leftX, baselineY), BPoint(centerX, tipY));
-            StrokeLine(BPoint(centerX, tipY), BPoint(rightX, baselineY));
-        }
-    }
-}                      
+            		// High Contrast Solid Accent Border Outlines
+            		SetPenSize(1.2f);
+            		SetHighColor(isDarkBg ? rgb_color{255, 110, 50, 240} : rgb_color{210, 40, 10, 240});
+            		StrokeLine(BPoint(leftX, baselineY), BPoint(centerX, tipY));
+            		StrokeLine(BPoint(centerX, tipY), BPoint(rightX, baselineY));
+        		}
+    		}
+		}                      
 
-// --- LAYER 5: SCOREBOARD TRACKING DISPLAY TEXT ---
-BFont scoreFont;   
-GetFont(&scoreFont);
-scoreFont.SetSize(11.0f); 
-SetFont(&scoreFont);            
-SetHighColor(isDarkBg ? rgb_color{0, 240, 255, 200} : rgb_color{50, 60, 70, 220});
-BString scoreStr;
-scoreStr.SetToFormat("SCORE: %" B_PRId32, fMotoScore);
-DrawString(scoreStr.String(), BPoint(startX + artworkWidth - 68.0f, 15.0f));  
+		// --- LAYER 5: SCOREBOARD TRACKING DISPLAY TEXT ---
+		BFont scoreFont;   
+		GetFont(&scoreFont);
+		scoreFont.SetSize(11.0f); 
+		SetFont(&scoreFont);            
+		SetHighColor(isDarkBg ? rgb_color{0, 240, 255, 200} : rgb_color{50, 60, 70, 220});
+		BString scoreStr;
+		scoreStr.SetToFormat("SCORE: %" B_PRId32, fMotoScore);
+		DrawString(scoreStr.String(), BPoint(startX + artworkWidth - 68.0f, 15.0f));  
 
-// --- LAYER 5B: UNCLIPPED CENTER-SCREEN STUNT POPUP ---
-if (fStuntTextLife > 0.0f) {
-    BFont stuntFont;
-    GetFont(&stuntFont);
-    stuntFont.SetSize(13.0f); 
-    stuntFont.SetFace(B_BOLD_FACE);
-    SetFont(&stuntFont);
+		// --- LAYER 5B: UNCLIPPED CENTER-SCREEN STUNT POPUP ---
+		if (fStuntTextLife > 0.0f) {
+    		BFont stuntFont;
+    		GetFont(&stuntFont);
+    		stuntFont.SetSize(13.0f); 
+    		stuntFont.SetFace(B_BOLD_FACE);
+    		SetFont(&stuntFont);
     
-    // --- THEME-ADAPTIVE HIGH-CONTRAST COLOR SWITCH pass ---
-    // FIX: Using your uncoupled float lifetime tracker to scale font transparency cleanly
-    float maxStuntTextLife = 35.0f * fDtScaleCached;
-    if (maxStuntTextLife <= 0.0f) maxStuntTextLife = 1.0f;
-    float alphaFadePct = fStuntTextLife / maxStuntTextLife;
+    		// --- THEME-ADAPTIVE HIGH-CONTRAST COLOR SWITCH pass ---
+    		// Using your uncoupled float lifetime tracker to scale font transparency cleanly
+    		float maxStuntTextLife = 35.0f * fDtScaleCached;
+    		if (maxStuntTextLife <= 0.0f) maxStuntTextLife = 1.0f;
+    		float alphaFadePct = fStuntTextLife / maxStuntTextLife;
     
-    if (isDarkBg) {
-        SetHighColor(255, 215, 0, (uint8)(alphaFadePct * 252.0f)); 
-    } else {
-        SetHighColor(0, 185, 20, (uint8)(alphaFadePct * 252.0f)); 
-    }
+    		if (isDarkBg) {
+        		SetHighColor(255, 215, 0, (uint8)(alphaFadePct * 252.0f)); 
+    		} else {
+        		SetHighColor(0, 185, 20, (uint8)(alphaFadePct * 252.0f)); 
+    		}
 
-    // Mathematical String Width Center Offset Calculation
-    float stringWidth = stuntFont.StringWidth(fStuntTextStr.String());
-    float screenCenterX = startX + (artworkWidth / 2.0f);
+    		// Mathematical String Width Center Offset Calculation
+    		float stringWidth = stuntFont.StringWidth(fStuntTextStr.String());
+    		float screenCenterX = startX + (artworkWidth / 2.0f);
     
-    DrawString(fStuntTextStr.String(), BPoint(screenCenterX - (stringWidth / 2.0f), fStuntTextY));
+    		DrawString(fStuntTextStr.String(), BPoint(screenCenterX - (stringWidth / 2.0f), fStuntTextY));
     
-    // Restore font to clear trailing canvas modifications
-    SetFont(&scoreFont);
-}
+    		// Restore font to clear trailing canvas modifications
+    		SetFont(&scoreFont);
+		}
 
-// --- LAYER 5C: BACKGROUND SCROLLING VECTOR DOG RENDERING (FACING RIGHT) ---
-if (fDogDrawActive) {
-    SetDrawingMode(B_OP_ALPHA);
-    SetHighColor(255, 255, 255, 210); 
+		// --- LAYER 5C: BACKGROUND SCROLLING VECTOR DOG RENDERING (FACING RIGHT) ---
+		if (fDogDrawActive) {
+    		SetDrawingMode(B_OP_ALPHA);
+    		SetHighColor(255, 255, 255, 210); 
     
-    float dogFloorY = baselineY - 5.0f - fDogDrawY; 
+    		float dogFloorY = baselineY - 5.0f - fDogDrawY; 
 
-    // Draw main body torso
-    FillRect(BRect(startX + fDogDrawX - 7.0f, dogFloorY - 4.0f, startX + fDogDrawX + 7.0f, dogFloorY + 3.0f));
+    		// Draw main body torso
+    		FillRect(BRect(startX + fDogDrawX - 7.0f, dogFloorY - 4.0f, startX + fDogDrawX + 7.0f, dogFloorY + 3.0f));
     
-    // FIXED ORIENTATION: Draw head block on the RIGHT (+4.0f to +11.0f) because he's running right!
-    FillRect(BRect(startX + fDogDrawX + 4.0f, dogFloorY - 9.0f, startX + fDogDrawX + 11.0f, dogFloorY - 3.0f));
+    		// FIXED ORIENTATION: Draw head block on the RIGHT (+4.0f to +11.0f) because he's running right!
+    		FillRect(BRect(startX + fDogDrawX + 4.0f, dogFloorY - 9.0f, startX + fDogDrawX + 11.0f, dogFloorY - 3.0f));
     
-    // Draw legs
-    FillRect(BRect(startX + fDogDrawX - 5.0f, dogFloorY + 3.0f, startX + fDogDrawX - 3.0f, dogFloorY + 8.0f)); // Back Leg
-    FillRect(BRect(startX + fDogDrawX + 3.0f, dogFloorY + 3.0f, startX + fDogDrawX + 5.0f, dogFloorY + 8.0f)); // Front Leg
+    		// Draw legs
+    		FillRect(BRect(startX + fDogDrawX - 5.0f, dogFloorY + 3.0f, startX + fDogDrawX - 3.0f, dogFloorY + 8.0f)); // Back Leg
+    		FillRect(BRect(startX + fDogDrawX + 3.0f, dogFloorY + 3.0f, startX + fDogDrawX + 5.0f, dogFloorY + 8.0f)); // Front Leg
     
-    // Animated fast wagging tail (now pointing LEFT since he runs right)
-    SetPenSize(1.5f);
+    		// Animated fast wagging tail (now pointing LEFT since he runs right)
+    		SetPenSize(1.5f);
     
-    // FIX: Replaced mutable static variable increment loops with a unified absolute system clock reading
-    bigtime_t currentClock = system_time();
-    bool tailOscillation = ((currentClock / 120000) % 2 == 0); // Fast 120ms real-world tail wag frequency
+    		// Replaced mutable static variable increment loops with a unified absolute system clock reading
+    		bigtime_t currentClock = system_time();
+    		bool tailOscillation = ((currentClock / 120000) % 2 == 0); // Fast 120ms real-world tail wag frequency
     
-    if (tailOscillation) {
-        StrokeLine(BPoint(startX + fDogDrawX - 7.0f, dogFloorY - 2.0f), BPoint(startX + fDogDrawX - 11.0f, dogFloorY - 6.0f));
-    } else {
-        StrokeLine(BPoint(startX + fDogDrawX - 7.0f, dogFloorY - 2.0f), BPoint(startX + fDogDrawX - 12.0f, dogFloorY - 2.0f));
-    }
-}
+    		if (tailOscillation) {
+        		StrokeLine(BPoint(startX + fDogDrawX - 7.0f, dogFloorY - 2.0f), BPoint(startX + fDogDrawX - 11.0f, dogFloorY - 6.0f));
+    		} else {
+        		StrokeLine(BPoint(startX + fDogDrawX - 7.0f, dogFloorY - 2.0f), BPoint(startX + fDogDrawX - 12.0f, dogFloorY - 2.0f));
+    		}
+		}
 
         // --- LAYER 6: MOTORCYCLE RIDER VEHICLE BODY & FLIP MECHANIC ---
         float riderX = startX + 45.0f; 
@@ -3910,7 +3912,7 @@ private:
     float     fBarHeights[64];   
     float     fBarVelocities[64];
     float     fPeakHeights[64];  
-    float     fPeakHold[64];     // FIX: Changed from int to float for smooth delta-time decay
+    float     fPeakHold[64];     // Changed from int to float for smooth delta-time decay
     rgb_color fArtworkPalette[64];
     bigtime_t fLastDataTime;    
     int32     fVisualizerMode; 
@@ -3953,7 +3955,7 @@ private:
     // Mode 6: Endless Moto Rider Game Variables
     float     fMotoY;
     float     fMotoVelocityY;
-    float     fMotoCrashTicks;   // FIX: Changed from int32 to float so countdown doesn't freeze
+    float     fMotoCrashTicks; 
 
     // Obstacle Trackers (Array Size 2)
     float     fObsX[2];
@@ -3976,7 +3978,7 @@ private:
     float     fSparkY[12];
     float     fSparkDX[12];      
     float     fSparkDY[12];      
-    float     fSparkLife[12];    // FIX: Changed from int32 to float to handle fractional spark lifetime decay
+    float     fSparkLife[12];   
     
     // Latency cache fix
     double    fLevelHistory[512];
@@ -3986,7 +3988,7 @@ private:
     bigtime_t fAudioHardwareDelayUs = 130000; 
     bigtime_t fManualSyncOffsetUs = 0; 
 	
-    float     fPongExplosionTick = 0.0f; // FIX: Changed from int to float to safely step frame-by-frame
+    float     fPongExplosionTick = 0.0f;
     float     fPongExplosionX = 0.0f;
     float     fPongExplosionY = 0.0f;
 	
@@ -3995,7 +3997,7 @@ private:
     bigtime_t fLastClickTime;
     
     float     fStuntTextY;       
-    float     fStuntTextLife;    // FIX: Changed from int32 to float so the text popup cleanly fades over time
+    float     fStuntTextLife;    
     BString   fStuntTextStr;   
 
     bool      fDogDrawActive;
@@ -4007,13 +4009,13 @@ private:
     float     fNeonFlickerTimer1; 
     float     fNeonFlickerTimer2; 
     
-    bigtime_t fWinStartTime = 0;       // Maps back to your game victory sequence anchor
+    bigtime_t fWinStartTime = 0;       // Maps back to game victory sequence anchor
     bool      fDrawTimerStarted = false; 
     bigtime_t fDrawWinStartTime = 0;
     
     float fDtScaleCached = 1.0f; // Stores the current frame timing step factor globally
 
-    bigtime_t fPrevFrameTime = 0; // CRITICAL FIX: Track system clock across frames for dynamic delta-time calculations
+    bigtime_t fPrevFrameTime = 0; // Track system clock across frames for dynamic delta-time calculations
     
     // Added persistent tracking state members for the +2 Bonus Ball alert system
     float fBonusFlashTick;
@@ -4064,7 +4066,7 @@ public:
     BSize MaxSize() override {
         float scale = be_plain_font->Size() / 12.0f;
         if (!cfg.compactMode) {
-            // FIX: Allow unlimited expansion horizontally, 
+            //  Allow unlimited expansion horizontally, 
             // but strictly limit the maximum vertical height to 2 lines!
             return BSize(B_SIZE_UNLIMITED, 36.0f * scale); 
         }
@@ -4937,6 +4939,7 @@ void PopulatePresetList(BListView* list, const char* folderPath) {
 }
 
 
+
 #ifdef USE_PROJECTM
 void load_random_preset(projectm_handle pm) {
     const char* home = getenv("HOME");
@@ -5673,36 +5676,52 @@ SuperMusicWindow::SuperMusicWindow()
     fVolumeSlider = new RadialVolumeControl(volRect, "Volume", new BMessage(MSG_VOL_CHANGED), 5);
     fVolumeSlider->SetTarget(this);
 
+// @MainLayout
 
-
-// --- LAYOUT BUILDER FOR PLAYER TAB ---
-
-// 1. Bottom controls without the slider (just the play/pause row)
-fControlStack = new BGroupView(B_VERTICAL, 5); 
-BLayoutBuilder::Group<>(fControlStack, B_VERTICAL, 5)
-    .AddGroup(B_HORIZONTAL, 5)
-        .Add(fStopBtn)
-        .Add(fPauseBtn)
-        .Add(fPlayBtn)
-        .Add(fShuffleBtn)
-    .End()
+// --- SETUP THE RIGHT SIDE CONTAINER FIRST ---
+fRightSideControlGroup = new BGroupView(B_HORIZONTAL, 5);
+BLayoutBuilder::Group<>(fRightSideControlGroup, B_HORIZONTAL, 0)
+    .Add(fBtnAddFav) // Heart icon safely managed inside this group container
 .End();
 
+// --- LAYOUT BUILDER FOR PLAYER TAB (STABLE MASTER BLUEPRINT) ---
+fControlStack = new BGroupView(B_HORIZONTAL, 5); 
+BLayoutBuilder::Group<>(fControlStack, B_HORIZONTAL, 5)
+    .Add(fStopBtn)
+    .Add(fPauseBtn)
+    .Add(fPlayBtn)
+    .Add(fShuffleBtn)
+.End();
+
+// Create distinct, persistent structural placeholder nodes
+fNormalControlsWrapper = new BGroupView(B_HORIZONTAL, 0);
+fCompactControlsWrapper = new BGroupView(B_HORIZONTAL, 0);
+fCompactSpectrumWrapper = new BGroupView(B_VERTICAL, 0); // Dedicated compact placeholder
+
+// This stack serves as the default vertical home for normal mode text and visualizer
 BGroupView* fMetaAndSpectrumStack = new BGroupView(B_VERTICAL, 0);
 BLayoutBuilder::Group<>(fMetaAndSpectrumStack, B_VERTICAL, 0)
     .SetInsets(0)
     .Add(fDescView)
     .Add(fSongView)  
-    .Add(fSpectrum)
+    .Add(fSpectrum) // Starts inside the text stack for normal view orientation
 .End();
 
+// --- MAIN PLAYER GROUP ---
 BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     .SetInsets(0)
     .Add(fArtView, B_ALIGN_HORIZONTAL_CENTER) 
-    .Add(fMetaAndSpectrumStack, B_ALIGN_HORIZONTAL_CENTER)     
+    
+    // Group the text stack and our spectrum wrapper placeholder sequentially 
+    // This allows fluid reflow under the labels when switching to horizontal mode
+    .AddGroup(B_VERTICAL, 0)
+        .Add(fMetaAndSpectrumStack)
+        .Add(fCompactSpectrumWrapper)
+    .End()
+    
     .AddStrut(0)            
     .AddGroup(B_HORIZONTAL, 5) 
-        // Left Side: Stats and check boxes
+        // Left Side: Stats and checkboxes
         .AddGroup(B_VERTICAL, 0) 
             .SetInsets(20, 0, 0, 0) 
             .Add(fListenersView)
@@ -5710,15 +5729,22 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
             .Add(fCompactModeRadio)               
          .End()          
          .AddGlue(2)
+
          .Add(fVolumeSlider, B_ALIGN_HORIZONTAL_CENTER | B_ALIGN_VERTICAL_CENTER) 
          .AddGlue() 
-         .Add(fBtnAddFav) 
-         .SetInsets(0, 0, 20, 0) 
+         
+         // Right side container isolates layout elements and sets a clear 20px padding edge
+         .AddGroup(B_HORIZONTAL, 0)
+             .SetInsets(0, 0, 20, 0) 
+             .Add(fRightSideControlGroup, B_ALIGN_VERTICAL_CENTER)
+             .Add(fCompactControlsWrapper, B_ALIGN_VERTICAL_CENTER)
+         .End()
      .End()        
-      
-     
-   .Add(fControlStack)
+   
+   // Bottom Row: Fixed structural placeholder node for normal mode controls
+   .Add(fNormalControlsWrapper)
    .AddGlue();
+
 
 
 
@@ -6058,8 +6084,8 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     .Add(fChkShuffle)
     .Add(fShuffleFavsCheckbox)
     .Add(fCompactModeConfig)
-    //.Add(fCmpTitle)  // Still testing these two
-    //.Add(fCmpSong)   
+    .Add(fCmpTitle)  // Still testing these two
+    .Add(fCmpSong)   
     .Add(fChkTheme)
    	.Add(fEQToggle)
    	//.Add(fEnableladspa)  // Doesn't work as good as native mpv plugins and needs to be built into ffmpeg. But leaving in code for future debugging.
@@ -6626,7 +6652,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                                 limiterSliders[s]->SetViewColor(bgDarkColor);
                                 limiterSliders[s]->SetLowColor(bgDarkColor);
                                 
-                                // FIX: Force the text label foreground color to white in dark mode
+                                //  Force the text label foreground color to white in dark mode
                                 limiterSliders[s]->SetHighColor(255, 255, 255, 255);
                             } else {
                                 limiterSliders[s]->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
@@ -6696,42 +6722,47 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			break;
 		}
 
-		
+		// @Modes
 		case B_COLORS_UPDATED:
 		case MSG_COMPACTM_CHANGED: {
 			void* source = nullptr;
 			message->FindPointer("source", &source);    
 			bool newState = cfg.compactMode;		
-				
-			// Check if this is a custom toggle update instead of a mode click
-			bool isViewRefreshOnly = (source == this); 
-			if (source == nullptr || isViewRefreshOnly) {
-				
-				// Maintain current mode; just sync checkboxes to state
-				if (fCompactModeConfig) fCompactModeConfig->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
-				if (fCompactModeRadio) fCompactModeRadio->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
+			
+			// Intercept payload flags to ensure asynchronous passes execute correctly
+			bool forcedState = false;
+			if (message->FindBool("force_compact_state", &forcedState) == B_OK) {
+				//fprintf(stderr, "[DEBUG] Message payload intercepted! Forcing compactMode to: %s\n", forcedState ? "TRUE" : "FALSE");
+				cfg.compactMode = forcedState;
+				newState = forcedState;
 			} else {
-				
-				// Only modify the actual mode if a genuine checkbox/radio was clicked
-				newState = (source == fCompactModeConfig) ? (fCompactModeConfig->Value() == B_CONTROL_ON) 
-														  : (fCompactModeRadio->Value() == B_CONTROL_ON);
-				cfg.compactMode = newState;
-				save_config();				
-				if (fCompactModeRadio) fCompactModeRadio->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
-				if (fCompactModeConfig) fCompactModeConfig->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
-			}
+				// Only execute your old fallback state deduction logic if NO payload override flag exists
+				bool isViewRefreshOnly = (source == this); 
+				if (source == nullptr || isViewRefreshOnly) {
+					if (fCompactModeConfig) fCompactModeConfig->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
+					if (fCompactModeRadio) fCompactModeRadio->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
+				} else {
+					newState = (source == fCompactModeConfig) ? (fCompactModeConfig->Value() == B_CONTROL_ON) 
+																			: (fCompactModeRadio->Value() == B_CONTROL_ON);
+					cfg.compactMode = newState;
+					save_config();				
+					if (fCompactModeRadio) fCompactModeRadio->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
+					if (fCompactModeConfig) fCompactModeConfig->SetValue(newState ? B_CONTROL_ON : B_CONTROL_OFF);
+				}
+			}			
+			
 			// Safety Check: Stop if critical views are missing
 			if (fPlayerGroup == nullptr || fControlStack == nullptr)
 				break;
 			// --- 1. GLOBAL LAYOUT SCALE METRICS ---
 			float scale = be_plain_font->Size() / 12.0f; 
-			float artSize = cfg.compactMode ? (135 * scale) : (350 * scale);
+			float artSize = cfg.compactMode ? (180 * scale) : (350 * scale);
 			float btnSize = cfg.compactMode ? (40 * scale)  : (75 * scale);
 			float favSize = cfg.compactMode ? (40 * scale)  : (75 * scale);
 			float VolSize = cfg.compactMode ? (40 * scale)  : (75 * scale);
 			// Dynamic Override for Special Compact Layout Variant
 			if (cfg.compactMode && cfg.compactModeDesc && cfg.compactModeTitle) { 
-				artSize = 150.0f * scale; 
+				artSize = 180.0f * scale; 
 			}
 			
 			// Apply Layout Orientations
@@ -6743,10 +6774,10 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			if (fDescView) ((SongLabel*)fDescView)->SetCompactMode(cfg.compactMode);
 			if (fSongView) ((SongLabel*)fSongView)->SetCompactMode(cfg.compactMode);
 			
-			
 			// ================================================================
 			// --- GLOBAL UNIFIED VISIBILITY EVALUATOR ---
 			// ================================================================
+			 
 			if (fDescView) {
 				if (cfg.compactModeDesc) fDescView->Show(); else fDescView->Hide();
 				fDescView->InvalidateLayout(true);
@@ -6762,186 +6793,291 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			}
 			if (fMetaAndSpectrumStack && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {
 				fMetaAndSpectrumStack->InvalidateLayout(true);
-			}   
+			}  
+			
+			
 			             
-			// --- 2. COMPACT MODE GEOMETRY BRANCH ---
-			if (cfg.compactMode) {
+		// --- 2. COMPACT MODE GEOMETRY BRANCH ---
+		if (cfg.compactMode) {
+
+    		// =================================================================
+    		// ASYNCHRONOUS DUAL-PASS WITH EXPLICIT MESSAGE PAYLOADS
+    		// =================================================================
+    		static bool sInitialSyncDone = false;
+    
+    		if (!sInitialSyncDone && (source == this || source == nullptr)) {
+        		sInitialSyncDone = true;
+
+        		// Pass 1: Queue a real Normal Mode transformation pass
+        		BMessage* normalMsg = new BMessage(MSG_COMPACTM_CHANGED);
+        		normalMsg->AddPointer("source", source);
+        		normalMsg->AddBool("force_compact_state", false); // Payload force flag
+        		this->PostMessage(normalMsg);
+
+        		// Pass 2: Queue the true Compact Mode transformation pass right behind it
+        		BMessage* compactMsg = new BMessage(MSG_COMPACTM_CHANGED);
+        		compactMsg->AddPointer("source", source);
+        		compactMsg->AddBool("force_compact_state", true); // Payload force flag
+        		this->PostMessage(compactMsg);
+
+        		break; 
+    		}
+
+			
 				float expandedWidth = 350.0f * scale; 
-				float sliderWidth = (btnSize * 4.8f) + 45.0f; // Fits exactly over 4 buttons + spacing				
+				float sliderWidth = (btnSize * 2.4f) + 10.0f;					
 				
-				fSongView->SetExplicitMinSize(BSize(expandedWidth, B_SIZE_UNSET));
-				fSongView->SetExplicitPreferredSize(BSize(expandedWidth, B_SIZE_UNSET));
-				fSongView->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 24.0f * scale)); 
+				// 1. Configure Label Metrics
+				float labelHeight = 0.0f; 
+				if (cfg.compactModeTitle) labelHeight += (24.0f * scale);
+				if (cfg.compactModeDesc)  labelHeight += (24.0f * scale);
 				
-				fDescView->SetExplicitMinSize(BSize(expandedWidth, B_SIZE_UNSET));
-				fDescView->SetExplicitPreferredSize(BSize(expandedWidth, B_SIZE_UNSET));
-				fDescView->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 24.0f * scale)); 
-				                   
-				fVolumeSlider->SetExplicitMaxSize(BSize(sliderWidth, B_SIZE_UNSET));
-				fVolumeSlider->SetExplicitPreferredSize(BSize(sliderWidth, B_SIZE_UNSET));                    
-				
-				// Establish Baseline Spectrum Target Sizes
+
+				// 2. Calculate Spectrum Dimensions
 				float specWidth = expandedWidth;
-				float specHeight = 10.0f * scale;
+				float specHeight = 10.0f * scale; // Default collapsed height
 				
-				if (cfg.showSpectrumVisuals && cfg.eqEnabled) {
-					// FIX: Factor in your global UI scale multiplier uniformly across all parameters
-					specWidth = 350.0f * scale;
-					
-					// FIX: Corrected your duplicate ternary values. Ramps down from a 100px base
-					// to a compact 55px target size (50px core layout + 5px safety padding buffer).
-					if (!cfg.compactModeDesc && !cfg.compactModeTitle) {
-						specHeight = 100.0f * scale;
-					} else {
-						specHeight = 90.0f * scale; 
-					}
+				if (cfg.showSpectrumVisuals) {
+					// Adding 390.0f here makes the spectrum fit right when switching modes
+					specWidth = 390.0f * scale;
+					specHeight = (labelHeight == 0.0f) ? 200.0f * scale : 125.0f * scale;
 				}
-				
-				// --- FORCE CONTAINER MATRIX COLLAPSE ---
-				if (fControlStack && fControlStack->GroupLayout()) {
-					fControlStack->GroupLayout()->InvalidateLayout(true);
+
+				// 3. Apply Constraints to Spectrum Element Drawing Canvas
+				if (fSpectrum) {
+					fSpectrum->SetExplicitMinSize(BSize(specWidth, specHeight));
+					fSpectrum->SetExplicitMaxSize(BSize(specWidth, specHeight));
+					fSpectrum->SetExplicitPreferredSize(BSize(specWidth, specHeight));
 				}
-				if (fMetaAndSpectrumStack && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {
-					fMetaAndSpectrumStack->InvalidateLayout(true);
-				}
-				
-				// Apply Spectrum Geometric Constraints Once
-				fSpectrum->SetExplicitMinSize(BSize(specWidth, specHeight));
-				fSpectrum->SetExplicitMaxSize(BSize(specWidth, specHeight));
-				fSpectrum->SetExplicitPreferredSize(BSize(specWidth, specHeight));  
-				                  
-				// Sync Parent Meta Container Stack Height
+
+				// 4.  Set constraints strictly based on text content for the top stack block
 				if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {  
-					// FIX: Ensure both conditions scale cleanly on high-DPI configurations
-					float stackHeight = 100.0f * scale;
-					if (cfg.showSpectrumVisuals && cfg.eqEnabled) {
-						if (!cfg.compactModeDesc && !cfg.compactModeTitle) {
-							stackHeight = 100.0f * scale;
-						} else {
-							stackHeight = 90.0f * scale; // Keeps outer box synchronized with fSpectrum specHeight
-						}
+					float textStackHeight = labelHeight > 0.0f ? labelHeight : 0.0f;
+					
+					// Use only text height here to prevent empty vertical whitespace gaps
+					fMetaAndSpectrumStack->SetExplicitMinSize(BSize(specWidth, textStackHeight));
+					fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(specWidth, textStackHeight));
+					fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(specWidth, textStackHeight)); 
+					
+					if (!cfg.compactModeTitle && !cfg.compactModeDesc) {
+						fMetaAndSpectrumStack->Hide();
+					} else {
+						if (fMetaAndSpectrumStack->IsHidden()) fMetaAndSpectrumStack->Show();
 					}
-					fMetaAndSpectrumStack->SetExplicitMinSize(BSize(350.0f * scale, stackHeight));
-					fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(350.0f * scale, stackHeight));
-					fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(350.0f * scale, stackHeight));
-				}  
-				 				
+				}
+
+				// 4b.  Let the dedicated compact wrapper handle the spectrum dimensions perfectly
+				if (fCompactSpectrumWrapper && fCompactSpectrumWrapper->GroupLayout()) {
+					if (cfg.showSpectrumVisuals) {
+						// Match your working spectrum height exactly, adding a tiny visual padding cushion (4px)
+						float wrapperHeight = specHeight + (4.0f * scale); 
+						fCompactSpectrumWrapper->SetExplicitMinSize(BSize(specWidth, wrapperHeight));
+						fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(specWidth, wrapperHeight));
+						fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(specWidth, wrapperHeight));
+						if (fCompactSpectrumWrapper->IsHidden()) fCompactSpectrumWrapper->Show();
+					} else {
+						fCompactSpectrumWrapper->Hide();
+					}
+				}
+
+
+				// --- CLEAN AND SHIFT PARENT ASSIGNMENTS ---
+				fNormalControlsWrapper->GroupLayout()->RemoveView(fControlStack);
+				fCompactControlsWrapper->GroupLayout()->RemoveView(fControlStack);
+				
+				// Dynamically detach spectrum analyzer from its normal text layout stack parent
+				if (fSpectrum && fSpectrum->Parent()) {
+					fSpectrum->RemoveSelf();
+				}
+
+				// Dynamically detach heart button from any active parent container
+				if (fBtnAddFav && fBtnAddFav->Parent()) {
+					fBtnAddFav->RemoveSelf();
+				}
+
+				// Rebuild fControlStack internally into a 2x2 Matrix structure for Compact Mode
+				fControlStack->GroupLayout()->RemoveView(fStopBtn);
+				fControlStack->GroupLayout()->RemoveView(fPauseBtn);
+				fControlStack->GroupLayout()->RemoveView(fPlayBtn);
+				fControlStack->GroupLayout()->RemoveView(fShuffleBtn);
+				
+				BLayoutBuilder::Group<>(fControlStack, B_VERTICAL, 4)
+					.AddGroup(B_HORIZONTAL, 4)
+						.Add(fStopBtn)
+						.Add(fPauseBtn)
+					.End()
+					.AddGroup(B_HORIZONTAL, 4)
+						.Add(fPlayBtn)
+						.Add(fShuffleBtn)
+					.End()
+				.End();
+
+				// Push fControlStack directly into the compact slot wrapper
+				fCompactControlsWrapper->GroupLayout()->AddView(fControlStack);
+				
+				// Inject the favorite icon directly into its static slot
+				if (fRightSideControlGroup) {
+					if (fRightSideControlGroup->GroupLayout()->CountItems() > 0) {
+						fRightSideControlGroup->GroupLayout()->RemoveItem((int32)0);
+					}
+					fRightSideControlGroup->GroupLayout()->AddView(fBtnAddFav);
+					if (fRightSideControlGroup->IsHidden()) fRightSideControlGroup->Show();
+				}
+
+				// Inject the spectrum canvas into the newly tracked wrapper slot layout line
+				if (fCompactSpectrumWrapper && cfg.showSpectrumVisuals) {
+					if (fCompactSpectrumWrapper->GroupLayout()->CountItems() > 0) {
+						fCompactSpectrumWrapper->GroupLayout()->RemoveItem((int32)0);
+					}
+					fCompactSpectrumWrapper->GroupLayout()->AddView(fSpectrum);
+				}
+
+
+				
 				// Strip Dynamic Extended Tab Interfaces
 				for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
 					BTab* tab = fTabView->TabAt(i);
 					if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab)
 						fTabView->RemoveTab(i);
-				}                    
+				} 
 
-				// --- FORCE EXPLICIT BUTTON SCALING FOR COMPACT MODE ---
 				if (fStopBtn && fPauseBtn && fPlayBtn && fShuffleBtn && fBtnAddFav) {
-					BSize compactBtnSize(btnSize, btnSize);
-					
-					fStopBtn->SetExplicitMinSize(compactBtnSize);
-					fStopBtn->SetExplicitMaxSize(compactBtnSize);
-					fStopBtn->SetExplicitPreferredSize(compactBtnSize);
-
-					fPauseBtn->SetExplicitMinSize(compactBtnSize);
-					fPauseBtn->SetExplicitMaxSize(compactBtnSize);
-					fPauseBtn->SetExplicitPreferredSize(compactBtnSize);
-
-					fPlayBtn->SetExplicitMinSize(compactBtnSize);
-					fPlayBtn->SetExplicitMaxSize(compactBtnSize);
-					fPlayBtn->SetExplicitPreferredSize(compactBtnSize);
-
-					fShuffleBtn->SetExplicitMinSize(compactBtnSize);
-					fShuffleBtn->SetExplicitMaxSize(compactBtnSize);
-					fShuffleBtn->SetExplicitPreferredSize(compactBtnSize);
-
-					fBtnAddFav->SetExplicitMinSize(compactBtnSize);
-					fBtnAddFav->SetExplicitMaxSize(compactBtnSize);
-					fBtnAddFav->SetExplicitPreferredSize(compactBtnSize);
+					BSize compactBtnSize(btnSize, btnSize);					
+					fStopBtn->SetExplicitMinSize(compactBtnSize); fStopBtn->SetExplicitMaxSize(compactBtnSize); fStopBtn->SetExplicitPreferredSize(compactBtnSize);
+					fPauseBtn->SetExplicitMinSize(compactBtnSize); fPauseBtn->SetExplicitMaxSize(compactBtnSize); fPauseBtn->SetExplicitPreferredSize(compactBtnSize);
+					fPlayBtn->SetExplicitMinSize(compactBtnSize); fPlayBtn->SetExplicitMaxSize(compactBtnSize); fPlayBtn->SetExplicitPreferredSize(compactBtnSize);
+					fShuffleBtn->SetExplicitMinSize(compactBtnSize); fShuffleBtn->SetExplicitMaxSize(compactBtnSize); fShuffleBtn->SetExplicitPreferredSize(compactBtnSize);
+					fBtnAddFav->SetExplicitMinSize(compactBtnSize); fBtnAddFav->SetExplicitMaxSize(compactBtnSize); fBtnAddFav->SetExplicitPreferredSize(compactBtnSize);
 				}
-
-
-
 				if (fControlStack) {
-					// Lock the entire container to match the exact compact slider width
 					fControlStack->SetExplicitMinSize(BSize(sliderWidth, B_SIZE_UNSET));
 					fControlStack->SetExplicitMaxSize(BSize(sliderWidth, B_SIZE_UNSET));
 					fControlStack->SetExplicitPreferredSize(BSize(sliderWidth, B_SIZE_UNSET));
 					fControlStack->SetExplicitAlignment(BAlignment(B_ALIGN_RIGHT, B_ALIGN_VERTICAL_CENTER));
 				}
+				
+
+
 			} else { // --- 3. NORMAL MODE GEOMETRY BRANCH ---
-			
-				// Restore Album Art to constructor specifications
-				fArtView->SetExplicitMinSize(BSize(350.0f * scale, 350.0f * scale));
-				fArtView->SetExplicitMaxSize(BSize(350.0f * scale, 350.0f * scale));
-				fArtView->SetExplicitPreferredSize(BSize(350.0f * scale, 350.0f * scale));
 
-				// Lock Text Fields to matching standard Album Art width column limit
-				fSongView->SetExplicitMinSize(BSize(350.0f * scale, B_SIZE_UNSET));
-				fSongView->SetExplicitPreferredSize(BSize(350.0f * scale, B_SIZE_UNSET));
-				fSongView->SetExplicitMaxSize(BSize(350.0f * scale, B_SIZE_UNSET));                    
-				
-				if (fDescView) {
-					fDescView->SetExplicitMinSize(BSize(350.0f * scale, B_SIZE_UNSET));
-					fDescView->SetExplicitPreferredSize(BSize(350.0f * scale, B_SIZE_UNSET));
-					fDescView->SetExplicitMaxSize(BSize(350.0f * scale, B_SIZE_UNSET));
+				// 1. RESET GEOMETRY LIMITS (Unlock the constraints)
+				BSize unlimited(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED);
+				BSize unset(B_SIZE_UNSET, B_SIZE_UNSET);
+
+				// Unlock Volume Slider
+				if (fVolumeSlider) {
+					fVolumeSlider->SetExplicitMaxSize(unlimited);
+					fVolumeSlider->SetExplicitPreferredSize(unset);
 				}
-
-				if (fStopBtn && fPauseBtn && fPlayBtn && fShuffleBtn && fBtnAddFav) {
-					float normalBtnSize = 75.0f * scale;
-					BSize standardSize(normalBtnSize, normalBtnSize);
+				
+			    if (fSpectrum) {
+					// Wipe out the strict compact width/height boundaries completely
+					fSpectrum->SetExplicitMinSize(unset);
+					fSpectrum->SetExplicitMaxSize(unlimited);
+					fSpectrum->SetExplicitPreferredSize(unset);
 					
-					fStopBtn->SetExplicitMinSize(standardSize);
-					fStopBtn->SetExplicitMaxSize(standardSize);
-					fStopBtn->SetExplicitPreferredSize(standardSize);
-
-					fPauseBtn->SetExplicitMinSize(standardSize);
-					fPauseBtn->SetExplicitMaxSize(standardSize);
-					fPauseBtn->SetExplicitPreferredSize(standardSize);
-
-					fPlayBtn->SetExplicitMinSize(standardSize);
-					fPlayBtn->SetExplicitMaxSize(standardSize);
-					fPlayBtn->SetExplicitPreferredSize(standardSize);
-
-					fShuffleBtn->SetExplicitMinSize(standardSize);
-					fShuffleBtn->SetExplicitMaxSize(standardSize);
-					fShuffleBtn->SetExplicitPreferredSize(standardSize);
-
-					fBtnAddFav->SetExplicitMinSize(standardSize);
-					fBtnAddFav->SetExplicitMaxSize(standardSize);
-					fBtnAddFav->SetExplicitPreferredSize(standardSize);
+					// If the spectrum is disabled, zero it out completely to prevent blank gaps
+					if (!cfg.showSpectrumVisuals) {
+						fSpectrum->SetExplicitMaxSize(BSize(0, 0));
+					}
 				}
+
+				// 2. CLEANUP PARENTS
+				fNormalControlsWrapper->GroupLayout()->RemoveView(fControlStack);
+				fCompactControlsWrapper->GroupLayout()->RemoveView(fControlStack);
 				
-				// RELEASE THE CONTAINER HEIGHT AND WIDTH CONSTRAINTS IN NORMAL MODE
+				if (fRightSideControlGroup && fRightSideControlGroup->GroupLayout()) {
+					fRightSideControlGroup->GroupLayout()->RemoveView(fBtnAddFav);
+				}
+
+				// 3. DETACH BUTTONS FROM GHOST GROUPS
+
+				BView* allButtons[] = { fStopBtn, fPauseBtn, fPlayBtn, fShuffleBtn, fBtnAddFav };
+				for (BView* btn : allButtons) {
+					if (btn && btn->Parent()) {
+						btn->RemoveSelf(); // Physically removes view from the ghost parent
+					}
+				}
+
+				// 4. PURGE CONTROL STACK LAYOUT
+				// Remove the empty ghost groups from the layout engine
+				if (fControlStack->GroupLayout()) {
+					while (fControlStack->GroupLayout()->CountItems() > 0) {
+						fControlStack->GroupLayout()->RemoveItem((int32)0);
+					}
+				}
+
+				// 5. REBUILD HORIZONTAL LAYOUT
+				BLayoutBuilder::Group<>(fControlStack, B_HORIZONTAL, 5)
+					.Add(fStopBtn)
+					.Add(fPauseBtn)
+					.Add(fPlayBtn)
+					.Add(fShuffleBtn)
+				.End();
+
+				BView* playbackButtons[] = { fStopBtn, fPauseBtn, fPlayBtn, fShuffleBtn };
+				
+				// Apply standard sizing bounds to the playback buttons
+				BSize standardSize(75.0f * scale, 75.0f * scale);
+				for (BView* btn : playbackButtons) {
+					if (btn) {
+						btn->SetExplicitMinSize(standardSize);
+						btn->SetExplicitMaxSize(standardSize);
+						btn->SetExplicitPreferredSize(standardSize);
+					}
+				}
+
+				// Enforce bounds constraints directly to the heart button object layout
+				if (fBtnAddFav) {
+					BSize favNormalSize(75.0f * scale, 75.0f * scale);
+					fBtnAddFav->SetExplicitMinSize(favNormalSize);
+					fBtnAddFav->SetExplicitMaxSize(favNormalSize);
+					fBtnAddFav->SetExplicitPreferredSize(favNormalSize);
+				}
+
+				// Restore Control Stack Attributes
 				if (fControlStack) {
-					fControlStack->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-					fControlStack->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-					fControlStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
-					fControlStack->SetExplicitAlignment(BAlignment(B_ALIGN_USE_FULL_WIDTH, B_ALIGN_VERTICAL_CENTER));
+					fControlStack->SetExplicitMinSize(unset);
+					fControlStack->SetExplicitPreferredSize(unset);
+					fControlStack->SetExplicitMaxSize(unlimited);
+					fControlStack->SetExplicitAlignment(BAlignment(B_ALIGN_HORIZONTAL_CENTER, B_ALIGN_BOTTOM));
 				}
-				
-				// Reset Spectrum Height to exact constructor fallback sizes
-				float normalSpectrumHeight = cfg.showSpectrumVisuals && cfg.eqEnabled ? 150.0f : 0.0f;
-				fSpectrum->SetExplicitMinSize(BSize(350.0f * scale, normalSpectrumHeight));
-				fSpectrum->SetExplicitMaxSize(BSize(350.0f * scale, normalSpectrumHeight));
-				fSpectrum->SetExplicitPreferredSize(BSize(350.0f * scale, normalSpectrumHeight));  
-				
-				// Clamp Parent Stack width layout constraints to center perfectly under ArtView
-				if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {
-					fMetaAndSpectrumStack->SetExplicitMinSize(BSize(350.0f * scale, B_SIZE_UNSET));
-					fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(350.0f * scale, B_SIZE_UNSET));
-					fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(350.0f * scale, B_SIZE_UNSET));
-				}
-				
-				fPlayerGroup->GroupLayout()->SetInsets(3);
-			
-	
 
+				// Re-Attach Control elements back to persistent containers
+				fNormalControlsWrapper->GroupLayout()->AddView(fControlStack);
+				
+				// FIX FOR HEART ICON (NORMAL): Direct injection avoids orphaned layout managers
+				if (fRightSideControlGroup) {
+					if (fRightSideControlGroup->GroupLayout()->CountItems() > 0) {
+						fRightSideControlGroup->GroupLayout()->RemoveItem((int32)0);
+					}
+					fRightSideControlGroup->GroupLayout()->AddView(fBtnAddFav);
+				}
+				
+				// 6. RESTORE TABS
+				bool hasStation = false, hasFav = false, hasConfig = false, hasAbout = false;
+				for (int32 i = 0; i < fTabView->CountTabs(); i++) {
+					BTab* tab = fTabView->TabAt(i);
+					if (tab == fStationTab) hasStation = true;
+					if (tab == fFavTab) hasFav = true;
+					if (tab == fConfigTab) hasConfig = true;
+					if (tab == fAboutTab) hasAbout = true;
+				}
+				
+				if (!hasStation && fStationTab) fTabView->AddTab(fStationGroup, fStationTab);
+				if (!hasFav && fFavTab) fTabView->AddTab(fFavGroup, fFavTab);
+				if (!hasConfig && fConfigTab) fTabView->AddTab(fConfigGroup, fConfigTab);
+				if (!hasAbout && fAboutTab) fTabView->AddTab(fAboutGroup, fAboutTab);
+				
+				// Final UI State Restoration
+				fPlayerGroup->GroupLayout()->SetInsets(3);	
 				if (fCompactModeRadio) fCompactModeRadio->Show();
 				if (fVolumeSlider) fVolumeSlider->SetTarget(this);		
 				for (int i = 0; i < 15; i++) {
 					if (fEQSliders[i]) fEQSliders[i]->SetTarget(this);
-				}	 
-				
-				// Re-verify Dynamic Extended Tab Infrastructure Layout Build Matrix
+				}
+	 				
+
 				BGroupView* groups[] = { fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
 				const char* labels[] = { "Stations", "Fav", "Config", "About" };
 				BTab** dynamicTabs[] = { &fStationTab, &fFavTab, &fConfigTab, &fAboutTab };
@@ -6961,62 +7097,63 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 						fTabView->AddTab(groups[i], *dynamicTabs[i]);
 					}
 				}
-			}
-
+			}		
 			
+		
 			// --- 4. EXECUTE FINAL GEOMETRY AND SIZING OPERATIONS ---
-			fArtView->SetExplicitSize(BSize(artSize, artSize));
-			fArtView->SetExplicitMinSize(BSize(artSize, artSize));
-			fArtView->SetExplicitMaxSize(BSize(artSize, artSize));
+			if (fArtView) {
+				fArtView->SetExplicitSize(BSize(artSize, artSize));
+				
+			}
+/*
+		    // --- 4. EXECUTE FINAL GEOMETRY AND SIZING OPERATIONS ---
+			if (fArtView) {
+				// FIX: Do NOT use SetExplicitSize(). It locks the minimum bounds 
+				// and traps the vertical stack height after a mode cycle.
+				if (cfg.compactMode) {
+					// Hard lock for compact mode matrix spacing
+					fArtView->SetExplicitMinSize(BSize(artSize, artSize));
+					fArtView->SetExplicitMaxSize(BSize(artSize, artSize));
+					fArtView->SetExplicitPreferredSize(BSize(artSize, artSize));
+				} else {
+					// Unlock normal mode limits! Let it scale to preferred 
+					// but let its min height drop so the spectrum can contract.
+					fArtView->SetExplicitMinSize(BSize(350.0f * scale, 400.0f * scale)); // Low floor allows shrinking
+					fArtView->SetExplicitMaxSize(BSize(artSize, artSize));
+					fArtView->SetExplicitPreferredSize(BSize(artSize, artSize));
+				}
+			}
+*/	
 			
-			// Compute exact padding metrics based on your dynamic class parameters
-			float paddingDelta = cfg.compactMode ? (12.0f * scale) : (16.0f * scale);
-			
-			float paddedVolumeSliderSize = cfg.compactMode ? VolSize + (12.0f * scale) : VolSize + (16.0f * scale);
-			float paddedBtnSize = cfg.compactMode ? btnSize + paddingDelta : btnSize + paddingDelta;
-			float paddedFavSize = cfg.compactMode ? favSize + paddingDelta : favSize + paddingDelta;
-			
-			// 1. Update the internal preferred size envelopes of your custom IconButton objects
-			if (fStopBtn)    dynamic_cast<IconButton*>(fStopBtn)->SetPadding(paddingDelta);
-			if (fPauseBtn)   dynamic_cast<IconButton*>(fPauseBtn)->SetPadding(paddingDelta);
-			if (fPlayBtn)    dynamic_cast<IconButton*>(fPlayBtn)->SetPadding(paddingDelta);
-			if (fShuffleBtn) dynamic_cast<IconButton*>(fShuffleBtn)->SetPadding(paddingDelta);
-			if (fBtnAddFav)  dynamic_cast<IconButton*>(fBtnAddFav)->SetPadding(paddingDelta);
-			
-			// 2. Synchronize explicit layout boundaries across the entire widget kit
-			if (fVolumeSlider) fVolumeSlider->SetExplicitSize(BSize(paddedVolumeSliderSize, paddedVolumeSliderSize));
-			if (fBtnAddFav)    fBtnAddFav->SetExplicitSize(BSize(paddedFavSize, paddedFavSize));
-			if (fStopBtn)      fStopBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize));
-			if (fPauseBtn)     fPauseBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize));
-			if (fPlayBtn)      fPlayBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize)); 
-			if (fShuffleBtn)   fShuffleBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize));
+			// Clean, compact bounding metrics for the Heart Icon view container limits
 
+			float paddedVolumeSliderSize = cfg.compactMode ? VolSize + (12.0f * scale) : VolSize + (16.0f * scale);
+			float paddedBtnSize = cfg.compactMode ? btnSize + (12.0f * scale) : btnSize + (16.0f * scale);
+			float paddedFavSize = cfg.compactMode ? favSize + (12.0f * scale) : btnSize + (16.0f * scale);	
+
+						
+			if (fVolumeSlider)   fVolumeSlider->SetExplicitSize(BSize(paddedVolumeSliderSize, B_SIZE_UNSET));
+			
+			// Apply corrected, bounds-safe sizing metrics
+			if (fBtnAddFav)  	 fBtnAddFav->SetExplicitSize(BSize(paddedFavSize, paddedFavSize));
+			if (fStopBtn)     	 fStopBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize));
+			if (fPauseBtn)    	 fPauseBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize));
+			if (fPlayBtn)     	 fPlayBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize)); 
+			if (fShuffleBtn)  	 fShuffleBtn->SetExplicitSize(BSize(paddedBtnSize, paddedBtnSize));
 			
 			if (fquality)       fquality->Show();
 			if (fListenersView) fListenersView->Show();
-			if (fSpectrum)      fSpectrum->Show();
 			
-			// Force View System Layout State Rehydration Flags Once
-			fArtView->InvalidateLayout();
-			fPlayerGroup->InvalidateLayout();
-			if (fPlayBtn)     fPlayBtn->InvalidateLayout();
-			if (fPauseBtn)    fPauseBtn->InvalidateLayout();
-			if (fStopBtn)     fStopBtn->InvalidateLayout();
-			if (fShuffleBtn)  fShuffleBtn->InvalidateLayout();
-			if (fBtnAddFav)   fBtnAddFav->InvalidateLayout(); 
-			if (fSpectrum)    fSpectrum->InvalidateLayout();
-			
-			if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {
-				fMetaAndSpectrumStack->InvalidateLayout();
-				fMetaAndSpectrumStack->Layout(cfg.showSpectrumVisuals);
+			// Toggle visibility based on your config state variable rules, rather than forcing a blind Show()
+			if (fSpectrum) {
+				if (cfg.showSpectrumVisuals) {
+					fSpectrum->Show();
+				} else {
+					fSpectrum->Hide();
+				}
 			}
-			
-			// Commit layout changes and recalculate window bounds
-			this->InvalidateLayout(true);
-			this->Layout(true); 
-			this->ResizeToPreferred(); // Snaps window borders to exact structural bounds
-			ApplyTheme();
 
+			ApplyTheme();
 			
 			// --- 5. DEFERRED SELECTION MESSAGE PROCESSOR ---
 			BString deferredSelect;
@@ -7048,9 +7185,29 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					fTabView->Select(fallbackIndex); 
 				}
 			}
-			this->ResizeWindowToFit();
+			
+			// Final structural check sizing pass to fit bounds perfectly
+			if (LockLooper()) {
+				// Force nested view caches to dump their old dimensions before the layout pass
+				if (fMetaAndSpectrumStack && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {
+					fMetaAndSpectrumStack->InvalidateLayout(true);
+				}
+				if (fCompactSpectrumWrapper && fCompactSpectrumWrapper->GroupLayout()) {
+					fCompactSpectrumWrapper->InvalidateLayout(true);
+				}
+				if (fPlayerGroup) {
+					fPlayerGroup->InvalidateLayout(true);
+				}
+
+				// Allow the window layout tree to rebuild cleanly
+				this->Layout(true); 
+				this->ResizeWindowToFit();
+				UnlockLooper();
+			}
 			break;
 		}
+
+
 
 
 
@@ -7212,7 +7369,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		}
 
     		if (favoriteIndex >= 0 && fFavList) {
-                // FIX: Swap out runtime dynamic_cast for an explicit static pointer conversion
+                // Swap out runtime dynamic_cast for an explicit static pointer conversion
                 StationItem* item = (StationItem*)fFavList->ItemAt(favoriteIndex);
         		if (item != nullptr) {           
             		this->PlayStation(item->GetChannel());
@@ -7330,7 +7487,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		int is_paused = 0;
     		mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &is_paused);
     		
-    		// FIX: Use proper Haiku FindString API pattern to avoid null assignment
+    		// Use proper Haiku FindString API pattern to avoid null assignment
     		const char* song = nullptr;
     		if (message->FindString("song", &song) != B_OK || song == nullptr) {
         		song = "Unknown";
@@ -7447,21 +7604,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		#endif
 //--------------------------------- Projectm     
 
-
-
-
-
-		case MSG_EQ_RESET:
-		{
-    		for (int i = 0; i < 10; i++) {
-        		fEQSliders[i]->SetValue(0);
-    		}    
-    		fLimitInput->SetValue(0);
-    		fLimitLimit->SetValue(0);
-    		fLimitRelease->SetValue(100); 
-    		// UpdateMPVFilters();
-    		break;
-		}
 		
 		case MSG_EQ_CHANGED: {
     		cfg.eqEnabled = (fEQToggle->Value() == B_CONTROL_ON);
@@ -7485,8 +7627,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
         case MSG_AUDIO_READY:
             UpdateMPVFilters(); 
-            break;
-            
+            break;            
         case MSG_SET_PRESET_ROCK:
     		ApplyPreset(kPresetRock);
     		break;    		
@@ -7651,7 +7792,7 @@ void SuperMusicWindow::UpdateFavButtons() {
 SuperMusicWindow::~SuperMusicWindow()
 {
     // ====================================================================
-    // FIX: EMERGENCY THREAD TERMINATION PILL
+    // EMERGENCY THREAD TERMINATION 
     // ====================================================================
     // 1. Immediately flag any background loops to halt execution iterations
     fIsQuitting = true;
