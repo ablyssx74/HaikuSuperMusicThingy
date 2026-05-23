@@ -6092,9 +6092,9 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     .Add(fChkShuffle)
     .Add(fShuffleFavsCheckbox)
     .Add(fCompactModeConfig)
-    .Add(fCmpTitle)  // Still testing these two
+    //.Add(fCmpTitle)  // Still testing these two
     //.Add(fCmpSong)   
-    //.Add(fChkTheme)
+    .Add(fChkTheme)
    	.Add(fEQToggle)
    	//.Add(fEnableladspa)  // Doesn't work as good as native mpv plugins and needs to be built into ffmpeg. But leaving in code for future debugging.
    	.Add(fEnableSpectrum)
