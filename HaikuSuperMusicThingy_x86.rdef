@@ -1,6 +1,4 @@
 resource app_flags B_SINGLE_LAUNCH;
-
-
 resource app_signature "application/x-vnd.HaikuSuperMusicThingy";
 
 resource app_version {

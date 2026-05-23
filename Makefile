@@ -21,21 +21,13 @@ ifeq ($(UNAME_M), x86)
     ARCH = x86_gcc2
     LIB_ARCH_DIR = /x86
     DEFINES += -DIS_HAIKU_32BIT
-ifeq ($(ENABLE_PROJECTM), ON)
-    TPL_FILE := $(NAME)_projectm_x86.tpl
-else
     TPL_FILE := $(NAME)_x86.tpl
-endif
 else
     CXX = g++
     ARCH = x86_64
     LIB_ARCH_DIR = 
-    DEFINES += -DUSE_SYSTRAY
-ifeq ($(ENABLE_PROJECTM), ON)
-    TPL_FILE := $(NAME)_projectm.tpl
-else
-    TPL_FILE := $(NAME).tpl
-endif  
+    DEFINES += -DUSE_SYSTRAY -DENABLE_PROJECTM
+    TPL_FILE := $(NAME).tpl 
 endif
 
 # Set up Pkg-Config Environment
@@ -133,8 +125,5 @@ help:
 	@echo ""
 	@echo " Non projectm builds..."
 	@echo " 1. make release"
-	@echo ""
-	@echo " projectm builds..."	
-	@echo " 2. make release ENABLE_PROJECTM=ON"
 	@echo ""
 	@echo "============================================================================"	

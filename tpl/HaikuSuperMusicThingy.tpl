@@ -13,6 +13,7 @@ copyrights {
 }
 provides {
 	$(NAME) = $(VERSION)-1
+	lib:libprojectM = 4.1.0-1
 }
 requires {
 	haiku

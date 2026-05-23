@@ -6050,6 +6050,14 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
 	
 	
     if (!cfg.showNotifications) fSizeContainer->Hide();	
+    
+    // --- CHECK FOR MESA OPENGL DRIVER CAPABILITY ---
+    // If the vendor file is missing, the player cannot render advanced visual presets.
+    struct stat mesaBuffer;
+    bool hasMesaDriver = (stat("/boot/system/add-ons/opengl/egl_vendor.d/libEGL_mesa.so", &mesaBuffer) == 0);
+
+
+
 
          
 // ==========================================
@@ -6101,6 +6109,13 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
 .End();
 
 
+    if (!hasMesaDriver) {
+        // Explicitly force them invisible so they don't leave structural gaps
+        if (fPresetToggle)     fPresetToggle->Hide();
+        if (fPresetScroll)     fPresetScroll->Hide();
+        if (fVisualsCheckbox)  fVisualsCheckbox->Hide();
+        if (fChkPresetTimer)   fChkPresetTimer->Hide();
+    }
 
     // ==========================================
     // TAB 4: ABOUT VIEW
