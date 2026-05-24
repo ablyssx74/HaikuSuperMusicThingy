@@ -6,7 +6,7 @@ PACKAGE_DIR := build/package
 DUMMY_PC_PATH := $(shell pwd)/build/pkgconfig
 
 
-ENABLE_PROJECTM := OFF
+ENABLE_PROJECTM := ON
 
 # Forced dependencies
 ifeq ($(ENABLE_PROJECTM), ON)
@@ -26,7 +26,7 @@ else
     CXX = g++
     ARCH = x86_64
     LIB_ARCH_DIR = 
-    DEFINES += -DUSE_SYSTRAY -DENABLE_PROJECTM
+    DEFINES += -DUSE_SYSTRAY 
     TPL_FILE := $(NAME).tpl 
 endif
 

@@ -22,7 +22,7 @@ requires {
 	mpv
 	openal
 	curl
-	libsdl2	
+	
 }	
 urls {
 	"https://github.com/ablyssx74/HaikuSuperMusicThingy"

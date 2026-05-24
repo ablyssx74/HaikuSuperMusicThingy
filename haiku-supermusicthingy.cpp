@@ -1705,8 +1705,12 @@ virtual void Pulse() override {
         // Base low-frequency organic pulse scale
         float organicScale = (0.95f + (0.10f * sinf(i * 0.25f))) * audioJitterMultiplier;
         
+        // --- ADDED SPECIFIC HEIGHT BOOST HERE ---
+        // 1.5f makes this specific spectrum's bars 50% taller without changing masterSensitivity
+        const float visualizerHeightBoost = 1.5f; 
+        
         // Calculate target constraint ceiling to prevent spring breakdown
-        float targetHeight = masterMagnitude * viewHeight * frequencyScale * organicScale;
+        float targetHeight = masterMagnitude * viewHeight * frequencyScale * organicScale * visualizerHeightBoost;
         if (targetHeight > viewHeight) targetHeight = viewHeight;
 
         // Apply Hooke's Law Spring Force scaled linearly with elapsed time
@@ -1845,7 +1849,11 @@ virtual void Pulse() override {
             // INTACT: Dynamic pixel mapping
             if (leftTargetY > viewHeight - (paddleH / 2.0f)) leftTargetY = viewHeight - (paddleH / 2.0f);
 
-            float leftPaddleLerp = 1.0f - powf(1.0f - (0.10f + bassImpact * 0.01f), dtScale);
+            // SAFETY SHIELD: Clamp modifier value so the internal base of powf never drops below 0.05f
+            float safeBassModifier = 0.10f + (bassImpact * 0.01f);
+            if (safeBassModifier > 0.95f) safeBassModifier = 0.95f;
+
+            float leftPaddleLerp = 1.0f - powf(1.0f - safeBassModifier, dtScale);
             fLeftPaddlePos += (leftTargetY - fLeftPaddlePos) * leftPaddleLerp;
 
             // HARD ACTION CLAMP: Instantly drops left paddle back into visible bounds if it ever slips out
@@ -1859,9 +1867,6 @@ virtual void Pulse() override {
             if (fRightPaddlePos > viewHeight - (paddleH / 2.0f)) fRightPaddlePos = viewHeight - (paddleH / 2.0f);
 
             // --- SCORE WATCH & BALL PHYSICS WITH AUTO-RESET TIMER ---
-
-
-            // --- SCORE WATCH & BALL PHYSICS WITH AUTO-RESET TIMER ---
             static bool timerStarted = false;
 
             // Declare persistent, static dog metrics inside the physics engine layout scope
@@ -1870,7 +1875,6 @@ virtual void Pulse() override {
             static float dogX = 0.0f;
             static float dogY = 0.0f;
             static bigtime_t dogSpawnTime = 0;
-
 
             if (fLeftScore >= 10 || fRightScore >= 10) {
                 fBallX = startX_cached + (artworkWidth_cached / 2.0f);
@@ -1901,6 +1905,9 @@ virtual void Pulse() override {
                     if (fMotoCrashTicks < 0.0f) fMotoCrashTicks = 0.0f;
                 } else {
                     float audioSpeedBoost = 1.0f + (bassImpact * 0.05f * 0.65f);
+                    // BALL SAFETY CLAMP: Keeps the ball speed playable even during massive audio spikes
+                    if (audioSpeedBoost > 2.5f) audioSpeedBoost = 2.5f;
+
                     float moveX = (fBallDX * 0.90f) * audioSpeedBoost * dtScale;
                     float moveY = (fBallDY * 0.90f) * audioSpeedBoost * dtScale;
                     
@@ -1915,6 +1922,7 @@ virtual void Pulse() override {
                 // Ceiling / Floor bounces
                 fBallSize = 11.0f; 
                 float radius = fBallSize / 2.0f;
+
 
                 // ====================================================================
                 // DYNAMIC CEILING & FLOOR BOUNCES FOR THE BALL
@@ -5638,8 +5646,8 @@ SuperMusicWindow::SuperMusicWindow()
     // RIGID LAYOUT CONSTRAINT FIX
     // ====================================================================
     if (cfg.showSpectrumVisuals) { 
-		float stackHeight = 100.0f * scale; // Default baseline fallback
-        stackHeight = 150.0f;    
+		float stackHeight = 125.0f * scale; // Default baseline fallback
+        stackHeight = 125.0f;    
         fSpectrum = new SpectrumView(BRect(0, 0, 350 * scale, stackHeight), "spectrum"); 
         // Lock both boundaries to the exact same size.
         // This forces Haiku's engine to respect a strict, unstretchable box.
@@ -6541,9 +6549,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
   				}
              
 
-    			fPlayerGroup->InvalidateLayout();
+    			//fPlayerGroup->InvalidateLayout();
     			ApplyTheme(); 
-        		InvalidateLayout();
+        		//InvalidateLayout();
         		ResizeToPreferred();
         		save_config();
         		UpdateMPVFilters(); 
@@ -6566,6 +6574,16 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             }
 
             this->UpdateMPVFilters();
+            
+            
+                if (fSpectrum != nullptr) {
+                    fSpectrum->Invalidate();
+                    if (fSpectrum->Parent()) fSpectrum->Parent()->Invalidate();
+                }
+                if (fEQContainer) {
+                    fEQContainer->Invalidate();
+                    if (fEQContainer->Parent()) fEQContainer->Parent()->Invalidate();
+                }
             float scale = be_plain_font->Size() / 12.0f; 
             if (cfg.showSpectrumVisuals) {
             	        float stackHeight = 150.0f * scale; // Default baseline fallback
@@ -6584,7 +6602,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
   			}
              
 			
-    		fPlayerGroup->InvalidateLayout();
+    		//fPlayerGroup->InvalidateLayout();
     		ApplyTheme(); 
         	ResizeToPreferred();
             break;
@@ -6747,7 +6765,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			// Intercept payload flags to ensure asynchronous passes execute correctly
 			bool forcedState = false;
 			if (message->FindBool("force_compact_state", &forcedState) == B_OK) {
-				//fprintf(stderr, "[DEBUG] Message payload intercepted! Forcing compactMode to: %s\n", forcedState ? "TRUE" : "FALSE");
 				cfg.compactMode = forcedState;
 				newState = forcedState;
 			} else {
@@ -6775,10 +6792,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			float btnSize = cfg.compactMode ? (40 * scale)  : (75 * scale);
 			float favSize = cfg.compactMode ? (40 * scale)  : (75 * scale);
 			float VolSize = cfg.compactMode ? (40 * scale)  : (75 * scale);
-			// Dynamic Override for Special Compact Layout Variant
-			if (cfg.compactMode && cfg.compactModeDesc && cfg.compactModeTitle) { 
-				artSize = 180.0f * scale; 
-			}
+
+
+			
 			
 			// Apply Layout Orientations
 			fPlayerGroup->GroupLayout()->SetOrientation(cfg.compactMode ? B_HORIZONTAL : B_VERTICAL);
@@ -6814,7 +6830,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			             
 		// --- 2. COMPACT MODE GEOMETRY BRANCH ---
 		if (cfg.compactMode) {
-
+			
     		// =================================================================
     		// ASYNCHRONOUS DUAL-PASS WITH EXPLICIT MESSAGE PAYLOADS
     		// =================================================================
@@ -6853,10 +6869,22 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				float specHeight = 10.0f * scale; // Default collapsed height
 				
 				if (cfg.showSpectrumVisuals) {
-					// Adding 390.0f here makes the spectrum fit right when switching modes
-					specWidth = 390.0f * scale;
+					
+					specWidth = 350.0f * scale;
 					specHeight = (labelHeight == 0.0f) ? 200.0f * scale : 125.0f * scale;
 				}
+				
+			// 2.5 Dynamic Override for Special Compact Layout Variant
+			if (cfg.compactModeDesc && cfg.compactModeTitle) { 
+				artSize = 180.0f * scale; 
+			}
+			
+			if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) { 
+				artSize = 150.0f * scale; 
+				
+			}
+
+
 
 				// 3. Apply Constraints to Spectrum Element Drawing Canvas
 				if (fSpectrum) {
@@ -6864,6 +6892,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					fSpectrum->SetExplicitMaxSize(BSize(specWidth, specHeight));
 					fSpectrum->SetExplicitPreferredSize(BSize(specWidth, specHeight));
 				}
+				
+
+				
 
 				// 4.  Set constraints strictly based on text content for the top stack block
 				if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {  
@@ -6882,8 +6913,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				}
 
 				// 4b.  Let the dedicated compact wrapper handle the spectrum dimensions perfectly
-				if (fCompactSpectrumWrapper && fCompactSpectrumWrapper->GroupLayout()) {
-					if (cfg.showSpectrumVisuals) {
+				//if (fCompactSpectrumWrapper && fCompactSpectrumWrapper->GroupLayout()) {
+					if (cfg.showSpectrumVisuals || cfg.eqEnabled) {
 						// Match your working spectrum height exactly, adding a tiny visual padding cushion (4px)
 						float wrapperHeight = specHeight + (4.0f * scale); 
 						fCompactSpectrumWrapper->SetExplicitMinSize(BSize(specWidth, wrapperHeight));
@@ -6891,9 +6922,15 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 						fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(specWidth, wrapperHeight));
 						if (fCompactSpectrumWrapper->IsHidden()) fCompactSpectrumWrapper->Show();
 					} else {
-						fCompactSpectrumWrapper->Hide();
+						// Even though spectrum is disabled will retain layout size so compact mode doesn't get too compact
+						float wrapperHeight = specHeight + (4.0f * scale); 
+						fCompactSpectrumWrapper->SetExplicitMinSize(BSize(specWidth, wrapperHeight));
+						fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(specWidth, wrapperHeight));
+						fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(specWidth, wrapperHeight));
+						if (fCompactSpectrumWrapper->IsHidden()) fCompactSpectrumWrapper->Show();
+							//fCompactSpectrumWrapper->Hide();
 					}
-				}
+				//}
 
 
 				// --- CLEAN AND SHIFT PARENT ASSIGNMENTS ---
@@ -6940,7 +6977,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				}
 
 				// Inject the spectrum canvas into the newly tracked wrapper slot layout line
-				if (fCompactSpectrumWrapper && cfg.showSpectrumVisuals) {
+				//if (fCompactSpectrumWrapper && cfg.showSpectrumVisuals) {
+				if (cfg.eqEnabled || cfg.showSpectrumVisuals) {
 					if (fCompactSpectrumWrapper->GroupLayout()->CountItems() > 0) {
 						fCompactSpectrumWrapper->GroupLayout()->RemoveItem((int32)0);
 					}
@@ -6985,14 +7023,15 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					fVolumeSlider->SetExplicitPreferredSize(unset);
 				}
 				
-			    if (fSpectrum) {
+			    //if (fSpectrum) {
+			    if (cfg.eqEnabled || cfg.showSpectrumVisuals) {
 					// Wipe out the strict compact width/height boundaries completely
 					fSpectrum->SetExplicitMinSize(unset);
 					fSpectrum->SetExplicitMaxSize(unlimited);
 					fSpectrum->SetExplicitPreferredSize(unset);
 					
 					// If the spectrum is disabled, zero it out completely to prevent blank gaps
-					if (!cfg.showSpectrumVisuals) {
+					if (!cfg.showSpectrumVisuals || !cfg.eqEnabled ) {
 						fSpectrum->SetExplicitMaxSize(BSize(0, 0));
 					}
 				}
@@ -7069,6 +7108,14 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					fRightSideControlGroup->GroupLayout()->AddView(fBtnAddFav);
 				}
 				
+				
+				// Safely re-attach spectrum back to its native normal size view from Deskbar tray
+				if (fMetaAndSpectrumStack && fSpectrum) {
+					if (fSpectrum->Parent() != nullptr) fSpectrum->RemoveSelf();
+					fMetaAndSpectrumStack->GroupLayout()->AddView(fSpectrum);
+				}
+				
+				
 				// 6. RESTORE TABS
 				bool hasStation = false, hasFav = false, hasConfig = false, hasAbout = false;
 				for (int32 i = 0; i < fTabView->CountTabs(); i++) {
@@ -7112,7 +7159,20 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 						fTabView->AddTab(groups[i], *dynamicTabs[i]);
 					}
 				}
-			}		
+			}
+			
+			
+			// --- EXECUTE MANDATORY UI RE-FLOW CALCULATIONS ---
+			if (fNormalControlsWrapper && fNormalControlsWrapper->GroupLayout()) fNormalControlsWrapper->GroupLayout()->InvalidateLayout(true);
+			if (fCompactControlsWrapper && fCompactControlsWrapper->GroupLayout()) fCompactControlsWrapper->GroupLayout()->InvalidateLayout(true);
+			if (fControlStack && fControlStack->GroupLayout()) fControlStack->GroupLayout()->InvalidateLayout(true);
+			if (fRightSideControlGroup && fRightSideControlGroup->GroupLayout()) fRightSideControlGroup->GroupLayout()->InvalidateLayout(true);
+			if (fCompactSpectrumWrapper && fCompactSpectrumWrapper->GroupLayout()) fCompactSpectrumWrapper->GroupLayout()->InvalidateLayout(true);
+			
+			if (fPlayerGroup) fPlayerGroup->InvalidateLayout(true);
+			InvalidateLayout(true);
+			
+	
 			
 		
 			// --- 4. EXECUTE FINAL GEOMETRY AND SIZING OPERATIONS ---
@@ -7120,7 +7180,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				fArtView->SetExplicitSize(BSize(artSize, artSize));
 				
 			}
-/*
+			/*
 		    // --- 4. EXECUTE FINAL GEOMETRY AND SIZING OPERATIONS ---
 			if (fArtView) {
 				// FIX: Do NOT use SetExplicitSize(). It locks the minimum bounds 
@@ -7138,7 +7198,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					fArtView->SetExplicitPreferredSize(BSize(artSize, artSize));
 				}
 			}
-*/	
+			*/	
 			
 			// Clean, compact bounding metrics for the Heart Icon view container limits
 
@@ -7167,8 +7227,27 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					fSpectrum->Hide();
 				}
 			}
+			
+			// Doesn't seem to actually do anything
+			// Force View System Layout State Rehydration
+			if (fPlayerGroup) fPlayerGroup->InvalidateLayout(true);
+			
+			if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {
+				fMetaAndSpectrumStack->InvalidateLayout(true);
+			}
+			
+			this->InvalidateLayout(true);
+			
+			// Let the Master Layout system update the hierarchies automatically
+			if (LockLooper()) {
+				this->Layout(true); 
+				this->ResizeToPreferred(); 
+				UnlockLooper();
+			}
+			
 
 			ApplyTheme();
+			ResizeToPreferred();
 			
 			// --- 5. DEFERRED SELECTION MESSAGE PROCESSOR ---
 			BString deferredSelect;
