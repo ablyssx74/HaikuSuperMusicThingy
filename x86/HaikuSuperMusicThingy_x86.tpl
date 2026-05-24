@@ -13,6 +13,7 @@ copyrights {
 }
 provides {
 	$(NAME) = $(VERSION)-1
+	lib:libprojectM = 4.1.0-1
 }
 requires {
 	haiku
@@ -21,6 +22,7 @@ requires {
 	mpv_x86
 	openal_x86
 	curl_x86
+	libsdl2_x86 
 	
 }	
 urls {

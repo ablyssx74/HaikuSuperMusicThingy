@@ -22,6 +22,7 @@ requires {
 	mpv
 	openal
 	curl
+	libsdl2
 	
 }	
 urls {

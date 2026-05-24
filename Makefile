@@ -4,8 +4,6 @@ NAME = HaikuSuperMusicThingy
 VERSION = 1.0.0
 PACKAGE_DIR := build/package
 DUMMY_PC_PATH := $(shell pwd)/build/pkgconfig
-
-
 ENABLE_PROJECTM := ON
 
 # Forced dependencies
@@ -31,14 +29,13 @@ else
 endif
 
 # Set up Pkg-Config Environment
-export PKG_CONFIG_PATH := $(DUMMY_PC_PATH):/boot/home/config/non-packaged/lib$(LIB_ARCH_DIR)/pkgconfig:/boot/system/develop/lib$(LIB_ARCH_DIR)/pkgconfig
+export PKG_CONFIG_PATH := $(DUMMY_PC_PATH):/boot/home/config/non-packaged/lib/pkgconfig:/boot/home/config/non-packaged/lib$(LIB_ARCH_DIR)/pkgconfig:/boot/system/develop/lib$(LIB_ARCH_DIR)/pkgconfig
 
 # --- 3. Compiler & Linker Flags ---
 CXXFLAGS = -std=c++17 -O3 -Wall -rdynamic  
 DEFINES := $(DEFINES)
 INCLUDES = -I/boot/home/config/non-packaged/include -I/boot/system/develop/headers
 LIB_PATH = -L/boot/system/lib$(LIB_ARCH_DIR) -L/boot/system/develop/lib$(LIB_ARCH_DIR) -L/boot/home/config/non-packaged/lib$(LIB_ARCH_DIR)
-
 
 # Core Libraries (find_library openal)
 EXTRA_LIBS = -lopenal $(shell pkg-config --libs mpv libcurl)
@@ -59,11 +56,14 @@ endif
 ifeq ($(ENABLE_PROJECTM), ON)
     DEFINES += -DUSE_PROJECTM
     # Use pkg-config for projectM-4
+ ifeq ($(UNAME_M), x86)
+ 	PKG_CONFIG_CMD = x86-pkg-config
+ else
+    PKG_CONFIG_CMD = pkg-config
+ endif
     EXTRA_LIBS += $(shell pkg-config --libs projectM-4)
     CXXFLAGS += $(shell pkg-config --cflags projectM-4)
 endif
-
-
 
 # --- 4. Build Targets ---
 .PHONY: build package release clean help setup_dummy
@@ -93,9 +93,12 @@ package: all
 	mkdir -p $(PACKAGE_DIR)/apps
 	mkdir -p $(PACKAGE_DIR)/bin
 ifeq ($(ENABLE_PROJECTM), ON)
- ifeq ($(ARCH), x86_64)
+ ifeq ($(UNAME_M), x86_64)
 	mkdir -p $(PACKAGE_DIR)/lib
 	cp lib/lib* $(PACKAGE_DIR)/lib
+ else
+	mkdir -p $(PACKAGE_DIR)/lib/x86
+	cp x86/lib/lib* $(PACKAGE_DIR)/lib/x86
  endif
 endif
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
