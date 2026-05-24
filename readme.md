@@ -20,12 +20,20 @@
 
 
 
-### Build Latest
+### Build Latest ( With projectm. Requires 3rd party projectm headers )
 ```shell
 #Download the source
 git clone https://github.com/ablyssx74/HaikuSuperMusicThingy
 cd HaikuSuperMusicThingy
 make release
+```
+
+### Build Latest ( No projectm )
+```shell
+#Download the source
+git clone https://github.com/ablyssx74/HaikuSuperMusicThingy
+cd HaikuSuperMusicThingy
+make release ENABLE_PROJECTM=OFF
 ```
 
 ### Presets for Visualizer Window For Supported Platforms
