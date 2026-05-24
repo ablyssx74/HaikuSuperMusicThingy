@@ -21,7 +21,7 @@ ifeq ($(UNAME_M), x86)
     ARCH = x86_gcc2
     LIB_ARCH_DIR = /x86
     DEFINES += -DIS_HAIKU_32BIT
-    TPL_FILE := $(NAME)_x86.tpl
+    TPL_FILE := x86/$(NAME)_x86.tpl
 else
     CXX = g++
     ARCH = x86_64
@@ -89,7 +89,7 @@ package: all
 	@[ -n "$(PACKAGE_DIR)" ] || { echo "PACKAGE_DIR is undefined"; exit 1; }
 	rm -rf "./$(PACKAGE_DIR)"
 	mkdir -p $(PACKAGE_DIR)
-	sed -e 's/$$(NAME)/$(NAME)/g' -e 's/$$(VERSION)/$(VERSION)/g' -e 's/$$(ARCH)/$(ARCH)/' -e 's/$$(YEAR)/$(shell date +%Y)/' tpl/$(TPL_FILE) > $(PACKAGE_DIR)/.PackageInfo
+	sed -e 's/$$(NAME)/$(NAME)/g' -e 's/$$(VERSION)/$(VERSION)/g' -e 's/$$(ARCH)/$(ARCH)/' -e 's/$$(YEAR)/$(shell date +%Y)/' $(TPL_FILE) > $(PACKAGE_DIR)/.PackageInfo
 	mkdir -p $(PACKAGE_DIR)/apps
 	mkdir -p $(PACKAGE_DIR)/bin
 ifeq ($(ENABLE_PROJECTM), ON)
@@ -103,7 +103,7 @@ ifeq ($(UNAME_M), x86_64)
 	rc -o $(NAME).rsrc $(NAME).rdef
 endif
 ifeq ($(UNAME_M), x86)	
-	rc -o $(NAME).rsrc $(NAME)_x86.rdef
+	rc -o $(NAME).rsrc x86/$(NAME)_x86.rdef
 endif  
 	xres -o $(NAME) $(NAME).rsrc
 	mimeset -f $(NAME)
@@ -123,7 +123,10 @@ help:
 	@echo "============================================================================"
 	@echo " Building $(NAME) for Haiku"
 	@echo ""
-	@echo " Non projectm builds..."
+	@echo " Default projectm builds...( Requires 3rd party projectm headers )"
 	@echo " 1. make release"
+	@echo ""
+	@echo " Non projectm builds..."	
+	@echo " 2. make release ENABLE_PROJECTM=OFF"
 	@echo ""
 	@echo "============================================================================"	
