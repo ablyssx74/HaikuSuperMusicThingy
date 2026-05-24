@@ -57,6 +57,7 @@ class IconButton;
 class IconView;
 
 enum {
+	MSG_DEBUG   = 'debg',
     MSG_SHUFFLE = 'shuf',
     MSG_STOP    = 'stop',
     MSG_PLAY    = 'play',
@@ -69,6 +70,7 @@ enum {
     MSG_UPDATE_BITRATE = 'bitr',
 	MSG_PRESET_SELECTED   = 'prsl',
 	MSG_REFRESH_PRESETS   = 'prrf',
+	MSG_TOGGLE_FULLSCREEN = 'tgfs',
     MSG_UPDATE_SONG = 'updt', 
     MSG_UPDATE_ART = 'dart',    
     MSG_ADD_FAV     = 'adfv', 
@@ -143,9 +145,11 @@ public:
 	void UpdateTrayState(bool enabled, bool hideWindow = true);
 	void ResizeWindowToFit();
 	void      DoDownloadLoop(); 
+	bool IsFullscreenActive() const { return fFullscreenActive; }
 	
 	  
 private:
+	bool fFullscreenActive = false; 
 	BGroupView* fNormalControlsWrapper;
 	BGroupView* fCompactControlsWrapper;
 	BGroupView* fCompactSpectrumWrapper;
