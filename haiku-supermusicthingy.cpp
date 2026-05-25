@@ -5239,6 +5239,8 @@ bool is_favorite() {
  return false;
 }
 
+
+/* @delete
 void set_volume(char direction) {
     double vol;
     mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &vol);    
@@ -5257,6 +5259,7 @@ void toggle_mute() {
         mpv_set_property(mpv, "mute", MPV_FORMAT_FLAG, &mute);
  }
 
+*/
 
 void PopulatePresetList(BListView* list, const char* folderPath) {
 	if (list == nullptr)
@@ -5387,20 +5390,37 @@ int32 VisualsThread(void* data) {
 
     // 3. RENDER LOOP
     while (visualsRunning && pm) { 
+        
+        // --- THE HIBERNATION HOOK ---
+        if (visualWin) {
+            uint32_t flags = SDL_GetWindowFlags(visualWin);
+            
+            // If the window is hidden via SDL_HideWindow, pause rendering and capture
+            if (!(flags & SDL_WINDOW_SHOWN)) {
+                snooze(100000); // Sleep for 100ms to keep CPU usage at 0%
+                
+                // Keep polling background events so SDL stays responsive to unhide actions
+                SDL_Event e;
+                while (SDL_PollEvent(&e)) {
+                    if (e.type == SDL_QUIT || (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_CLOSE)) {
+                        visualsRunning = false;
+                    }
+                }
+                continue; // Skip projectM processing and jump back to top of loop
+            }
+        }
     
-    
-    if (!gPendingPresetPath.empty()) {
-        projectm_load_preset_file(pm, gPendingPresetPath.c_str(), true);
-        gPendingPresetPath = "";
-        lastPresetChange = SDL_GetTicks(); 
-    }
+        if (!gPendingPresetPath.empty()) {
+            projectm_load_preset_file(pm, gPendingPresetPath.c_str(), true);
+            gPendingPresetPath = "";
+            lastPresetChange = SDL_GetTicks(); 
+        }
         
         // --- Audio Capture ---
         if (alcCaptureDevice) {
             ALCint samples = 0;
             alcGetIntegerv(alcCaptureDevice, ALC_CAPTURE_SAMPLES, 1, &samples);
             if (samples > 1024) {
-                // Use a static or vector to avoid stack overflow on Haiku threads
                 static short buffer[2048]; 
                 alcCaptureSamples(alcCaptureDevice, (ALCvoid*)buffer, 1024);
                 
@@ -5409,6 +5429,11 @@ int32 VisualsThread(void* data) {
                 projectm_pcm_add_float(pm, floatBuffer, 1024, PROJECTM_STEREO);
             }
         }
+        
+        // This break guard now strictly catches application termination requests
+        if (!visualsRunning) {
+            break; 
+        }
 
         uint32_t currentTime = SDL_GetTicks();
         if (cfg.autoShuffleVisuals && (currentTime - lastPresetChange >= PRESET_DURATION)) {
@@ -5416,14 +5441,22 @@ int32 VisualsThread(void* data) {
             lastPresetChange = currentTime;
         }
 
+        // --- Render and Swap ---
         projectm_opengl_render_frame(pm);
         SDL_GL_SwapWindow(visualWin);
 
+        // --- Standard Event Polling ---
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             // Window Close / Quit
             if (e.type == SDL_QUIT || (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_CLOSE)) {
-                visualsRunning = false; // The loop will exit and clean up naturally
+                if (gGuiWindow != nullptr) {
+                    // Send a message to uncheck the checkbox and hide the window
+                    gGuiWindow->PostMessage(MSG_HIDE_VISUALS_REQUEST); 
+                }
+                   if (visualWin) {
+       					 SDL_HideWindow(visualWin);
+    					}
             }
             
             // Resizing
@@ -5441,26 +5474,6 @@ int32 VisualsThread(void* data) {
             // Keyboard Events
             else if (e.type == SDL_KEYDOWN) {
                 switch (e.key.keysym.sym) {
-                    case SDLK_q:
-                        visualsRunning = false;
-                        break;
-                    case SDLK_s:
-                        play_random();
-                        currentSong = "Buffering...";
-                        break;
-                    case SDLK_f:
-                        play_favorite();
-                        break;
-                    case SDLK_m: {
-                        const char* cmd_mute[] = {"cycle", "mute", NULL};
-                        mpv_command(mpv, cmd_mute);
-                        break;
-                    }
-                    case SDLK_p: {
-                        const char* cmd_pause[] = {"cycle", "pause", NULL};
-                        mpv_command(mpv, cmd_pause);
-                        break;
-                    }
                       case SDLK_ESCAPE: {
                         uint32_t flags = SDL_GetWindowFlags(visualWin);
                         bool isFullscreen = (flags & SDL_WINDOW_FULLSCREEN_DESKTOP);
@@ -5476,16 +5489,23 @@ int32 VisualsThread(void* data) {
                     }
                 }
             }
-
-            else if (e.type == SDL_MOUSEWHEEL) {
-                set_volume(e.wheel.y > 0 ? '+' : '-');
-            }                       
-
+           
+             else if (e.type == SDL_MOUSEWHEEL) {
+                // INJECTION POINT: Safely notify the main thread of a scroll wheel volume change
+                if (gGuiWindow != nullptr) {
+                    BMessage volStepMsg(MSG_VOL_STEP_REQUEST);
+                    // Pass 1 for volume up, -1 for volume down
+                    volStepMsg.AddInt32("direction", (e.wheel.y > 0) ? 1 : -1);
+                    
+                    gGuiWindow->PostMessage(&volStepMsg);
+                }
+            }  
 
             else if (e.type == SDL_MOUSEBUTTONDOWN) {
                 if (e.button.button == SDL_BUTTON_MIDDLE) {
-                    const char* cmd_mute[] = {"cycle", "mute", NULL};
-                    mpv_command(mpv, cmd_mute);
+                    if (gGuiWindow != nullptr) {
+                        gGuiWindow->PostMessage(MSG_MUTE_TOGGLED);
+                    }
                 }
                 else if (e.button.button == SDL_BUTTON_RIGHT) {
                     load_random_preset(pm);
@@ -5508,48 +5528,86 @@ int32 VisualsThread(void* data) {
         
         snooze(16000); 
     }
-    
-    // Cleanup
-    cleanup_capture_device();
-    
-    if (glContext) { 
-        SDL_GL_MakeCurrent(visualWin, NULL); 
-        SDL_GL_DeleteContext(glContext); 
-        glContext = nullptr; 
-    }
-    if (visualWin) { 
-        SDL_DestroyWindow(visualWin); 
-        visualWin = nullptr; 
-    }
-    if (pm) {
-        projectm_destroy(pm);
-        pm = nullptr;
-    }
 
-    if (glContext) { SDL_GL_DeleteContext(glContext); glContext = nullptr; }
-    if (visualWin) { SDL_DestroyWindow(visualWin); visualWin = nullptr; } 
-    if (pm) { projectm_destroy(pm); pm = nullptr; } 
+    if (visualWin) {
+        SDL_GL_MakeCurrent(visualWin, NULL);
+    }
+    
+	
+    if (cfg.debugEnable) printf("[DEBUG SDL] VisualsThread loop exited cleanly.\n");
 	#endif
     return B_OK;
    
 }
 
 
+// @Visuals
+void SuperMusicWindow::ReallyStopVisuals() {
+    #ifdef USE_PROJECTM
+    if (visualWin == nullptr && glContext == nullptr && pm == nullptr) {
+        return; 
+    }
+    
+    if (cfg.debugEnable) printf("[DEBUG Visual] Force-terminating visual subsystems...\n");
+    
+    // Break loop flag just in case
+    visualsRunning = false; 
+
+    // Clean up OpenAL audio captures safely
+    cleanup_capture_device();
+    
+    // Clear the OpenGL pipeline context
+    if (glContext && visualWin) { 
+        // Unbind the context from the main thread first
+        SDL_GL_MakeCurrent(visualWin, NULL); 
+        SDL_GL_DeleteContext(glContext); 
+        glContext = nullptr; 
+    }
+    
+    if (visualWin) { 
+        SDL_DestroyWindow(visualWin); 
+        visualWin = nullptr; 
+    }
+    
+    if (pm) {
+        projectm_destroy(pm);
+        pm = nullptr;
+    }
+    
+    if (cfg.debugEnable) printf("[DEBUG Visual] Visuals cleanup sequence finalized successfully.\n");
+    #endif
+}
+
+
+
 void SuperMusicWindow::StartVisuals() {
-	#ifdef USE_PROJECTM
-    init_visuals(); 
-    if (visualsRunning) {
-        thread_id vThread = spawn_thread(VisualsThread, "VisualsLoop", B_NORMAL_PRIORITY, NULL);
-        resume_thread(vThread);
+    #ifdef USE_PROJECTM
+    if (!visualWin) {
+        // First-time setup: allocate everything ONCE
+        init_visuals(); 
+        visualsRunning = true;
+        fVisualsThreadID = spawn_thread(VisualsThread, "VisualsLoop", B_NORMAL_PRIORITY, NULL);
+        resume_thread(fVisualsThreadID);
+    } else {
+        // Subsquent toggles: simple un-hide the window and resume drawing!
+        visualsRunning = true;
+        SDL_ShowWindow(visualWin);
     }
     #endif
 }
 
+
 void SuperMusicWindow::StopVisuals() {
-	#ifdef USE_PROJECTM
-    visualsRunning = false;
+    #ifdef USE_PROJECTM
+    if (!visualsRunning) return; 
+    
+    // Hide the window out of sight instead of deleting it!
+    if (visualWin) {
+        SDL_HideWindow(visualWin);
+    }
     #endif
 }
+
 
 
 #ifdef USE_PROJECTM
@@ -7923,12 +7981,38 @@ case MSG_TOGGLE_FULLSCREEN: {
             if (fSongView) fSongView->SetText("Stopped");
             break;
             
+            
+            
         case MSG_MUTE_TOGGLED: {
+            // 1. Cycle the mute state safely on the main thread
             mpv_command_string(mpv, "cycle mute");            
+            
             int is_muted = 0;
             mpv_get_property(mpv, "mute", MPV_FORMAT_FLAG, &is_muted);          
+            
+            if (cfg.debugEnable) {
+                printf("[DEBUG Mute UI] Mute state cycled. Is Muted: %d\n", is_muted);
+            }
+
+            // 2. Synchronize the standard and custom view states
+            if (fVolumeSlider != nullptr) {
+                // Keep the standard enabled state in sync
+                fVolumeSlider->SetEnabled(is_muted ? false : true);
+                
+                // 3. Cast and inject the state change into your custom drawing engine
+                RadialVolumeControl* radialKnob = dynamic_cast<RadialVolumeControl*>(fVolumeSlider);
+                if (radialKnob != nullptr) {
+                    radialKnob->SetMuted(is_muted == 1); 
+                }
+                
+                // 4. Force a top-level paint flash down the hierarchy line
+                fVolumeSlider->Invalidate(); 
+            }
             break;
         }
+
+
+
 
             
 		case MSG_PAUSE: {
@@ -8059,6 +8143,7 @@ case MSG_TOGGLE_FULLSCREEN: {
 		}
 		
 //--------------------------------- Projectm   
+/*
 		case MSG_TOGGLE_PRESETS: {
     		bool show = (fPresetToggle->Value() == B_CONTROL_ON);    
     		if (show) {
@@ -8070,8 +8155,102 @@ case MSG_TOGGLE_FULLSCREEN: {
     		ResizeToPreferred();
     		break;
 		}
+		*/
+		
+			case MSG_TOGGLE_PRESETS: {
+			bool show = (fPresetToggle->Value() == B_CONTROL_ON);    
+			
+			if (show) {
+				if (fPresetScroll && fPresetScroll->IsHidden()) {
+					fPresetScroll->Show();
+				}
+			} else {
+				if (fPresetScroll && !fPresetScroll->IsHidden()) {
+					fPresetScroll->Hide();    	
+				}
+			}    
+			
+			// 1. Force the individual scrolling sub-component to flush its geometry metrics
+			if (fPresetScroll) {
+				fPresetScroll->InvalidateLayout(true);
+			}
+
+			// 2. THE CRITICAL FIX: Drop sizing floor constraints temporarily to allow changes
+			this->SetSizeLimits(0, B_SIZE_UNLIMITED, 0, B_SIZE_UNLIMITED);
+			
+			// 3. Force top-level tree structural recalculation
+			this->InvalidateLayout(true);
+			
+			// 4. Instruct Haiku to scale the master window container to accommodate the expansion
+			this->ResizeToPreferred();
+			
+			// 5. Securely recalculate and lock new safety boundaries based on the updated view tree
+			if (this->GetLayout() != nullptr) {
+				BSize minSize = this->GetLayout()->MinSize();
+				this->SetSizeLimits(minSize.width, B_SIZE_UNLIMITED, minSize.height, B_SIZE_UNLIMITED);
+			}
+			break;
+		}
+
+		
+		case MSG_HIDE_VISUALS_REQUEST: {
+			if (cfg.debugEnable) printf("[DEBUG Visual UI] Received hide visuals request from SDL interface.\n");
+			
+			// 1. Uncheck the actual main visualizer checkbox safely on the UI thread
+			if (fVisualsCheckbox != nullptr) {
+				fVisualsCheckbox->SetValue(B_CONTROL_OFF);
+				fVisualsCheckbox->Invalidate(); // Force Haiku to repaint the blank box instantly
+			}
+			
+			// 2. Hide the side elements (Preset list toggle and scroll view panels)
+			if (fPresetToggle != nullptr) {
+				fPresetToggle->SetValue(B_CONTROL_OFF);
+				fPresetToggle->Invalidate();
+			}
+			if (fPresetScroll != nullptr) {
+				fPresetScroll->Hide();
+			}
+
+			// 3. Hide the SDL visualization window context out of sight
+			StopVisuals();
+
+			// 4. Force layout recalculation and resize the master player panel
+			InvalidateLayout();
+			ResizeToPreferred();
+			break;
+		}
+
+
+        case MSG_VOL_STEP_REQUEST: {
+            int32 direction = 0;
+            if (message->FindInt32("direction", &direction) == B_OK && fVolumeSlider != nullptr) {
+                // 1. Calculate the new volume target step limits
+                int32 currentVal = fVolumeSlider->Value();
+                int32 stepAmount = 5; // Change volume by 5% increments per tick
+                int32 newVal = currentVal + (direction * stepAmount);
+                
+                // Enforce safety floor and ceiling bounds constraints
+                if (newVal < 0) newVal = 0;
+                if (newVal > 100) newVal = 100;
+                
+                if (cfg.debugEnable) printf("[DEBUG Vol UI] SDL Wheel step applied. New Volume: %" B_PRId32 "\n", newVal);
+
+                // 2. Mechanically advance the layout slider widget 
+                fVolumeSlider->SetValue(newVal);
+                
+                // 3. Force sync execution to update the core MPV layer properties instantly
+                double vol = (double)newVal;
+                mpv_set_property(mpv, "volume", MPV_FORMAT_DOUBLE, &vol);
+            }
+            break;
+        }
+
+
+
+		
 		#endif
-//--------------------------------- Projectm     
+//--------------------------------- Projectm  
+//@vcase   
 
 		
 		case MSG_EQ_CHANGED: {
@@ -8308,25 +8487,9 @@ SuperMusicWindow::~SuperMusicWindow()
     fArtCache.clear();
     delete fSleepRunner;
     fAlbumArt = nullptr; 
+    
+	ReallyStopVisuals();
 
-    #ifdef USE_PROJECTM
-    if (pm) {
-        cleanup_capture_device();
-    
-        if (glContext) { 
-            SDL_GL_MakeCurrent(visualWin, NULL); 
-            SDL_GL_DeleteContext(glContext); 
-            glContext = nullptr; 
-        }
-        if (visualWin) { 
-            SDL_DestroyWindow(visualWin); 
-            visualWin = nullptr; 
-        }
-    
-        projectm_destroy(pm);
-        pm = nullptr;
-    }
-    #endif
 }
 
 
@@ -8339,13 +8502,6 @@ public:
     	load_config();
     	fetch_channels();
     	init_mpv();
-    
-    	#ifdef USE_PROJECTM
-    	if (visualsRunning) {
-        	thread_id visualThread = spawn_thread(VisualsThread, "VisualsLoop", B_NORMAL_PRIORITY, NULL);
-        	resume_thread(visualThread);
-    	}
-    	#endif
 
     	// --- COLD BOOT TRAY CLEANUP ENGINE ---
     	BDeskbar deskbar;
@@ -8379,9 +8535,31 @@ public:
     	}
 }
 
-     
+ 
     
 virtual bool QuitRequested() { 
+
+
+    #ifdef USE_PROJECTM
+    if (gGuiWindow != nullptr) {
+        thread_id activeVisuals = gGuiWindow->VisualsThreadID();
+        
+        if (activeVisuals > 0) {
+            if (cfg.debugEnable) printf("[DEBUG App] Explicitly halting visualizer thread: %" B_PRId32 "\n", activeVisuals);
+            
+            visualsRunning = false; // 1. Signal background loop exit instantly
+            
+            // 2. SYNCHRONOUS WAIT: Force the app thread to wait until the thread is 100% gone
+            status_t threadExitStatus = B_OK;
+            status_t waitResult = wait_for_thread_etc(activeVisuals, B_RELATIVE_TIMEOUT, 800000, &threadExitStatus); // 800ms timeout
+            
+            if (waitResult == B_TIMED_OUT) {
+                if (cfg.debugEnable) printf("[DEBUG Visuals] Visualizer blocked on driver return. Forcing kill_thread.\n");
+                kill_thread(activeVisuals);
+            }
+        }
+    }
+    #endif
 
     	BDeskbar deskbar;
    		 if (deskbar.HasItem("SuperMusicTrayIcon")) {
@@ -8394,6 +8572,8 @@ virtual bool QuitRequested() {
         save_config();
         return true;
     }
+    
+
 };
 
 
@@ -8571,7 +8751,8 @@ bool SuperMusicWindow::QuitRequested() {
     if (mpv) {
         mpv_command_string(mpv, "quit");
     }
-    StopVisuals();
+    
+    ReallyStopVisuals();
 
     snooze(500000); 
     

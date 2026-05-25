@@ -95,6 +95,7 @@ enum {
 	MSG_SET_PRESET_JAZZ = 'prsj',	
 	MSG_SET_PRESET_FLAT = 'prsf',	
 	MSG_CFG_SYS_TRAY = 'stry',	
+	MSG_VOL_STEP_REQUEST = 'sdlv',
 	MSG_ACTIVATE_APP = 'atry',
 	MSG_OPEN_SETTINGS = 'mtse',
 	MSG_COMPACTM_CHANGED = 'cmod',
@@ -102,6 +103,7 @@ enum {
     MSG_SLEEP_CHANGED    = 'slpc',
     MSG_TOGGLE_Spectrum  = 'tsmb',
     MSG_SHUFFLE_FAVS_CHANGED = 'sfch',
+    MSG_HIDE_VISUALS_REQUEST = 'tvps',
     MSG_VOL_CHANGED= 'bvci',
     MSG_MUTE_TOGGLED = 'mute',
     MSG_SHOW_TITLE = 'msct',
@@ -132,6 +134,7 @@ public:
     void 		 ApplyTheme(); 
     void 		 StartVisuals();
     void 		 StopVisuals();
+    void 		 ReallyStopVisuals();
     virtual bool QuitRequested();
     void 		 PlayStation(const Channel& chan);
     void 		 PopulateStationList(); 
@@ -146,9 +149,12 @@ public:
 	void ResizeWindowToFit();
 	void      DoDownloadLoop(); 
 	bool IsFullscreenActive() const { return fFullscreenActive; }
+	thread_id VisualsThreadID() const { return fVisualsThreadID; }
 	
 	  
 private:
+	thread_id fVisualsThreadID;
+
 	bool fFullscreenActive = false; 
 	BGroupView* fNormalControlsWrapper;
 	BGroupView* fCompactControlsWrapper;
