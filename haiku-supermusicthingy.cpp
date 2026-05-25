@@ -3,68 +3,54 @@
  * All rights reserved. Distributed under the terms of the MIT license.
  */
 
-// --- Haiku Interface Kit ---
+// ====================================================================
+// Haiku API Framework Kits
+// ====================================================================
+// App Kit
 #include <Application.h>
+#include <Message.h>
+#include <MessageRunner.h>
+#include <Notification.h>
+#include <Roster.h>
+
+// Interface Kit
+#include <AffineTransform.h>
 #include <Bitmap.h>
 #include <CheckBox.h>
+#include <Control.h>
 #include <ControlLook.h>
 #include <Deskbar.h>
 #include <Dragger.h>
 #include <IconUtils.h>
 #include <InterfaceDefs.h>
 #include <ListView.h>
-#include <map>
-#include <MenuItem.h>
 #include <MenuField.h>
-#include <Message.h>
-#include <MessageRunner.h>
-#include <NodeInfo.h>
-#include <Notification.h>
+#include <MenuItem.h>
 #include <PopUpMenu.h>
-#include <TextView.h>
-#include <TranslationUtils.h>
 #include <Region.h>
-#include <Roster.h>
+#include <Screen.h>
+#include <Shape.h>
 #include <Slider.h>
-#include <string>
 #include <StringList.h>
 #include <StringView.h>
+#include <TextView.h>
 #include <View.h>
 #include <Window.h>
-#include <Control.h>
-#include <AffineTransform.h>
-#include <interface/Shape.h>
-#include <Screen.h>
 
-
-
-// --- Haiku Storage Kit ---
-#include <Path.h>
+// Storage & Support Kits
+#include <Directory.h>
 #include <Entry.h>
 #include <FindDirectory.h>
-#include <Directory.h> 
-#include <storage/Entry.h>
-#include <storage/Path.h>
+#include <NodeInfo.h>
+#include <Path.h>
+#include <TranslationUtils.h>
 
-// --- Third Party Libraries ---
+// ====================================================================
+// Third Party Engines & Libraries
+// ====================================================================
 #include <curl/curl.h>
 #include <mpv/client.h>
 #include "nlohmann/json.hpp"
-
-// --- C++ Standard Library ---
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <string>
-#include <vector>
-#include <thread>
-#include <mutex>
-#include <ctime>
-#include <cstdlib>    // for rand, getenv
-#include <algorithm>  // for std::find
-#include <cstring>
-#include <random>
-#include <cmath>
 
 #ifdef USE_SDL2
 #include <SDL2/SDL.h>
@@ -79,8 +65,31 @@
 #include <projectM-4/projectM.h>
 #endif
 
-#include "icons.h"
+// ====================================================================
+// C++ Standard Library & POSIX Layers
+// ====================================================================
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+#include <dlfcn.h>
+#include <fstream>
+#include <iostream>
+#include <map>
+#include <mutex>
+#include <random>
+#include <sstream>
+#include <string>
+#include <thread>
+#include <vector>
+
+// ====================================================================
+// Local Application Project Headers
+// ====================================================================
 #include "haiku-supermusicthingy.h"
+#include "icons.h"
+
 
 
 namespace fs = std::filesystem;
@@ -111,7 +120,6 @@ void cleanup_capture_device() {
     }
 }
 std::string gPendingPresetPath = "";
-
 #endif
 
 #ifdef USE_SDL2
@@ -121,28 +129,200 @@ SDL_GLContext glContext = nullptr;
 
 
 volatile bool fIsQuitting; 
-std::string statusMsg = "";
-std::time_t statusExpiry = 0;
 bool mpvthread_running = true;
 SuperMusicWindow* gGuiWindow = nullptr; 
 int32 mpv_loop_thread(void* data);
 using json = nlohmann::json;
-
 class SuperMusicWindow; 
 
 
 
+// Volatile State Tracker Variables
+double user_base_volume = 100.0; // Captures slider adjustments
+float gVolumeScaleFactor = 1.0f; 
+bool is_fading = false;
+double fade_target_vol = 0.0;
+double fade_start_vol = 0.0;
+bigtime_t fade_start_time = 0;
+bigtime_t fade_duration_us = 0;
+mpv_handle *mpv = nullptr;
+std::vector<Channel> channels;
+std::string pendingSong = "";
+std::time_t notifyTimer = 0;
+std::string currentSong = "None";
+std::string currentDesc = "None";
+std::string currentStation = "";
+std::string currentStationID = ""; 
+std::string currentListeners = "";
+std::string currentAlbumArtUrl = "";
 
 
+//@Config
+
+struct Config {
+    bool showNotifications = false;
+    bool debugEnable = false;
+    bool showVisuals = false;
+    bool autoShuffle = false;
+    bool compactModeTitle = true;
+    bool compactModeDesc = true;
+    #ifdef USE_SYSTRAY
+    bool sysTray = true;
+    #else
+    bool sysTray = false;
+    #endif
+    bool autoShuffleVisuals = false;
+    bool showSpectrumVisuals = true;
+    bool autoVsync = false;
+    bool ladspaEnabled = false;
+    bool shuffleFavsOnly = false;
+    bool compactMode = false;
+    int notifyIconSize = 64; 
+    std::string uTheme = "Default";
+    std::string quality = "128k";
+    bool eqEnabled = true;
+    float eqBands[15] = {0.0f}; 
+    float limitIn = 0.0f;
+    float limitLmt = 0.0f;
+    float limitRel = 100.0f; 
+} cfg;
+
+int selectedConfig = 0;
 
 
+void save_config() {
+    json j;
+    j["quality"] = cfg.quality;
+    j["debugEnable"] = cfg.debugEnable;
+    j["compactMode"] = cfg.compactMode;
+    j["notifyIconSize"] = cfg.notifyIconSize;
+    j["uTheme"] = cfg.uTheme;
+    j["showNotifications"] = cfg.showNotifications;
+    j["autoShuffle"] = cfg.autoShuffle;
+    j["sysTray"] = cfg.sysTray;
+    j["compactModeTitle"] = cfg.compactModeTitle;
+    j["compactModeDesc"] = cfg.compactModeDesc;
+    j["ladspaEnabled"] = cfg.ladspaEnabled;
+    j["autoShuffleVisuals"] = cfg.autoShuffleVisuals;
+    j["showSpectrumVisuals"] = cfg.showSpectrumVisuals;
+    j["shuffleFavsOnly"] = cfg.shuffleFavsOnly;
+    j["autoVsync"] = cfg.autoVsync;
+    j["showVisuals"] = cfg.showVisuals;
+    j["eqEnabled"] = cfg.eqEnabled;
+    json eqArray = json::array();
+    for (int i = 0; i < 15; i++) {
+        eqArray.push_back(cfg.eqBands[i]);
+    }
+    j["eqBands"] = eqArray;
+    j["limitIn"] = cfg.limitIn;
+    j["limitLmt"] = cfg.limitLmt;
+    j["limitRel"] = cfg.limitRel;
 
+    BPath path;
+    if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) == B_OK) {
+        path.Append("SuperMusicThingy/config.txt");
+        std::ofstream outfile(path.Path());
+        if (outfile.is_open()) {
+            outfile << j.dump(4);
+            outfile.close();
+        }
+    }
+}
+
+
+void load_config() {
+    BPath path;
+
+    // 1. ALWAYS populate strict, hardcoded memory safe defaults first
+    cfg.quality = "128k";
+    cfg.notifyIconSize = 64;
+    cfg.debugEnable = false;
+    cfg.compactMode = false;
+    cfg.compactModeTitle = true;
+    cfg.compactModeDesc = true;
+    cfg.uTheme = "Dark";
+    cfg.showNotifications = false;
+    cfg.autoShuffle = false;
+#ifdef USE_SYSTRAY
+    cfg.sysTray = true;
+#else
+    cfg.sysTray = false;
+#endif
+    cfg.autoShuffleVisuals = false;
+    cfg.autoVsync = false;
+    cfg.ladspaEnabled = false;
+    cfg.showVisuals = false;   
+    cfg.showSpectrumVisuals = true;   
+    cfg.shuffleFavsOnly = false; 
+    cfg.eqEnabled = true;
+    for (int i = 0; i < 15; i++) {
+        cfg.eqBands[i] = 0.0f; // flat EQ defaults
+    }
+    cfg.limitIn = 0.0f;
+    cfg.limitLmt = 0.0f;
+    cfg.limitRel = 100.0f;
+
+    // 2. Attempt parsing over top of those defaults
+    if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) == B_OK) {
+        path.Append("SuperMusicThingy/config.txt");
+        std::ifstream infile(path.Path());        
+        if (infile.is_open()) {
+            try {
+                json j = json::parse(infile);                
+                cfg.quality = j.value("quality", "128k");
+                int val = j.value("notifyIconSize", 64);
+                if (val == 32 || val == 40 || val == 64 || val == 96 || val == 128) {
+                    cfg.notifyIconSize = val;
+                } else {
+                    cfg.notifyIconSize = 64; 
+                }
+                cfg.compactMode = j.value("compactMode", false);
+                cfg.debugEnable = j.value("debugEnable", false);
+                cfg.compactModeDesc = j.value("compactModeDesc", false);
+                cfg.compactModeTitle = j.value("compactModeTitle", true);
+                cfg.uTheme = j.value("uTheme", "Dark");
+                cfg.showNotifications = j.value("showNotifications", false);
+                cfg.autoShuffle = j.value("autoShuffle", false);
+                #ifdef USE_SYSTRAY
+                cfg.sysTray = j.value("sysTray", true);
+                #else
+                cfg.sysTray = j.value("sysTray", false);
+                #endif
+                cfg.autoShuffleVisuals = j.value("autoShuffleVisuals", false);
+                cfg.autoVsync = j.value("autoVsync", false);
+                cfg.ladspaEnabled = j.value("ladspaEnabled", false);
+                cfg.showVisuals = j.value("showVisuals", false);   
+                cfg.showSpectrumVisuals = j.value("showSpectrumVisuals", true);   
+                cfg.shuffleFavsOnly = j.value("shuffleFavsOnly", false); 
+                cfg.eqEnabled = j.value("eqEnabled", true);                
+                if (j.contains("eqBands") && j["eqBands"].is_array()) {
+                     for (size_t i = 0; i < 15 && i < j["eqBands"].size(); i++) {
+                        cfg.eqBands[i] = j["eqBands"][i].get<float>();
+                    }
+                }
+                cfg.limitIn = j.value("limitIn", 0.0f);
+                cfg.limitLmt = j.value("limitLmt", 0.0f);
+                cfg.limitRel = j.value("limitRel", 100.0f);                                    
+            } catch(...) {
+                // Parsing failed, but defaults are safely assigned
+            }
+        } else {
+
+            save_config(); 
+        }
+    }
+}
+
+
+static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
+}
 
 
 
 void ensure_config_dir() {
     BPath path;
-
     if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) == B_OK) {
         path.Append("SuperMusicThingy");
         if (create_directory(path.Path(), 0755) == B_OK) {
@@ -150,25 +330,6 @@ void ensure_config_dir() {
         }
     }
 }
-
-
-bool IsFFmpegLadspaAvailable() {
-    FILE* fp = popen("ffmpeg -filters 2>/dev/null", "r");
-    if (fp == NULL) return false;
-
-    char buffer[256];
-    bool found = false;
-    while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-        // Look for the specific 'ladspa' filter line
-        if (strstr(buffer, " ladspa ")) {
-            found = true;
-            break;
-        }
-    }
-    pclose(fp);
-    return found;
-}
-
 
 
 BBitmap* GetVectorIcon(const unsigned char* data, size_t size, float dimensions) {
@@ -352,32 +513,7 @@ const float kPresetFlat[] = {
 };
 
 
-// Volatile State Tracker Variables
-double user_base_volume = 100.0; // Captures slider adjustments
-float gVolumeScaleFactor = 1.0f; 
-bool is_fading = false;
-double fade_target_vol = 0.0;
-double fade_start_vol = 0.0;
-bigtime_t fade_start_time = 0;
-bigtime_t fade_duration_us = 0;
 
-
-mpv_handle *mpv = nullptr;
-std::vector<Channel> channels;
-std::string pendingSong = "";
-std::time_t notifyTimer = 0;
-std::string currentSong = "None";
-std::string currentDesc = "None";
-std::string currentStation = "";
-std::string currentStationID = ""; 
-std::string currentListeners = "";
-std::string currentAlbumArtUrl = "";
-
-
-static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
-    ((std::string*)userp)->append((char*)contents, size * nmemb);
-    return size * nmemb;
-}
 
 
 void download_art(const std::string& url) {
@@ -683,159 +819,60 @@ public:
 
 
 
-struct Config {
-    bool showNotifications = false;
-    bool debugEnable = false;
-    bool showVisuals = false;
-    bool autoShuffle = false;
-    bool compactModeTitle = true;
-    bool compactModeDesc = true;
-    #ifdef USE_SYSTRAY
-    bool sysTray = true;
-    #else
-    bool sysTray = false;
-    #endif
-    bool autoShuffleVisuals = false;
-    bool showSpectrumVisuals = true;
-    bool autoVsync = false;
-    bool ladspaEnabled = false;
-    bool shuffleFavsOnly = false;
-    bool compactMode = false;
-    int notifyIconSize = 64; 
-    std::string uTheme = "Default";
-    std::string quality = "128k";
-    bool eqEnabled = true;
-    float eqBands[15] = {0.0f}; 
-    float limitIn = 0.0f;
-    float limitLmt = 0.0f;
-    float limitRel = 100.0f; 
-} cfg;
 
-int selectedConfig = 0;
+// Ladspa Smart Detection
 
+// Define the structural layout matching FFmpeg's internal dynamic registration signatures
+struct AVFilter {
+    const char* name;
+    // Remaining inner alignment paddings are ignored since we only parse the name string pointer
+};
 
-void save_config() {
-    json j;
-    j["quality"] = cfg.quality;
-    j["debugEnable"] = cfg.debugEnable;
-    j["compactMode"] = cfg.compactMode;
-    j["notifyIconSize"] = cfg.notifyIconSize;
-    j["uTheme"] = cfg.uTheme;
-    j["showNotifications"] = cfg.showNotifications;
-    j["autoShuffle"] = cfg.autoShuffle;
-    j["sysTray"] = cfg.sysTray;
-    j["compactModeTitle"] = cfg.compactModeTitle;
-    j["compactModeDesc"] = cfg.compactModeDesc;
-    j["ladspaEnabled"] = cfg.ladspaEnabled;
-    j["autoShuffleVisuals"] = cfg.autoShuffleVisuals;
-    j["showSpectrumVisuals"] = cfg.showSpectrumVisuals;
-    j["shuffleFavsOnly"] = cfg.shuffleFavsOnly;
-    j["autoVsync"] = cfg.autoVsync;
-    j["showVisuals"] = cfg.showVisuals;
-    j["eqEnabled"] = cfg.eqEnabled;
-    json eqArray = json::array();
-    for (int i = 0; i < 15; i++) {
-        eqArray.push_back(cfg.eqBands[i]);
-    }
-    j["eqBands"] = eqArray;
-    j["limitIn"] = cfg.limitIn;
-    j["limitLmt"] = cfg.limitLmt;
-    j["limitRel"] = cfg.limitRel;
+bool IsFFmpegLadspaAvailable() {
+    bool hasLadspa = false;
 
-    BPath path;
-    if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) == B_OK) {
-        path.Append("SuperMusicThingy/config.txt");
-        std::ofstream outfile(path.Path());
-        if (outfile.is_open()) {
-            outfile << j.dump(4);
-            outfile.close();
-        }
-    }
-}
+    // 1. RUNTIME ENGINE QUERY: Intercept the active library iteration symbol in memory.
+    // av_filter_iterate() is the official POSIX function exposed by modern libavfilter (FFmpeg 5 to 8+)
+    // to iterate through all compiled audio/video filters in the active runtime context.
+    const AVFilter* (*get_next_filter)(void**) = (const AVFilter* (*)(void**))dlsym(RTLD_DEFAULT, "av_filter_iterate");
 
-
-void load_config() {
-    BPath path;
-
-    // 1. ALWAYS populate strict, hardcoded memory safe defaults first
-    cfg.quality = "128k";
-    cfg.notifyIconSize = 64;
-    cfg.debugEnable = false;
-    cfg.compactMode = false;
-    cfg.compactModeTitle = true;
-    cfg.compactModeDesc = true;
-    cfg.uTheme = "Dark";
-    cfg.showNotifications = false;
-    cfg.autoShuffle = false;
-#ifdef USE_SYSTRAY
-    cfg.sysTray = true;
-#else
-    cfg.sysTray = false;
-#endif
-    cfg.autoShuffleVisuals = false;
-    cfg.autoVsync = false;
-    cfg.ladspaEnabled = false;
-    cfg.showVisuals = false;   
-    cfg.showSpectrumVisuals = true;   
-    cfg.shuffleFavsOnly = false; 
-    cfg.eqEnabled = true;
-    for (int i = 0; i < 15; i++) {
-        cfg.eqBands[i] = 0.0f; // flat EQ defaults
-    }
-    cfg.limitIn = 0.0f;
-    cfg.limitLmt = 0.0f;
-    cfg.limitRel = 100.0f;
-
-    // 2. Attempt parsing over top of those defaults
-    if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) == B_OK) {
-        path.Append("SuperMusicThingy/config.txt");
-        std::ifstream infile(path.Path());        
-        if (infile.is_open()) {
-            try {
-                json j = json::parse(infile);                
-                cfg.quality = j.value("quality", "128k");
-                int val = j.value("notifyIconSize", 64);
-                if (val == 32 || val == 40 || val == 64 || val == 96 || val == 128) {
-                    cfg.notifyIconSize = val;
-                } else {
-                    cfg.notifyIconSize = 64; 
-                }
-                cfg.compactMode = j.value("compactMode", false);
-                cfg.debugEnable = j.value("debugEnable", false);
-                cfg.compactModeDesc = j.value("compactModeDesc", false);
-                cfg.compactModeTitle = j.value("compactModeTitle", true);
-                cfg.uTheme = j.value("uTheme", "Dark");
-                cfg.showNotifications = j.value("showNotifications", false);
-                cfg.autoShuffle = j.value("autoShuffle", false);
-                #ifdef USE_SYSTRAY
-                cfg.sysTray = j.value("sysTray", true);
-                #else
-                cfg.sysTray = j.value("sysTray", false);
-                #endif
-                cfg.autoShuffleVisuals = j.value("autoShuffleVisuals", false);
-                cfg.autoVsync = j.value("autoVsync", false);
-                cfg.ladspaEnabled = j.value("ladspaEnabled", false);
-                cfg.showVisuals = j.value("showVisuals", false);   
-                cfg.showSpectrumVisuals = j.value("showSpectrumVisuals", true);   
-                cfg.shuffleFavsOnly = j.value("shuffleFavsOnly", false); 
-                cfg.eqEnabled = j.value("eqEnabled", true);                
-                if (j.contains("eqBands") && j["eqBands"].is_array()) {
-                     for (size_t i = 0; i < 15 && i < j["eqBands"].size(); i++) {
-                        cfg.eqBands[i] = j["eqBands"][i].get<float>();
-                    }
-                }
-                cfg.limitIn = j.value("limitIn", 0.0f);
-                cfg.limitLmt = j.value("limitLmt", 0.0f);
-                cfg.limitRel = j.value("limitRel", 100.0f);                                    
-            } catch(...) {
-                // Parsing failed, but defaults are safely assigned
+    if (get_next_filter != nullptr) {
+        void* opaque = nullptr;
+        const AVFilter* filter = nullptr;
+        
+        // Loop through every single filter compiled into the running libavfilter engine
+        while ((filter = get_next_filter(&opaque)) != nullptr) {
+            if (filter->name != nullptr && strcmp(filter->name, "ladspa") == 0) {
+                hasLadspa = true;
+                break;
             }
-        } else {
-
-            save_config(); 
+        }
+        
+        if (cfg.debugEnable) {
+            printf("[DEBUG FFmpeg Prober] Native Memory Graph Query -> 'av_filter_iterate' checked active engine.\n");
+        }
+    } else {
+        // Fallback for older versions if av_filter_iterate is missing
+        const AVFilter* (*get_next_filter_legacy)(const AVFilter*) = (const AVFilter* (*)(const AVFilter*))dlsym(RTLD_DEFAULT, "avfilter_next");
+        if (get_next_filter_legacy != nullptr) {
+            const AVFilter* filter = nullptr;
+            while ((filter = get_next_filter_legacy(filter)) != nullptr) {
+                if (filter->name != nullptr && strcmp(filter->name, "ladspa") == 0) {
+                    hasLadspa = true;
+                    break;
+                }
+            }
         }
     }
+
+    if (cfg.debugEnable) {
+        printf("[DEBUG FFmpeg Prober] Active Runtime Engine LADSPA Support Evaluation: %s\n", 
+               hasLadspa ? "AVAILABLE" : "UNAVAILABLE / CRIPPLED");
+    }
+
+    return hasLadspa;
 }
+
 
 
 
@@ -2402,7 +2439,7 @@ virtual void Pulse() override {
 
 
 
-// @specupdate
+// @specdraw
 virtual void Draw(BRect updateRect) override {       
     // 1. SAFE FULLSCREEN STATE MONITOR
     bool isWindowInFullscreen = false;
@@ -2457,8 +2494,7 @@ virtual void Draw(BRect updateRect) override {
     // ====================================================================
     rgb_color bgCol;
     if (cfg.uTheme == "Dark") {
-        if (isWindowInFullscreen) bgCol = rgb_color{0, 0, 0, 255}; // Black color lock
-        if (!isWindowInFullscreen) bgCol = rgb_color{40, 40, 40, 255}; // Match dark theme color lock
+        bgCol = (isWindowInFullscreen) ? rgb_color{0, 0, 0, 255} : rgb_color{40, 40, 40, 255}; 
         SetHighColor(bgCol);
         SetLowColor(bgCol);
         SetDrawingMode(B_OP_COPY);
@@ -4977,49 +5013,43 @@ std::string get_bitrate_text() {
 
 // Save Station to favorites
 void save_favorite() {
-        std::string home = getenv("HOME") ? getenv("HOME") : ".";
-        std::string dir = home + "/config/settings/SuperMusicThingy";
-        std::string path = dir + "/favorites.txt";
-        mkdir(dir.c_str(), 0755);
-        std::string currentUrl = "";
-        for(const auto& ch : channels) {
-            if(ch.title == currentStation) {
-                currentUrl = BASE_URL + ch.id + ".pls";
-                break;
-            }
+    std::string home = getenv("HOME") ? getenv("HOME") : ".";
+    std::string dir = home + "/config/settings/SuperMusicThingy";
+    std::string path = dir + "/favorites.txt";
+    mkdir(dir.c_str(), 0755);
+    std::string currentUrl = "";
+    
+    for (const auto& ch : channels) {
+        if (ch.title == currentStation) {
+            currentUrl = BASE_URL + ch.id + ".pls";
+            break;
         }
+    }
 
-        if (currentUrl.empty()) {
-            statusMsg = "Cannot save: No station selected.";
-            statusExpiry = std::time(nullptr) + 2;
-            return;
-        }
+    if (currentUrl.empty()) {
+        return;
+    }
 
-        std::ifstream infile(path);
-        std::string line;
-        bool isDuplicate = false;
-        while (std::getline(infile, line)) {
-            if (line == currentUrl) {
-                isDuplicate = true;
-                break;
-            }
+    std::ifstream infile(path);
+    std::string line;
+    bool isDuplicate = false;
+    while (std::getline(infile, line)) {
+        if (line == currentUrl) {
+            isDuplicate = true;
+            break;
         }
-        infile.close();
+    }
+    infile.close();
 
-        if (isDuplicate) {
-            statusMsg = "Already in favorites!";
-        } else {
-            std::ofstream outfile(path, std::ios_base::app);
-            if (outfile.is_open()) {
-                outfile << currentUrl << std::endl;
-                statusMsg = "URL saved to favorites!";
-                outfile.close();
-            } else {
-                statusMsg = "Error opening file!";
-            }
+    if (!isDuplicate) {
+        std::ofstream outfile(path, std::ios_base::app);
+        if (outfile.is_open()) {
+            outfile << currentUrl << std::endl;
+            outfile.close();
         }
-        statusExpiry = std::time(nullptr) + 2;
+    }
 }
+
     
 void play_favorite() {
     std::string home = getenv("HOME") ? getenv("HOME") : ".";
@@ -5139,37 +5169,41 @@ void SuperMusicWindow::PlayStation(const Channel& chan) {
 
 // Delete Station from favorites
 void delete_favorite() {
-        std::string home = getenv("HOME") ? getenv("HOME") : ".";
-        std::string path = home + "/config/settings/SuperMusicThingy/favorites.txt";
-        std::string currentUrl = "";
-        for(const auto& ch : channels) {
-            if(ch.title == currentStation) {
-                currentUrl = BASE_URL + ch.id + ".pls";
-                break;
-            }
+    std::string home = getenv("HOME") ? getenv("HOME") : ".";
+    std::string path = home + "/config/settings/SuperMusicThingy/favorites.txt";
+    std::string currentUrl = "";
+    
+    for (const auto& ch : channels) {
+        if (ch.title == currentStation) {
+            currentUrl = BASE_URL + ch.id + ".pls";
+            break;
         }
+    }
 
-        if (currentUrl.empty()) return;
-        std::ifstream infile(path);
-        std::vector<std::string> remaining;
-        std::string line;
-        bool removed = false;
+    if (currentUrl.empty()) return;
+    
+    std::ifstream infile(path);
+    std::vector<std::string> remaining;
+    std::string line;
+    bool removed = false;
 
-        while (std::getline(infile, line)) {
-            if (line != currentUrl && !line.empty()) remaining.push_back(line);
-            else removed = true;
-        }
-        infile.close();
-
-        if (removed) {
-            std::ofstream outfile(path, std::ios::trunc);
-            for (const auto& f : remaining) outfile << f << "\n";
-            statusMsg = "Deleted from favorites.";
+    while (std::getline(infile, line)) {
+        if (line != currentUrl && !line.empty()) {
+            remaining.push_back(line);
         } else {
-            statusMsg = "Not in favorites.";
+            removed = true;
         }
-        statusExpiry = std::time(nullptr) + 2;
+    }
+    infile.close();
+
+    if (removed) {
+        std::ofstream outfile(path, std::ios::trunc);
+        for (const auto& f : remaining) {
+            outfile << f << "\n";
+        }
+    }
 }
+
     
 void play_random() {
     if (channels.empty()) return;
@@ -5240,26 +5274,6 @@ bool is_favorite() {
 }
 
 
-/* @delete
-void set_volume(char direction) {
-    double vol;
-    mpv_get_property(mpv, "volume", MPV_FORMAT_DOUBLE, &vol);    
-    if (direction == '+') vol += 5;
-    else if (direction == '-') vol -= 5;
-    if (vol > 100) vol = 100;
-    if (vol < 0) vol = 0;
-    mpv_set_property(mpv, "volume", MPV_FORMAT_DOUBLE, &vol);
-}
-
-
-void toggle_mute() {
-        int mute;
-        mpv_get_property(mpv, "mute", MPV_FORMAT_FLAG, &mute);
-        mute = !mute;
-        mpv_set_property(mpv, "mute", MPV_FORMAT_FLAG, &mute);
- }
-
-*/
 
 void PopulatePresetList(BListView* list, const char* folderPath) {
 	if (list == nullptr)
@@ -5738,8 +5752,6 @@ virtual ~IconView() {
 private:
     BBitmap* fBitmap;
 };
-
-
 
 
 
@@ -6325,14 +6337,16 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     fChkSysTray->SetValue(cfg.sysTray ? B_CONTROL_ON : B_CONTROL_OFF);
     fChkSysTray->SetEnabled(false);    
     
-    // Theme and Presets
     fChkTheme = new BCheckBox("chk_theme", "Dark Theme", new BMessage(MSG_CFG_THEME));
-    fChkTheme->SetValue(cfg.uTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);
+    fChkTheme->SetValue(cfg.uTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);    
     
-    fCmpTitle = new BCheckBox("fCmpTitle_toggle", "Debug Mode: Show Title", new BMessage(MSG_SHOW_TITLE));
+    fChkDebug = new BCheckBox("chk_debug", "Debug Mode", new BMessage(MSG_CFG_DEBUG));
+    fChkDebug->SetValue(cfg.debugEnable ? B_CONTROL_ON : B_CONTROL_OFF);    
+    
+    fCmpTitle = new BCheckBox("fCmpTitle_toggle", "Debug: Show Station Titles", new BMessage(MSG_SHOW_TITLE));
     fCmpTitle->SetValue(cfg.compactModeTitle ? B_CONTROL_ON : B_CONTROL_OFF);
     
-    fCmpSong = new BCheckBox("fCmpSong_toggle", "Debug Mode: Show Description", new BMessage(MSG_SHOW_DESC));
+    fCmpSong = new BCheckBox("fCmpSong_toggle", "Debug: Show Station Descriptions", new BMessage(MSG_SHOW_DESC));
     fCmpSong->SetValue(cfg.compactModeDesc ? B_CONTROL_ON : B_CONTROL_OFF);    
 
 
@@ -6340,7 +6354,7 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     fPresetToggle->SetValue(B_CONTROL_OFF); 
 
     // Visuals and Favorites
-    fVisualsCheckbox = new BCheckBox("visuals_toggle", "Visualizer (Experimental)", new BMessage(MSG_TOGGLE_VISUALS));
+    fVisualsCheckbox = new BCheckBox("visuals_toggle", "projectM Visualizer", new BMessage(MSG_TOGGLE_VISUALS));
     fVisualsCheckbox->SetValue(cfg.showVisuals ? B_CONTROL_ON : B_CONTROL_OFF);  
     
     fShuffleFavsCheckbox = new BCheckBox("shuffle_favs", "Shuffle Only Favorites", new BMessage(MSG_SHUFFLE_FAVS_CHANGED));
@@ -6479,23 +6493,25 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
         .Add(fChkNotify)
         .Add(fSizeContainer)    	
         .AddGlue()
-    .End()  	
-    .Add(fChkSysTray)
+    .End()  	    
     .Add(fChkShuffle)
     .Add(fShuffleFavsCheckbox)
     .Add(fCompactModeConfig)
-    .Add(fCmpTitle)  // Still testing these two
-    .Add(fCmpSong)   
     .Add(fChkTheme)
+    .Add(fChkDebug)
+    .Add(fCmpTitle)  
+    .Add(fCmpSong)
+    .Add(fChkSysTray)
    	.Add(fEQToggle)
-   	//.Add(fEnableladspa)  // Doesn't work as good as native mpv plugins and needs to be built into ffmpeg. But leaving in code for future debugging.
+   	.Add(fEnableladspa)  
    	.Add(fEnableSpectrum)
    	.Add(fEQContainer)
      #ifdef USE_PROJECTM
-    .Add(fPresetToggle)
-    .Add(fPresetScroll) 
+    .AddStrut(5)
     .Add(fVisualsCheckbox)
+    .Add(fPresetToggle)    
     .Add(fChkPresetTimer)
+    .Add(fPresetScroll)       
      #endif
     .AddGlue()
 .End();
@@ -6507,14 +6523,20 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     	fEnableSpectrum->Hide();
 	}
 	if (!cfg.debugEnable) {
+		fChkSysTray->Hide();
+		fEnableladspa->Hide();
 		fCmpTitle->Hide();
     	fCmpSong->Hide();		
 	}
-    if (!hasMesaDriver) {
+    if (!hasMesaDriver && !cfg.debugEnable) {
+    	if (fVisualsCheckbox)  fVisualsCheckbox->Hide();
+    	if (fChkPresetTimer)   fChkPresetTimer->Hide();
         if (fPresetToggle)     fPresetToggle->Hide();
-        if (fPresetScroll)     fPresetScroll->Hide();
-        if (fVisualsCheckbox)  fVisualsCheckbox->Hide();
-        if (fChkPresetTimer)   fChkPresetTimer->Hide();
+        if (fPresetScroll)     fPresetScroll->Hide();   
+    }
+    if (!visualsRunning) {
+    	 if (fPresetToggle)   fPresetToggle->Hide(); 
+    	 if (fChkPresetTimer)   fChkPresetTimer->Hide(); 
     }
 
     // ==========================================
@@ -7816,6 +7838,37 @@ case MSG_TOGGLE_FULLSCREEN: {
         	break;
     	}
     	
+    	//@debug
+    	case MSG_CFG_DEBUG: {
+        BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_debug"));
+        if (chk) {
+            cfg.debugEnable = (chk->Value() == B_CONTROL_ON);            
+            if (cfg.debugEnable) {
+            	fChkSysTray->Show();
+				fEnableladspa->Show();
+				fCmpTitle->Show();
+    			fCmpSong->Show();	
+    			fVisualsCheckbox->Show();
+    			fChkPresetTimer->Show();
+        		fPresetToggle->Show();
+        		fPresetScroll->Show();  	
+            } else {      
+            	fChkSysTray->Hide();
+            	fEnableladspa->Hide();
+				fCmpTitle->Hide();
+    			fCmpSong->Hide();	        
+    			fVisualsCheckbox->Hide();
+    			fChkPresetTimer->Hide();
+        		fPresetToggle->Hide();
+        		fPresetScroll->Hide();   
+            }
+            InvalidateLayout();
+            save_config();
+            
+        	}
+        	break;
+    	}
+    	
 
     	case MSG_CFG_NOTIFY: {
         BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_notify"));
@@ -8102,19 +8155,44 @@ case MSG_TOGGLE_FULLSCREEN: {
   
 //--------------------------------- Projectm         
         #ifdef USE_PROJECTM
-        case MSG_TOGGLE_VISUALS:
-        {
-            int32 value = 0;
-            if (message->FindInt32("be:value", &value) == B_OK) {
-                cfg.showVisuals = (value == B_CONTROL_ON);
-                if (cfg.showVisuals) {
-                    StartVisuals(); 
-                } else {
-                    StopVisuals();
+        
+        
+        case MSG_TOGGLE_VISUALS: {
+            bool currentVisualsState = (fVisualsCheckbox->Value() == B_CONTROL_ON);
+            
+            // --- THE VISIBILITY FIX ---
+            if (currentVisualsState) {
+                // Safely bring the controls back into the active layout pool
+                if (fPresetToggle)   fPresetToggle->Show();
+                if (fChkPresetTimer) fChkPresetTimer->Show();
+                
+                // Fire up your active SDL layout pipeline
+                StartVisuals(); 
+            } else {
+                // Collapse the controls out of sight when visuals are deactivated
+                if (fPresetToggle) {
+                    fPresetToggle->SetValue(B_CONTROL_OFF);
+                    fPresetToggle->Hide();
                 }
+                if (fChkPresetTimer) fChkPresetTimer->Hide();
+                if (fPresetScroll)   fPresetScroll->Hide();
+                
+                // Park your background loops into low-power hibernation
+                StopVisuals();
+            }
+
+            // Drop size limits and force a complete UI recalculation
+            this->SetSizeLimits(0, B_SIZE_UNLIMITED, 0, B_SIZE_UNLIMITED);
+            InvalidateLayout(true);
+            ResizeToPreferred();
+            
+            if (this->GetLayout() != nullptr) {
+                BSize minSize = this->GetLayout()->MinSize();
+                this->SetSizeLimits(minSize.width, B_SIZE_UNLIMITED, minSize.height, B_SIZE_UNLIMITED);
             }
             break;
-        }       
+        }
+    
         
 //--------------------------------- Projectm           
 		case MSG_REFRESH_PRESETS: {
@@ -8143,7 +8221,7 @@ case MSG_TOGGLE_FULLSCREEN: {
 		}
 		
 //--------------------------------- Projectm   
-/*
+
 		case MSG_TOGGLE_PRESETS: {
     		bool show = (fPresetToggle->Value() == B_CONTROL_ON);    
     		if (show) {
@@ -8155,36 +8233,33 @@ case MSG_TOGGLE_FULLSCREEN: {
     		ResizeToPreferred();
     		break;
 		}
-		*/
-		
-			case MSG_TOGGLE_PRESETS: {
-			bool show = (fPresetToggle->Value() == B_CONTROL_ON);    
-			
-			if (show) {
-				if (fPresetScroll && fPresetScroll->IsHidden()) {
-					fPresetScroll->Show();
-				}
-			} else {
-				if (fPresetScroll && !fPresetScroll->IsHidden()) {
-					fPresetScroll->Hide();    	
-				}
-			}    
-			
-			// 1. Force the individual scrolling sub-component to flush its geometry metrics
-			if (fPresetScroll) {
-				fPresetScroll->InvalidateLayout(true);
-			}
 
-			// 2. THE CRITICAL FIX: Drop sizing floor constraints temporarily to allow changes
+		
+		case MSG_HIDE_VISUALS_REQUEST: {
+			if (cfg.debugEnable) printf("[DEBUG Visual UI] Received hide visuals request from SDL interface.\n");
+			
+			// 1. Uncheck the main option
+			if (fVisualsCheckbox != nullptr) {
+				fVisualsCheckbox->SetValue(B_CONTROL_OFF);
+				fVisualsCheckbox->Invalidate();
+			}
+			
+			// 2. Hide ALL related controls to match your initialization rules
+			if (fPresetToggle) {
+				fPresetToggle->SetValue(B_CONTROL_OFF);
+				fPresetToggle->Hide();
+			}
+			if (fChkPresetTimer) fChkPresetTimer->Hide();
+			if (fPresetScroll)   fPresetScroll->Hide();
+
+			// 3. Put your background rendering loops to sleep
+			StopVisuals();
+
+			// 4. Force a fresh layout recalculation pass
 			this->SetSizeLimits(0, B_SIZE_UNLIMITED, 0, B_SIZE_UNLIMITED);
+			InvalidateLayout(true);
+			ResizeToPreferred();
 			
-			// 3. Force top-level tree structural recalculation
-			this->InvalidateLayout(true);
-			
-			// 4. Instruct Haiku to scale the master window container to accommodate the expansion
-			this->ResizeToPreferred();
-			
-			// 5. Securely recalculate and lock new safety boundaries based on the updated view tree
 			if (this->GetLayout() != nullptr) {
 				BSize minSize = this->GetLayout()->MinSize();
 				this->SetSizeLimits(minSize.width, B_SIZE_UNLIMITED, minSize.height, B_SIZE_UNLIMITED);
@@ -8192,33 +8267,6 @@ case MSG_TOGGLE_FULLSCREEN: {
 			break;
 		}
 
-		
-		case MSG_HIDE_VISUALS_REQUEST: {
-			if (cfg.debugEnable) printf("[DEBUG Visual UI] Received hide visuals request from SDL interface.\n");
-			
-			// 1. Uncheck the actual main visualizer checkbox safely on the UI thread
-			if (fVisualsCheckbox != nullptr) {
-				fVisualsCheckbox->SetValue(B_CONTROL_OFF);
-				fVisualsCheckbox->Invalidate(); // Force Haiku to repaint the blank box instantly
-			}
-			
-			// 2. Hide the side elements (Preset list toggle and scroll view panels)
-			if (fPresetToggle != nullptr) {
-				fPresetToggle->SetValue(B_CONTROL_OFF);
-				fPresetToggle->Invalidate();
-			}
-			if (fPresetScroll != nullptr) {
-				fPresetScroll->Hide();
-			}
-
-			// 3. Hide the SDL visualization window context out of sight
-			StopVisuals();
-
-			// 4. Force layout recalculation and resize the master player panel
-			InvalidateLayout();
-			ResizeToPreferred();
-			break;
-		}
 
 
         case MSG_VOL_STEP_REQUEST: {
@@ -8300,14 +8348,28 @@ case MSG_TOGGLE_FULLSCREEN: {
 			BString targetTab;
 			if (message->FindString("target_tab", &targetTab) == B_OK) {
 				if (cfg.compactMode) {
-					// DO NOT mutate cfg.compactMode here. Let the target message handle it.
+					// --- CODE INJECTION: TOGGLE COMPACT VISUAL CONTROLS OFF ---
+					// Uncheck the controls to drive the state machine through natural user emulation
+					if (fCompactModeConfig != nullptr) {
+						fCompactModeConfig->SetValue(B_CONTROL_OFF);
+					}
+					if (fCompactModeRadio != nullptr) {
+						fCompactModeRadio->SetValue(B_CONTROL_OFF);
+					}
+
 					BMessage compactMsg(MSG_COMPACTM_CHANGED);
-					compactMsg.AddPointer("source", this);
 					
-					// FIX 1: Explicitly force the mode switch payload to Normal Mode (false)
+					// Set the source to one of your controls so the layout engine processes the toggle
+					if (fCompactModeConfig != nullptr) {
+						compactMsg.AddPointer("source", fCompactModeConfig);
+					} else {
+						compactMsg.AddPointer("source", this);
+					}
+					
+					// Force the mode switch payload to Normal Mode (false)
 					compactMsg.AddBool("force_compact_state", false);
 					
-					// FIX 2: Correctly pipe the target tab parameter through to the layout loop
+					// Pipe the target tab parameter through to the layout loop
 					compactMsg.AddString("deferred_select", targetTab);
 					
 					this->PostMessage(&compactMsg);
@@ -8962,9 +9024,6 @@ private:
     }
     BBitmap* fIcon;
 };
-
-
-
 
 
 

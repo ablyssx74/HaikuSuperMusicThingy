@@ -108,6 +108,7 @@ enum {
     MSG_MUTE_TOGGLED = 'mute',
     MSG_SHOW_TITLE = 'msct',
     MSG_SHOW_DESC = 'mscd',
+    MSG_CFG_DEBUG = 'dbug',
     MODE_BARS = 0,
     MODE_LINE_WAVE,
     MODE_LONG_WAVE, 
@@ -191,6 +192,7 @@ private:
     BGroupView* fControlsGroup;
     BGroupView* fControlStack;
     
+    BCheckBox*  fChkDebug;
     BCheckBox*  fChkNotify;
     BMenuField* fSizeField;
     BPopUpMenu* fSizeMenu;
