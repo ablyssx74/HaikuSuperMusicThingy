@@ -6271,10 +6271,10 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     fChkTheme = new BCheckBox("chk_theme", "Dark Theme", new BMessage(MSG_CFG_THEME));
     fChkTheme->SetValue(cfg.uTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);
     
-    fCmpTitle = new BCheckBox("fCmpTitle_toggle", "Compact Mode: Show Title", new BMessage(MSG_SHOW_TITLE));
+    fCmpTitle = new BCheckBox("fCmpTitle_toggle", "Debug Mode: Show Title", new BMessage(MSG_SHOW_TITLE));
     fCmpTitle->SetValue(cfg.compactModeTitle ? B_CONTROL_ON : B_CONTROL_OFF);
     
-    fCmpSong = new BCheckBox("fCmpSong_toggle", "Compact Mode: Show Description", new BMessage(MSG_SHOW_DESC));
+    fCmpSong = new BCheckBox("fCmpSong_toggle", "Debug Mode: Show Description", new BMessage(MSG_SHOW_DESC));
     fCmpSong->SetValue(cfg.compactModeDesc ? B_CONTROL_ON : B_CONTROL_OFF);    
 
 
