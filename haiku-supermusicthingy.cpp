@@ -8112,40 +8112,47 @@ case MSG_TOGGLE_FULLSCREEN: {
 
 
 		case MSG_ACTIVATE_APP: {
-    		if (IsHidden()) {
-        		Show();
-    		} else {
-        		Activate(true);
-    		}
+			if (IsHidden()) {
+				Show();
+			} else {
+				Activate(true);
+			}
 
-    		BString targetTab;
-    		if (message->FindString("target_tab", &targetTab) == B_OK) {
-        		if (cfg.compactMode) {
-            		cfg.compactMode = false;
-            
-            		BMessage compactMsg(MSG_COMPACTM_CHANGED);
-            		compactMsg.AddString("deferred_select", targetTab);
-            		this->PostMessage(&compactMsg);
-            		break; 
-        		}
-        
-        		if (fTabView) {
-            		const char* matchLabel = "Radio";
-            		if (targetTab == "stations")  matchLabel = "Stations"; 
-            		if (targetTab == "favorites") matchLabel = "Fav"; 
-            		if (targetTab == "eq")        matchLabel = "Config";
+			BString targetTab;
+			if (message->FindString("target_tab", &targetTab) == B_OK) {
+				if (cfg.compactMode) {
+					// DO NOT mutate cfg.compactMode here. Let the target message handle it.
+					BMessage compactMsg(MSG_COMPACTM_CHANGED);
+					compactMsg.AddPointer("source", this);
+					
+					// FIX 1: Explicitly force the mode switch payload to Normal Mode (false)
+					compactMsg.AddBool("force_compact_state", false);
+					
+					// FIX 2: Correctly pipe the target tab parameter through to the layout loop
+					compactMsg.AddString("deferred_select", targetTab);
+					
+					this->PostMessage(&compactMsg);
+					break; 
+				}
+				
+				if (fTabView) {
+					const char* matchLabel = "Radio";
+					if (targetTab == "stations")  matchLabel = "Stations"; 
+					if (targetTab == "favorites") matchLabel = "Fav"; 
+					if (targetTab == "eq")        matchLabel = "Config";
 
-            		for (int32 i = 0; i < fTabView->CountTabs(); i++) {
-                		BTab* tab = fTabView->TabAt(i);
-                		if (tab && tab->Label() != nullptr && strcmp(tab->Label(), matchLabel) == 0) {
-                    		fTabView->Select(i);
-                    		break;
-                		}
-            		}
-        		}
-    		}
-    		break;
+					for (int32 i = 0; i < fTabView->CountTabs(); i++) {
+						BTab* tab = fTabView->TabAt(i);
+						if (tab && tab->Label() != nullptr && strcmp(tab->Label(), matchLabel) == 0) {
+							fTabView->Select(i);
+							break;
+						}
+					}
+				}
+			}
+			break;
 		}
+
 
 
 
