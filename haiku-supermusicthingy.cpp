@@ -36,6 +36,8 @@
 #include <TextView.h>
 #include <View.h>
 #include <Window.h>
+#include <Picture.h>
+
 
 // Storage & Support Kits
 #include <Directory.h>
@@ -155,6 +157,7 @@ std::string currentStation = "";
 std::string currentStationID = ""; 
 std::string currentListeners = "";
 std::string currentAlbumArtUrl = "";
+const uint32 MSG_DISABLE_REPLICA = 'drep';
 
 
 //@Config
@@ -875,6 +878,453 @@ bool IsFFmpegLadspaAvailable() {
 
 
 
+// ====================================================================
+// MODULAR ADAPTIVE ACID MELTING FLOOR MODULE
+// ====================================================================
+
+// --- THE INDEPENDENT ACID RENDER VIEW CONTAINER ---
+class AcidMeltingView : public BView {
+public:
+    AcidMeltingView(BRect frame, BBitmap* snapshot, BWindow* parentWindow) 
+        : BView(frame, "AcidMeltingView", B_FOLLOW_ALL_SIDES, B_WILL_DRAW) {
+        fCachedImage = snapshot;
+        fMainAppWindow = parentWindow;
+
+        // Seed 75 organic acid pool columns evenly across the width of the canvas
+        float sliceWidth = frame.Width() / 75.0f;
+        for (int b = 0; b < 75; b++) {
+            fAcidX[b] = ((float)b * sliceWidth) + (sliceWidth / 2.0f);
+            fAcidHeight[b] = 0.0f;
+            fWobblePhase[b] = ((float)(rand() % 100) / 100.0f) * 6.28f;
+            fMeltSpeed[b] = 30.0f + ((float)(rand() % 100) / 100.0f * 70.0f);
+            fLocalPalette[b] = { 40, 220, 70, 255 }; // Translucent green fallback
+        }
+        SetViewColor(B_TRANSPARENT_COLOR);
+    }
+
+    virtual ~AcidMeltingView() { }
+
+    void UpdatePhysics(float* barHeights, float dtScale, float volumeScale, rgb_color* masterPalette) {
+        float viewWidth = Bounds().Width();
+        float viewHeight = Bounds().Height();
+        
+        if (viewWidth <= 0.0f) viewWidth = 1.0f;
+        if (viewHeight <= 0.0f) viewHeight = 1.0f;
+
+        for (int b = 0; b < 75; b++) {
+            int freqIdx = (int)((fAcidX[b] / viewWidth) * 63.0f);
+            if (freqIdx < 0) freqIdx = 0;
+            if (freqIdx > 63) freqIdx = 63;
+
+            if (masterPalette != nullptr) {
+                fLocalPalette[b] = masterPalette[freqIdx];
+            }
+
+            float audioDrive = (barHeights[freqIdx] / viewHeight) * volumeScale;
+
+            if (audioDrive > 0.08f) {
+                fAcidHeight[b] += (fMeltSpeed[b] * audioDrive * 6.8f) * dtScale;
+            } else {
+                fAcidHeight[b] -= 8.5f * dtScale;
+            }
+
+            if (fAcidHeight[b] < 0.0f) fAcidHeight[b] = 0.0f;
+            if (fAcidHeight[b] > viewHeight * 0.75f) fAcidHeight[b] = viewHeight * 0.75f;
+
+            fWobblePhase[b] += (6.0f + audioDrive * 18.0f) * dtScale;
+        }
+
+        // Horizontal puddle blending dispersion pass
+        for (int i = 1; i < 74; i++) {
+            float leftDiff = fAcidHeight[i-1] - fAcidHeight[i];
+            if (leftDiff > 15.0f) fAcidHeight[i] += leftDiff * 0.25f;
+
+            float rightDiff = fAcidHeight[i+1] - fAcidHeight[i];
+            if (rightDiff > 15.0f) fAcidHeight[i] += rightDiff * 0.25f;
+        }
+
+        Invalidate();
+    }
+
+    virtual void Draw(BRect updateRect) override {
+        if (!fCachedImage) return;
+
+        float viewWidth = Bounds().Width();
+        float viewHeight = Bounds().Height();
+        
+
+
+        BRect fullImageBounds = fCachedImage->Bounds();
+        SetDrawingMode(B_OP_COPY);
+        DrawBitmap(fCachedImage, fullImageBounds, Bounds());
+
+        for (int b = 0; b < 75; b++) {
+            float h = fAcidHeight[b];
+            if (h <= 1.0f) continue;
+
+            float bx = fAcidX[b];
+            float sliceW = (viewWidth / 75.0f) + 5.5f;
+
+            float rippleY = sinf(fWobblePhase[b]) * (5.0f + h * 0.35f);
+            float finalFloorTopY = viewHeight - (h + rippleY);
+
+            if (finalFloorTopY >= viewHeight) continue;
+            if (finalFloorTopY < 0.0f) finalFloorTopY = 0.0f;
+
+            float pixelXStart = bx - (sliceW / 2.0f);
+            float pixelXEnd   = bx + (sliceW / 2.0f);
+
+            BRect srcRect(pixelXStart, 0.0f, pixelXEnd, viewHeight);
+            BRect destRect(pixelXStart, finalFloorTopY, pixelXEnd, viewHeight);
+
+            PushState();
+            
+            BPicture sliceMask;
+            BeginPicture(&sliceMask);
+            SetHighColor(255, 255, 255, 255);
+            FillRect(destRect);
+            EndPicture();
+            
+            ClipToPicture(&sliceMask, BPoint(0,0), false);
+
+            SetDrawingMode(B_OP_COPY);
+            DrawBitmap(fCachedImage, srcRect, destRect);
+            
+            PopState();
+
+            // Render Adaptive Album Art Filters
+            SetDrawingMode(B_OP_ALPHA);
+            rgb_color artColor = fLocalPalette[b];
+
+            SetHighColor(artColor.red, artColor.green, artColor.blue, 110);
+            FillRect(destRect);
+
+            uint8 frothR = (uint8)min_c(255, artColor.red + 80);
+            uint8 frothG = (uint8)min_c(255, artColor.green + 80);
+            uint8 frothB = (uint8)min_c(255, artColor.blue + 80);
+            
+            SetHighColor(frothR, frothG, frothB, 240);
+            SetPenSize(2.5f);
+            StrokeLine(BPoint(pixelXStart, finalFloorTopY), BPoint(pixelXEnd, finalFloorTopY));
+        }
+
+        SetDrawingMode(B_OP_COPY);
+        SetPenSize(1.0f);
+    }
+
+
+    virtual void MouseDown(BPoint point) override {
+        BMessage* message = Window()->CurrentMessage();
+        int32 buttons = 0;
+
+        if (message != nullptr && message->FindInt32("buttons", &buttons) == B_OK) {
+            if (buttons & B_SECONDARY_MOUSE_BUTTON) {
+                if (fMainAppWindow != nullptr) {
+                    BMessenger messenger(fMainAppWindow);
+                    if (messenger.IsValid()) {
+                        BMessage cycleMsg('mcyc');
+                        messenger.SendMessage(&cycleMsg);
+                    }
+                }
+                return; 
+            }
+        }
+        BView::MouseDown(point);
+    }
+
+private:
+    BBitmap*  fCachedImage;
+    BWindow*  fMainAppWindow;
+    float     fAcidX[75];        
+    float     fAcidHeight[75];   
+    float     fWobblePhase[75];  
+    float     fMeltSpeed[75];    
+    rgb_color fLocalPalette[75]; 
+};
+
+
+// --- THE TRANSPARENT FLOATING WINDOW LAYER ---
+class AcidMeltingWindow : public BWindow {
+public:
+    AcidMeltingWindow(BWindow* parent, BBitmap* snapshot)
+        : BWindow(parent->Frame(), "AcidMeltingWindow", B_NO_BORDER_WINDOW_LOOK, 
+                  B_FLOATING_SUBSET_WINDOW_FEEL, 
+                  B_NOT_MOVABLE | B_NOT_RESIZABLE | B_NOT_ZOOMABLE | B_AVOID_FRONT) {
+        fParent = parent; 
+        AddToSubset(parent);
+        fOverlayView = new AcidMeltingView(Bounds(), snapshot, parent);
+        AddChild(fOverlayView);
+    }
+
+    void UpdateAudioPhysics(float* barHeights, float dtScale, float volumeScale, rgb_color* masterPalette) {
+        if (Lock()) {
+            fOverlayView->UpdatePhysics(barHeights, dtScale, volumeScale, masterPalette);
+            Unlock();
+        }
+    }
+
+private:
+    AcidMeltingView* fOverlayView;
+    BWindow*         fParent;
+};
+
+
+
+
+// --- THE INDEPENDENT RENDER VIEW CONTAINER ---
+class ReplicaOverlayView : public BView {
+public:
+    // --- UPDATED CONSTRUCTOR: Fixed uninitialized wild pointer trackers ---
+    ReplicaOverlayView(BRect frame, BBitmap* snapshot, BWindow* parentWindow) 
+        : BView(frame, "ReplicaOverlayView", B_FOLLOW_ALL_SIDES, B_WILL_DRAW) {
+        if (snapshot != nullptr && snapshot->IsValid()) {
+            fCachedImage = new BBitmap(snapshot);
+        } else {
+            fCachedImage = nullptr;
+        }
+        fMainAppWindow = parentWindow; 
+        
+        
+        // Seed 75 organic bubbles across the window canvas
+        // Seed 75 organic bubbles across the window canvas with high size variance
+        for (int b = 0; b < 75; b++) {
+            fBubbleX[b] = (float)(rand() % 1000) / 1000.0f * frame.Width();
+            fBubbleY[b] = (float)(rand() % 1000) / 1000.0f * frame.Height();
+            fWobblePhase[b] = ((float)(rand() % 100) / 100.0f) * 6.28f;
+
+            // --- NEW: DYNAMIC VARIANCE DISTRIBUTION ENGINE ---
+            // We use a random distribution roll to create a highly varied environment
+            int sizeRoll = rand() % 100;
+
+            if (sizeRoll < 55) {
+                // 1. TINY MICRO-BUBBLES (55% of total cluster)
+                // Small, subtle background details ranging from 6px to 14px
+                fBubbleRadius[b] = 6.0f + ((float)(rand() % 100) / 100.0f * 8.0f);
+                fBubbleSpeedY[b] = 12.0f + ((float)(rand() % 100) / 100.0f * 10.0f); // Floats slightly quicker
+                fBubbleSpeedX[b] = ((float)(rand() % 100) / 100.0f * 4.0f) - 2.0f;
+            } 
+            else if (sizeRoll < 90) {
+                // 2. MEDIUM STANDARD BUBBLES (35% of total cluster)
+                // Standard focal bubbles ranging from 15px to 32px
+                fBubbleRadius[b] = 15.0f + ((float)(rand() % 100) / 100.0f * 17.0f);
+                fBubbleSpeedY[b] = 6.0f + ((float)(rand() % 100) / 100.0f * 8.0f);
+                fBubbleSpeedX[b] = ((float)(rand() % 100) / 100.0f * 3.0f) - 1.5f;
+            } 
+            else {
+                // 3. MASSIVE LIQUID SPHERES (10% of total cluster)
+                // Giant, heavy lenses ranging from 45px up to a massive 75px!
+                fBubbleRadius[b] = 45.0f + ((float)(rand() % 100) / 100.0f * 30.0f);
+                
+                // Real physics rule: Giant bubbles carry more drag weight, so they float much slower!
+                fBubbleSpeedY[b] = 2.0f + ((float)(rand() % 100) / 100.0f * 3.0f);
+                fBubbleSpeedX[b] = ((float)(rand() % 100) / 100.0f * 1.5f) - 0.75f; // Hard to drift sideways
+            }
+        }
+
+        SetViewColor(B_TRANSPARENT_COLOR);
+    }
+
+
+    virtual ~ReplicaOverlayView() { 
+        delete fCachedImage;
+    }
+
+    void UpdatePhysics(float* barHeights, float dtScale, float volumeScale) {
+        float viewWidth = Bounds().Width();
+        float viewHeight = Bounds().Height();
+        
+        if (viewWidth <= 0.0f) viewWidth = 1.0f;
+        if (viewHeight <= 0.0f) viewHeight = 1.0f;
+
+        // Process physics adjustments frame-by-frame
+        for (int b = 0; b < 75; b++) {
+            // Map the bubble's X position to an audio frequency bar
+            int freqIdx = (int)((fBubbleX[b] / viewWidth) * 63.0f);
+            if (freqIdx < 0) freqIdx = 0;
+            if (freqIdx > 63) freqIdx = 63;
+
+            // Extract real-time audio drive data
+            float audioDrive = (barHeights[freqIdx] / viewHeight) * volumeScale;
+
+            // --- 1. MODIFIED: LAZY-RIVER FLOATING MOVEMENT ---
+            // Reduced the audio thrust multiplier from 3.5f to 0.8f.
+            // This prevents bubbles from aggressively rocketing upward during heavy music beats.
+            fBubbleY[b] -= (fBubbleSpeedY[b] * (1.0f + audioDrive * 0.8f)) * dtScale;
+            
+            // --- MODIFIED: CALMED HORIZONTAL DRIFT SWSWAY ---
+            // Slowed down the wiggle phase multiplier from 4.5f to 1.8f,
+            // and reduced the horizontal weave distance swing from 15.0f down to 4.5f.
+            fWobblePhase[b] += 1.8f * dtScale;
+            fBubbleX[b] += (fBubbleSpeedX[b] + sinf(fWobblePhase[b]) * 4.5f) * dtScale;
+
+        	// Random bubble radius dimensions ranging from 12px to 42px
+        	fBubbleRadius[b] = 12.0f + ((float)(rand() % 100) / 100.0f * 30.0f);
+            
+        	// --- SLOWED DOWN INITIAL SEED SPEEDS ---
+        	fBubbleSpeedX[b] = ((float)(rand() % 100) / 100.0f * 6.0f) - 3.0f;  // Old was * 20.0f
+        	fBubbleSpeedY[b] = 5.0f + ((float)(rand() % 100) / 100.0f * 15.0f);  // Old was 15.0f + * 45.0f
+
+
+             // 2. AUDIO PULSE REACTION: Inflate bubbles relative to their native baseline sizes!
+            // Heavy beats inflate them outward up to an extra 45%, scaling perfectly across all variations.
+            fBubbleRadius[b] = (fBubbleRadius[b]) * (1.0f + audioDrive * 0.45f);
+
+            // Strict ceiling clamp protection to prevent giant bubbles from filling the whole screen space
+            if (fBubbleRadius[b] > 110.0f) fBubbleRadius[b] = 110.0f;
+
+
+            // 3. BOUNDARY LOOPING: Re-spool bubbles back to the bottom when they float past the ceiling
+            if (fBubbleY[b] + fBubbleRadius[b] < 0.0f) {
+                fBubbleY[b] = viewHeight + fBubbleRadius[b] + (float)(rand() % 50);
+                fBubbleX[b] = ((float)(rand() % 1000) / 1000.0f) * viewWidth;
+            }
+            
+            // Keep horizontal movement contained inside window borders
+            if (fBubbleX[b] < 0.0f) fBubbleX[b] = viewWidth;
+            if (fBubbleX[b] > viewWidth) fBubbleX[b] = 0.0f;
+        }
+
+        Invalidate();
+    }
+
+
+
+    virtual void Draw(BRect updateRect) override {
+         if (!fCachedImage || !fCachedImage->IsValid()) return;
+
+        float viewWidth = Bounds().Width();
+        float viewHeight = Bounds().Height();
+
+        // 1. Clear view canvas with a deep charcoal background 
+        SetHighColor(14, 16, 18, 255);
+        FillRect(updateRect);
+
+        // --- LAYER 1: DRAW EACH MASKED APPSNAPSHOT BUBBLE ---
+        for (int b = 0; b < 75; b++) {
+            float bx = fBubbleX[b];
+            float by = fBubbleY[b];
+            float br = fBubbleRadius[b];
+
+            if (bx + br < 0.0f || bx - br > viewWidth || by + br < 0.0f || by - br > viewHeight) {
+                continue;
+            }
+
+            BRect bubbleRect(bx - br, by - br, bx + br, by + br);
+
+            // Calculate organic lens refraction offset shift
+            float refractionWarpX = sinf(fWobblePhase[b]) * 6.0f;
+            BRect sourceRect = bubbleRect;
+            sourceRect.OffsetBy(refractionWarpX, 10.0f); 
+
+            // FIX: Use Haiku's native stack state to record a perfect vector shape mask
+            PushState();
+            
+            // We create a temporary recording picture containing our perfect round circle shape
+            BPicture roundMask;
+            BeginPicture(&roundMask);
+            SetHighColor(255, 255, 255, 255);
+            FillEllipse(BPoint(bx, by), br, br);
+            EndPicture();
+            
+            // FIX: Pass the address-of pointer (&roundMask) to match standard Interface Kit specifications
+            ClipToPicture(&roundMask, BPoint(0,0), false);
+
+            // Draw the captured app graphics masked perfectly round inside the sphere box
+            SetDrawingMode(B_OP_COPY);
+            DrawBitmap(fCachedImage, sourceRect, bubbleRect);
+            
+            PopState(); // Restores full canvas limits safely for the 3D sheen layer
+
+
+            // --- LAYER 2: OVERLAY 3D GLASSY SURFACE SHEEN ---
+            SetDrawingMode(B_OP_ALPHA);
+            
+            // Translucent dark border trim ring to make overlapping bubbles pop apart
+            SetHighColor(0, 0, 0, 85);
+            SetPenSize(2.5f);
+            StrokeEllipse(BPoint(bx, by), br, br);
+
+            // Translucent ice-white highlight shell rim outline
+            SetHighColor(255, 255, 255, 140);
+            SetPenSize(1.5f);
+            StrokeEllipse(BPoint(bx, by), br - 1.0f, br - 1.0f);
+
+            // Specular reflection bead highlight arc in the upper-left corner of the bubble
+            SetHighColor(255, 255, 255, 220);
+            BRect specularArcRect(bx - (br * 0.6f), by - (br * 0.6f), bx - (br * 0.1f), by - (br * 0.1f));
+            StrokeArc(specularArcRect, 90.0f, 90.0f); // Upper left curve shine
+        }
+
+        SetDrawingMode(B_OP_COPY);
+        SetPenSize(1.0f);
+    }
+
+
+
+    virtual void MouseDown(BPoint point) override {
+        BMessage* message = Window()->CurrentMessage();
+        int32 buttons = 0;
+
+        if (message != nullptr && message->FindInt32("buttons", &buttons) == B_OK) {
+            if (buttons & B_SECONDARY_MOUSE_BUTTON) {
+                if (fMainAppWindow != nullptr) {
+                    BMessenger messenger(fMainAppWindow);
+                    if (messenger.IsValid()) {
+                        BMessage cycleMsg('mcyc');
+                        messenger.SendMessage(&cycleMsg);
+                    }
+                }
+                return; 
+            }
+        }
+        BView::MouseDown(point);
+    }
+
+private:
+    BBitmap* fCachedImage;
+    BWindow* fMainAppWindow;
+
+    // --- CLEAN REPLICA FLOATING BUBBLE MATRIX DATA ---
+    float    fBubbleX[75];      // Horizontal position
+    float    fBubbleY[75];      // Vertical position
+    float    fBubbleRadius[75]; // Dynamic size of each bubble
+    float    fBubbleSpeedX[75]; // Organic drifting velocity
+    float    fBubbleSpeedY[75]; // Vertical floating speed
+    float    fWobblePhase[75];  // Sin phase tracking for liquid wiggle shapes
+
+    
+};
+
+
+// --- THE TRANSPARENT FLOATING WINDOW LAYER ---
+class ReplicaOverlayWindow : public BWindow {
+public:
+    ReplicaOverlayWindow(BWindow* parent, BBitmap* snapshot)
+        : BWindow(parent->Frame(), "ReplicaOverlayWindow", B_NO_BORDER_WINDOW_LOOK, 
+                  B_FLOATING_SUBSET_WINDOW_FEEL, 
+                  B_NOT_MOVABLE | B_NOT_RESIZABLE | B_NOT_ZOOMABLE | B_AVOID_FRONT) {
+        
+        fParent = parent; 
+        AddToSubset(parent);
+        
+        fOverlayView = new ReplicaOverlayView(Bounds(), snapshot, parent);
+        AddChild(fOverlayView);
+    }
+
+    void UpdateAudioPhysics(float* barHeights, float dtScale, float volumeScale) {
+        if (Lock()) {
+            fOverlayView->UpdatePhysics(barHeights, dtScale, volumeScale);
+            Unlock();
+        }
+    }
+
+private:
+    ReplicaOverlayView* fOverlayView;
+    BWindow*            fParent;
+};
+
+
+
 
 
 
@@ -885,6 +1335,10 @@ public:
     SpectrumView(BRect frame, const char* name)
         : BView(frame, name, B_FOLLOW_ALL, B_WILL_DRAW | B_FRAME_EVENTS | B_PULSE_NEEDED) {
         SetViewColor(B_TRANSPARENT_COLOR);       
+        
+        fReplicaWin = nullptr;
+        fAcidWin = nullptr;
+        bRimage = NULL;
        
         fCurrentLevel = -60.0;       
         fVisualizerMode = MODE_BARS; 
@@ -992,9 +1446,217 @@ public:
         
     }
 
-    // @Paddle
+~SpectrumView() {
+    
+    delete bRimage;
+    bRimage = nullptr;
+}
+
+    virtual void MouseDown(BPoint point) override {
+        BMessage* message = Window()->CurrentMessage();
+        int32 buttons = 0;
+        int32 clicks = 0; 
+        
+        MakeFocus(true);
+
+        if (message != nullptr && message->FindInt32("buttons", &buttons) == B_OK) {
+            message->FindInt32("clicks", &clicks);
+
+            // --- 1. RIGHT CLICK: CYCLE VISUALIZER GRAPHICS MODES ---
+            if (buttons & B_SECONDARY_MOUSE_BUTTON) {
+                int oldMode = fVisualizerMode;
+                int targetNextMode = (fVisualizerMode + 1) % MODE_COUNT;
+
+                // --- NEW: DETECT FULLSCREEN BYPASS HOOK ---
+                bool isWindowInFullscreen = false;
+                if (Window() != nullptr) {
+                    SuperMusicWindow* mainWin = dynamic_cast<SuperMusicWindow*>(Window());
+                    if (mainWin != nullptr) {
+                        isWindowInFullscreen = mainWin->IsFullscreenActive();
+                    }
+                }
+
+                // If in fullscreen, automatically skip past the replica and acid visualizers
+                if (isWindowInFullscreen) {
+                    while (targetNextMode == MODE_REPLICA || targetNextMode == MODE_ACID_MELT) {
+                        targetNextMode = (targetNextMode + 1) % MODE_COUNT;
+                    }
+                }
+
+                // Assign the final verified mode
+                fVisualizerMode = targetNextMode;
+
+                // --- TEARDOWN OLD MODES CLEANLY ---
+                if (oldMode == MODE_REPLICA && fReplicaWin != nullptr) {
+                    fReplicaWin->Lock(); fReplicaWin->Quit(); fReplicaWin = nullptr;
+                }
+                else if (oldMode == MODE_ACID_MELT && fAcidWin != nullptr) {
+                    fAcidWin->Lock(); fAcidWin->Quit(); fAcidWin = nullptr;
+                }
+
+                // --- INITIALIZE THE NEW SELECTION CHANNELS ---
+                // (Guarded: These won't execute in fullscreen since the while loop skips past them)
+                if (fVisualizerMode == MODE_REPLICA) {
+                    CaptureAppSnapshot();
+                    fReplicaWin = new ReplicaOverlayWindow(Window(), bRimage);
+                    fReplicaWin->Show();
+                } 
+                else if (fVisualizerMode == MODE_ACID_MELT) {
+                    CaptureAppSnapshot(); // Snaps clean layout coordinates
+                    
+                    fAcidWin = new AcidMeltingWindow(Window(), bRimage);
+                    fAcidWin->Show();
+                }
+
+                if (bRimage != nullptr && fVisualizerMode != MODE_REPLICA && fVisualizerMode != MODE_ACID_MELT) {
+                    delete bRimage; bRimage = nullptr;
+                }
+
+                Invalidate();
+                return; 
+            }
+
+            // --- 2. MIDDLE MOUSE BUTTON (WHEEL CLICK): MOTORCYCLE GAME FULLSCREEN HOTKEY ---
+            if (buttons & B_TERTIARY_MOUSE_BUTTON) {
+                if (clicks == 2 && fVisualizerMode == MODE_MOTO_RIDER) {
+                    if (Window() != nullptr) {
+                        Window()->PostMessage(new BMessage(MSG_TOGGLE_FULLSCREEN));
+                    }
+                    return;
+                }
+            }
+
+            // --- 3. LEFT CLICK: NORMAL MODE INTERACTIONS ---
+            if (buttons & B_PRIMARY_MOUSE_BUTTON) {
+                
+                if (clicks == 2 && fVisualizerMode != MODE_MOTO_RIDER) {
+                    if (Window() != nullptr) {
+                        Window()->PostMessage(new BMessage(MSG_TOGGLE_FULLSCREEN));
+                    }
+                    return; 
+                }
+                
+                // --- SNAPSHOT OVERLAY INTERACTION PROTECTION GUARDS ---
+                // Blocks clicks from passing through and accidentally firing gameplay inputs
+                if (fVisualizerMode == MODE_REPLICA || fVisualizerMode == MODE_ACID_MELT) {
+                    return; 
+                }
+
+                // --- MODE: MOTORCYCLE RIDER INPUTS ---
+                if (fVisualizerMode == MODE_MOTO_RIDER && fMotoCrashTicks == 0.0f) {
+                    bigtime_t now = system_time();
+
+                    // --- DETECT IF WINDOW IS IN FULLSCREEN MODE ---
+                    bool isWindowInFullscreen = false;
+                    if (Window() != nullptr) {
+                        SuperMusicWindow* mainWin = dynamic_cast<SuperMusicWindow*>(Window());
+                        if (mainWin != nullptr) {
+                            isWindowInFullscreen = mainWin->IsFullscreenActive();
+                        }
+                    }
+
+                    // Configure dynamic jumping multiplier for fullscreen physics tracking
+                    float jumpHeightMultiplier = isWindowInFullscreen ? 3.0f : 1.0f;
+
+                    // --- AIR FLIP ENGINE ---
+                    if (fMotoY > 0.05f) {
+                        if (now - fLastClickTime < 250000) {
+                            fIsFlipping = true;
+                            fMotoVelocityY += 2.0f; 
+                            fLastClickTime = now; 
+                            return;
+                        }
+                    }
+                    
+                    // --- GROUND JUMP ENGINE ---
+                    if (fMotoY <= 0.05f) {
+                        float audioBonus = (fCurrentLevel > -35.0f) ? (35.0f + (float)fCurrentLevel) * 0.12f : 0.0f;
+                        fMotoVelocityY = (4.0f + audioBonus) * jumpHeightMultiplier; 
+                        fLastClickTime = now; 
+                        return;
+                    }
+                }
+
+                // --- MODE: PONG BALLS INTERACTION ---
+                if (fVisualizerMode == MODE_PONG_BALLS) {
+                    return; 
+                }
+
+                // --- MODE: NEON SIGN INTERACTION: MANUAL POWER SURGE FLICKER ---
+                if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
+                    fNeonFlickerTimer1 = 0.25f; 
+                    fNeonFlickerTimer2 = 0.35f; 
+                    Invalidate(); 
+                    return;
+                }
+            }
+        }
+        BView::MouseDown(point);
+    }
+
+
+
+
+    // @specmouse
     virtual void MessageReceived(BMessage* message) override {
         switch (message->what) {
+           // --- UNIFIED MODE DISMISSER FOR BOTH VISUALIZERS ---  
+            case 'drep': { 
+                if (fVisualizerMode == MODE_REPLICA || fVisualizerMode == MODE_ACID_MELT) {
+                    
+                    // 1. DETECT FULLSCREEN MODE STATUS
+                    bool isWindowInFullscreen = false;
+                    if (Window() != nullptr) {
+                        SuperMusicWindow* mainWin = dynamic_cast<SuperMusicWindow*>(Window());
+                        if (mainWin != nullptr) {
+                            isWindowInFullscreen = mainWin->IsFullscreenActive();
+                        }
+                    }
+
+                    // 2. Calculate the next mode context step upfront
+                    int targetNextMode = (fVisualizerMode + 1) % MODE_COUNT;
+                    
+                    // 3. Tear down the replica overlay window if it exists
+                    if (fReplicaWin != nullptr) {
+                        if (fReplicaWin->Lock()) {
+                            fReplicaWin->Quit();
+                            fReplicaWin = nullptr;
+                        }
+                    }
+                    
+                    // 4. Tear down the acid melting overlay window if it exists
+                    if (fAcidWin != nullptr) {
+                        if (fAcidWin->Lock()) {
+                            fAcidWin->Quit();
+                            fAcidWin = nullptr;
+                        }
+                    }
+                    
+                    // 5. Deallocate the clean layout snapshot memory bitmap
+                    if (bRimage != nullptr) {
+                        delete bRimage;
+                        bRimage = nullptr;
+                    }
+                    
+                    // Assign the final verified mode and force native repaint
+                    fVisualizerMode = targetNextMode;
+                    Invalidate(); 
+                    if (Window() != nullptr) {
+                        Window()->UpdateIfNeeded(); 
+                    }
+                    
+                    // 6. Only initialize ACID_MELT if we are NOT in fullscreen
+                    if (fVisualizerMode == MODE_ACID_MELT && !isWindowInFullscreen) {
+                        CaptureAppSnapshot(); 
+                        fAcidWin = new AcidMeltingWindow(Window(), bRimage);
+                        fAcidWin->Show();
+                    }
+                }
+                break;
+            }
+
+
+
             case B_MOUSE_WHEEL_CHANGED: {
                 if (fVisualizerMode == MODE_PONG_BALLS) {
                     float deltaY = 0.0f;
@@ -1043,6 +1705,40 @@ public:
                 break;
         }
     }
+
+
+
+void CaptureAppSnapshot() {
+    // 1. Safety Guard: Make sure the view is attached to a real window context
+    if (Window() == nullptr) {
+        if (cfg.debugEnable) printf("[DEBUG ERROR] No parent window context found!\n");
+        return;
+    }
+
+    if (bRimage != NULL) {
+        delete bRimage;
+        bRimage = NULL;
+    }
+
+    // 2. CRITICAL CHANGE: Grab the frame bounds of the entire application window
+    // Window()->Frame() provides absolute screen coordinates including the system borders
+    BRect windowFrame = Window()->Frame();
+
+    // 3. Allocate a 32-bit bitmap matching the complete window canvas size
+    BRect targetBounds(0.0f, 0.0f, windowFrame.Width(), windowFrame.Height());
+    bRimage = new BBitmap(targetBounds, B_RGBA32);
+
+    // 4. Call Haiku's Screen API to pull the absolute desktop pixel layer
+    BScreen screen(Window());
+    if (screen.IsValid()) {
+        screen.ReadBitmap(bRimage, false, &windowFrame);
+        if (cfg.debugEnable) printf("[DEBUG] Full App snapshot taken! Sized: %dx%d\n", 
+               (int)targetBounds.Width() + 1, (int)targetBounds.Height() + 1);
+    } else {
+        if (cfg.debugEnable) printf("[DEBUG ERROR] Failed to access BScreen layer!\n");
+    }
+}
+
 
     
 BShape GenerateNeonLetterShape(int letterIndex, BPoint origin, float scale) {
@@ -1295,8 +1991,8 @@ void UpdateLevel(double level) {
         if (Window() != nullptr) {
            // Window()->SetPulseRate(50000); 
             Window()->SetPulseRate(33333); 
-        }
-    }
+      }
+}
 
 
 virtual void KeyDown(const char* bytes, int32 numBytes) override {
@@ -1320,100 +2016,6 @@ virtual void KeyDown(const char* bytes, int32 numBytes) override {
     BView::KeyDown(bytes, numBytes);
  }
 }
-
-
-    virtual void MouseDown(BPoint point) override {
-        BMessage* message = Window()->CurrentMessage();
-        int32 buttons = 0;
-        int32 clicks = 0; 
-        
-        MakeFocus(true);
-
-        if (message != nullptr && message->FindInt32("buttons", &buttons) == B_OK) {
-            message->FindInt32("clicks", &clicks);
-
-            // --- 1. RIGHT CLICK: CYCLE VISUALIZER GRAPHICS MODES ---
-            if (buttons & B_SECONDARY_MOUSE_BUTTON) {
-                fVisualizerMode = (fVisualizerMode + 1) % MODE_COUNT;
-                Invalidate();
-                return; 
-            }
-            
-            // --- 2. MIDDLE MOUSE BUTTON (WHEEL CLICK): MOTORCYCLE GAME FULLSCREEN HOTKEY ---
-            if (buttons & B_TERTIARY_MOUSE_BUTTON) {
-                if (clicks == 2 && fVisualizerMode == MODE_MOTO_RIDER) {
-                    if (Window() != nullptr) {
-                        Window()->PostMessage(new BMessage(MSG_TOGGLE_FULLSCREEN));
-                    }
-                    return;
-                }
-            }
-
-            // --- 3. LEFT CLICK: NORMAL MODE INTERACTIONS ---
-            if (buttons & B_PRIMARY_MOUSE_BUTTON) {
-                
-                if (clicks == 2 && fVisualizerMode != MODE_MOTO_RIDER) {
-                    if (Window() != nullptr) {
-                        Window()->PostMessage(new BMessage(MSG_TOGGLE_FULLSCREEN));
-                    }
-                    return; 
-                }
-
-                // --- MODE 1: MOTO RIDER INDEPENDENT INPUT PASS ---
-                if (fVisualizerMode == MODE_MOTO_RIDER && fMotoCrashTicks == 0.0f) {
-                    bigtime_t now = system_time();
-
-                    // --- DETECT IF WINDOW IS IN FULLSCREEN MODE ---
-                    bool isWindowInFullscreen = false;
-                    if (Window() != nullptr) {
-                        SuperMusicWindow* mainWin = dynamic_cast<SuperMusicWindow*>(Window());
-                        if (mainWin != nullptr) {
-                            isWindowInFullscreen = mainWin->IsFullscreenActive();
-                        }
-                    }
-
-                    // Configure dynamic jumping multiplier for fullscreen physics tracking
-                    float jumpHeightMultiplier = isWindowInFullscreen ? 3.0f : 1.0f;
-
-                    // --- AIR FLIP ENGINE ---
-                    if (fMotoY > 0.05f) {
-                        if (now - fLastClickTime < 250000) {
-                            fIsFlipping = true;
-                            fMotoVelocityY += 2.0f; 
-                            fLastClickTime = now; 
-                            return;
-                        }
-                    }
-                    
-                    // --- GROUND JUMP ENGINE ---
-                    // Scaled by our 15x jumpHeightMultiplier when fullscreen is active!
-                    if (fMotoY <= 0.05f) {
-                        float audioBonus = (fCurrentLevel > -35.0f) ? (35.0f + (float)fCurrentLevel) * 0.12f : 0.0f;
-                        fMotoVelocityY = (4.0f + audioBonus) * jumpHeightMultiplier; 
-                        fLastClickTime = now; 
-                        return;
-                    }
-                }
-
-                // --- MODE 2: PONG BALLS INTERACTION ---
-                if (fVisualizerMode == MODE_PONG_BALLS) {
-                    return; 
-                }
-
-                // --- MODE 3: NEW NEON SIGN INTERACTION: MANUAL POWER SURGE FLICKER ---
-                if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
-                    fNeonFlickerTimer1 = 0.25f; 
-                    fNeonFlickerTimer2 = 0.35f; 
-                    Invalidate(); 
-                    return;
-                }
-            }
-        }
-        BView::MouseDown(point);
-    }
-
-
-
 
 
 
@@ -2036,6 +2638,38 @@ virtual void Pulse() override {
                 }
             }
         }
+        
+// ====================================================================
+// 4.5 MODE 4.5 MODE_REPLICA PHYSICS ROUTING @replicaengine
+// ====================================================================
+if (fVisualizerMode == MODE_REPLICA) {
+    if (Window() != nullptr && fReplicaWin != nullptr) {
+        // 1. Keep the independent floating canvas perfectly aligned with the main app bounds
+        fReplicaWin->MoveTo(Window()->Frame().LeftTop());
+        fReplicaWin->ResizeTo(Window()->Frame().Width(), Window()->Frame().Height());
+        
+        // 2. FORWARD AUDIO DATA DIRECTLY DOWN THE CHANNEL
+        // We pass the raw data down. The ReplicaOverlayView class handles its own 
+        // internal heap allocations safely inside its own window loop context!
+        fReplicaWin->UpdateAudioPhysics(fBarHeights, dtScale, gVolumeScaleFactor);
+    }
+}
+
+    // ====================================================================
+    // 4.6 MODE 4.6 MODE_ACID_MELT MOVEMENT DISPATCHER
+    // ====================================================================
+    if (fVisualizerMode == MODE_ACID_MELT) {
+        if (Window() != nullptr && fAcidWin != nullptr) {
+            fAcidWin->MoveTo(Window()->Frame().LeftTop());
+            fAcidWin->ResizeTo(Window()->Frame().Width(), Window()->Frame().Height());
+            
+            // PASS PALETTE HERE: Forwards your dynamic fArtworkPalette array directly into the overlay!
+            fAcidWin->UpdateAudioPhysics(fBarHeights, dtScale, gVolumeScaleFactor, fArtworkPalette);
+        }
+    }
+
+
+
 
 
         // ====================================================================
@@ -3375,6 +4009,13 @@ virtual void Draw(BRect updateRect) override {
     }
     
     
+			//@replicadraw @ACID_MELT
+            else if (fVisualizerMode == MODE_REPLICA || fVisualizerMode == MODE_ACID_MELT) {
+            SetHighColor(40, 40, 40, 255);
+            FillRect(updateRect);
+        }
+
+    
     // @neon
    else if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
         SetDrawingMode(B_OP_ALPHA);
@@ -3901,6 +4542,10 @@ void UpdateData(const uint8* data, size_t size) {
 }
 
 private:
+    // New members for MODE_REPLICA
+    BBitmap* fMeltOffsetsBitmap; // Pointer to safely back up bRimage if needed
+    BBitmap* bRimage;            // The snapshot image pointer
+
     double    fCurrentLevel; 
     uint8     frequencyData[64]; 
     float     fBarHeights[64];   
@@ -4014,12 +4659,27 @@ private:
     // Added persistent tracking state members for the +2 Bonus Ball alert system
     float fBonusFlashTick;
     float fBonusFlashAlpha;
-    
+    ReplicaOverlayWindow* fReplicaWin; 
+    AcidMeltingWindow*    fAcidWin;   
 };
 
 
 // @spectrum
-
+SpectrumView* FindSpectrumViewRecursive(BView* parent) {
+    if (parent == nullptr) return nullptr;
+    
+    // Attempt to dynamically cast the view to your specific class type
+    SpectrumView* specView = dynamic_cast<SpectrumView*>(parent);
+    if (specView != nullptr) return specView;
+    
+    // Walk down the child tree elements recursively
+    int32 count = parent->CountChildren();
+    for (int32 i = 0; i < count; i++) {
+        SpectrumView* found = FindSpectrumViewRecursive(parent->ChildAt(i));
+        if (found != nullptr) return found;
+    }
+    return nullptr;
+}
 
 class RadialVolumeControl : public BControl {
 public:
@@ -4039,19 +4699,14 @@ public:
         
         SetFlags(Flags() | B_POINTER_EVENTS);
 
-        // 1. Center View Icon (Rendered clean at 32x32)      
-        fVolCenterIcon = new BBitmap(BRect(0, 0, 31, 31), B_RGBA32);
+        // Center View Icon (Rendered clean at 32x32)      
+        fVolCenterIcon = new BBitmap(BRect(0, 0, 40, 40), B_RGBA32);
         if (BIconUtils::GetVectorIcon(kIconSpeaker, kIconSpeakerSize, fVolCenterIcon) != B_OK) {
             delete fVolCenterIcon; 
             fVolCenterIcon = NULL;
         }
 
-        // 2. Radial Ticks (Rendered clean at 12x12)
-        fTickIcon = new BBitmap(BRect(0, 0, 11, 11), B_RGBA32);
-        if (BIconUtils::GetVectorIcon(kIconVol, kIconVolSize, fTickIcon) != B_OK) {
-             delete fTickIcon; 
-             fTickIcon = NULL;
-        }
+
 
         // Initialize default backup palette colors
         ResetPalette();
@@ -6046,16 +6701,16 @@ SuperMusicWindow::SuperMusicWindow()
     if (cfg.showSpectrumVisuals) { 
 		float stackHeight = 125.0f * scale; // Default baseline fallback
         stackHeight = 125.0f;    
-        fSpectrum = new SpectrumView(BRect(0, 0, 350 * scale, stackHeight), "spectrum"); 
+        fSpectrum = new SpectrumView(BRect(0, 0, 375 * scale, stackHeight), "spectrum"); 
         // Lock both boundaries to the exact same size.
         // This forces Haiku's engine to respect a strict, unstretchable box.
-        fSpectrum->SetExplicitMinSize(BSize(350 * scale, stackHeight));
-        fSpectrum->SetExplicitMaxSize(BSize(350 * scale, stackHeight));
+        fSpectrum->SetExplicitMinSize(BSize(375 * scale, stackHeight));
+        fSpectrum->SetExplicitMaxSize(BSize(375 * scale, stackHeight));
     } else {
         // Safe, flat initialization when spectrum visuals are toggled off
-        fSpectrum = new SpectrumView(BRect(0, 0, 350, 0), "spectrum");         
-        fSpectrum->SetExplicitMinSize(BSize(350, 0));
-        fSpectrum->SetExplicitMaxSize(BSize(350, 0));
+        fSpectrum = new SpectrumView(BRect(0, 0, 375, 0), "spectrum");         
+        fSpectrum->SetExplicitMinSize(BSize(375, 0));
+        fSpectrum->SetExplicitMaxSize(BSize(375, 0));
     }
     // ====================================================================
 
@@ -7095,9 +7750,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			// FIX: Directly parse state using explicit ternary bounds
 			cfg.eqEnabled = (chk->Value() == B_CONTROL_ON) ? 1 : 0;            
 			if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_EQ] Checkbox evaluated state: %d (Target config: cfg.eqEnabled)\n", cfg.eqEnabled);
-			
-			// ... Keep the rest of your debug MSG_TOGGLE_EQ code exactly the same ...
-
 	
 			if (cfg.eqEnabled) {
 				if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_EQ] Showing associated EQ panel wrappers.\n");
@@ -7160,29 +7812,29 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 	}
 
 	
-// @Fullscreen
-case MSG_TOGGLE_FULLSCREEN: {
-    static bool sIsFullscreen = false;
-    static BRect sSavedWindowFrame;
-    static uint32 sSavedLook;
-    static uint32 sSavedFeel;
-    static BView* sOriginalParent = nullptr;
+	// @Fullscreen
+	case MSG_TOGGLE_FULLSCREEN: {
+    	static bool sIsFullscreen = false;
+    	static BRect sSavedWindowFrame;
+    	static uint32 sSavedLook;
+    	static uint32 sSavedFeel;
+    	static BView* sOriginalParent = nullptr;
 
-    sIsFullscreen = !sIsFullscreen;
-    this->fFullscreenActive = sIsFullscreen;
+    	sIsFullscreen = !sIsFullscreen;
+    	this->fFullscreenActive = sIsFullscreen;
 
-    if (sIsFullscreen) {
+    	if (sIsFullscreen) {
         
-        // --- 1. HIDE THE MOUSE CURSOR ---
-        // Keeps the layout clean and immersive during media playback
-        be_app->HideCursor();
+        	// --- 1. HIDE THE MOUSE CURSOR ---
+        	// Keeps the layout clean and immersive during media playback
+        	be_app->HideCursor();
 
-        sSavedWindowFrame = Frame();
-        sSavedLook = Look();
-        sSavedFeel = Feel();
+        	sSavedWindowFrame = Frame();
+        	sSavedLook = Look();
+        	sSavedFeel = Feel();
 
-        BScreen screen(this);
-        BRect screenFrame = screen.Frame();
+        	BScreen screen(this);
+        	BRect screenFrame = screen.Frame();
 
         if (fSpectrum) {
             sOriginalParent = fSpectrum->Parent();
@@ -7207,46 +7859,46 @@ case MSG_TOGGLE_FULLSCREEN: {
 
         this->ApplyTheme();
 
-    } else {
+    	} else {
         
-        // --- 2. RESTORE THE MOUSE CURSOR ---
-        // Brings back the cursor instantly so you can click normal app buttons again
-        be_app->ShowCursor();
+        	// --- 2. RESTORE THE MOUSE CURSOR ---
+        	// Brings back the cursor instantly so you can click normal app buttons again
+        	be_app->ShowCursor();
 
-        if (fSpectrum) {
-            fSpectrum->RemoveSelf();
-        }
+        	if (fSpectrum) {
+            	fSpectrum->RemoveSelf();
+        	}
 
-        SetLook((window_look)sSavedLook);
-        SetFeel((window_feel)sSavedFeel);
-        MoveTo(sSavedWindowFrame.left, sSavedWindowFrame.top);
-        ResizeTo(sSavedWindowFrame.Width(), sSavedWindowFrame.Height());
+        	SetLook((window_look)sSavedLook);
+        	SetFeel((window_feel)sSavedFeel);
+        	MoveTo(sSavedWindowFrame.left, sSavedWindowFrame.top);
+        	ResizeTo(sSavedWindowFrame.Width(), sSavedWindowFrame.Height());
 
-        if (fTabView) fTabView->Show();
+        	if (fTabView) fTabView->Show();
 
-        if (fSpectrum && sOriginalParent) {
-            sOriginalParent->AddChild(fSpectrum);
-        }
+        	if (fSpectrum && sOriginalParent) {
+            	sOriginalParent->AddChild(fSpectrum);
+        	}
 
-        BMessage refreshLayout(MSG_COMPACTM_CHANGED);
-        refreshLayout.AddPointer("source", this);
-        refreshLayout.AddBool("force_compact_state", cfg.compactMode);
-        this->PostMessage(&refreshLayout);
+        	BMessage refreshLayout(MSG_COMPACTM_CHANGED);
+        	refreshLayout.AddPointer("source", this);
+        	refreshLayout.AddBool("force_compact_state", cfg.compactMode);
+        	this->PostMessage(&refreshLayout);
 
-        this->ApplyTheme();
-    }
+        	this->ApplyTheme();
+    	}
     
-    this->Layout(true);
-    if (fSpectrum) fSpectrum->Invalidate(); 
-    break;
-}
+    	this->Layout(true);
+    	if (fSpectrum) fSpectrum->Invalidate(); 
+    	break;
+	}
 
 
 
 
 
 		
-			// @Modes
+		// @Modes
 		case MSG_COMPACTM_CHANGED: {
 			if (cfg.debugEnable) printf("[DEBUG] MSG_COMPACTM_CHANGED received!\n");
 
@@ -7333,7 +7985,7 @@ case MSG_TOGGLE_FULLSCREEN: {
 					break; 
 				}
 					
-				float expandedWidth = 350.0f * scale; 
+				float expandedWidth = 375.0f * scale; 
 				float sliderWidth = (btnSize * 2.4f) + 10.0f;					
 				
 				float labelHeight = 0.0f; 
@@ -7449,7 +8101,7 @@ case MSG_TOGGLE_FULLSCREEN: {
 				// Apply layout constraints and dimensions to spectrum component layers
 				if (fSpectrum) {
 					if (cfg.showSpectrumVisuals && cfg.eqEnabled) {
-						float normalSpecWidth = 350.0f * scale;
+						float normalSpecWidth = 375.0f * scale;
 						float normalSpecHeight = 125.0f * scale; 
 						
 						if (cfg.debugEnable) printf("[DEBUG] Normal Mode -> Setting Explicit Spectrum Size: %.2f x %.2f\n", normalSpecWidth, normalSpecHeight);
@@ -7737,11 +8389,6 @@ case MSG_TOGGLE_FULLSCREEN: {
 
 
 
-
-
-
-
-
 		case MSG_SLEEP_CHANGED: {
     		delete fSleepRunner;
     		fSleepRunner = NULL;
@@ -7837,6 +8484,25 @@ case MSG_TOGGLE_FULLSCREEN: {
         	}
         	break;
     	}
+    	
+
+    	
+        case 'mcyc': {
+            // Look through all top-level window controls and sub-views recursively
+            SpectrumView* mainSpectrumView = nullptr;
+            int32 count = CountChildren();
+            for (int32 i = 0; i < count; i++) {
+                mainSpectrumView = FindSpectrumViewRecursive(ChildAt(i));
+                if (mainSpectrumView != nullptr) break;
+            }
+
+            if (mainSpectrumView != nullptr) {
+                mainSpectrumView->Window()->PostMessage('drep', mainSpectrumView);            
+            }
+            break;
+        }
+
+
     	
     	//@debug
     	case MSG_CFG_DEBUG: {
@@ -8043,10 +8709,7 @@ case MSG_TOGGLE_FULLSCREEN: {
             int is_muted = 0;
             mpv_get_property(mpv, "mute", MPV_FORMAT_FLAG, &is_muted);          
             
-            if (cfg.debugEnable) {
-                printf("[DEBUG Mute UI] Mute state cycled. Is Muted: %d\n", is_muted);
-            }
-
+ 
             // 2. Synchronize the standard and custom view states
             if (fVolumeSlider != nullptr) {
                 // Keep the standard enabled state in sync
@@ -8281,8 +8944,6 @@ case MSG_TOGGLE_FULLSCREEN: {
                 if (newVal < 0) newVal = 0;
                 if (newVal > 100) newVal = 100;
                 
-                if (cfg.debugEnable) printf("[DEBUG Vol UI] SDL Wheel step applied. New Volume: %" B_PRId32 "\n", newVal);
-
                 // 2. Mechanically advance the layout slider widget 
                 fVolumeSlider->SetValue(newVal);
                 
