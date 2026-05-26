@@ -167,8 +167,8 @@ struct Config {
     bool debugEnable = false;
     bool showVisuals = false;
     bool autoShuffle = false;
-    bool compactModeTitle = true;
-    bool compactModeDesc = true;
+    bool enableTitles = true;
+    bool enableDescriptions = true;
     #ifdef USE_SYSTRAY
     bool sysTray = true;
     #else
@@ -203,8 +203,8 @@ void save_config() {
     j["showNotifications"] = cfg.showNotifications;
     j["autoShuffle"] = cfg.autoShuffle;
     j["sysTray"] = cfg.sysTray;
-    j["compactModeTitle"] = cfg.compactModeTitle;
-    j["compactModeDesc"] = cfg.compactModeDesc;
+    j["enableTitles"] = cfg.enableTitles;
+    j["enableDescriptions"] = cfg.enableDescriptions;
     j["ladspaEnabled"] = cfg.ladspaEnabled;
     j["autoShuffleVisuals"] = cfg.autoShuffleVisuals;
     j["showSpectrumVisuals"] = cfg.showSpectrumVisuals;
@@ -241,8 +241,8 @@ void load_config() {
     cfg.notifyIconSize = 64;
     cfg.debugEnable = false;
     cfg.compactMode = false;
-    cfg.compactModeTitle = true;
-    cfg.compactModeDesc = true;
+    cfg.enableTitles = true;
+    cfg.enableDescriptions = true;
     cfg.uTheme = "Dark";
     cfg.showNotifications = false;
     cfg.autoShuffle = false;
@@ -281,8 +281,8 @@ void load_config() {
                 }
                 cfg.compactMode = j.value("compactMode", false);
                 cfg.debugEnable = j.value("debugEnable", false);
-                cfg.compactModeDesc = j.value("compactModeDesc", false);
-                cfg.compactModeTitle = j.value("compactModeTitle", true);
+                cfg.enableDescriptions = j.value("enableDescriptions", true);
+                cfg.enableTitles = j.value("enableTitles", true);
                 cfg.uTheme = j.value("uTheme", "Dark");
                 cfg.showNotifications = j.value("showNotifications", false);
                 cfg.autoShuffle = j.value("autoShuffle", false);
@@ -6815,7 +6815,6 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
 
 
 
-
     // ==========================================
     // TAB 2: STATIONS VIEW (The Directory)
     // ==========================================
@@ -6998,11 +6997,11 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     fChkDebug = new BCheckBox("chk_debug", "Debug Mode", new BMessage(MSG_CFG_DEBUG));
     fChkDebug->SetValue(cfg.debugEnable ? B_CONTROL_ON : B_CONTROL_OFF);    
     
-    fCmpTitle = new BCheckBox("fCmpTitle_toggle", "Debug: Show Station Titles", new BMessage(MSG_SHOW_TITLE));
-    fCmpTitle->SetValue(cfg.compactModeTitle ? B_CONTROL_ON : B_CONTROL_OFF);
+    fChkTitle = new BCheckBox("fChkTitle_toggle", "Debug: Show Station Titles", new BMessage(MSG_SHOW_TITLE));
+    fChkTitle->SetValue(cfg.enableTitles ? B_CONTROL_ON : B_CONTROL_OFF);
     
-    fCmpSong = new BCheckBox("fCmpSong_toggle", "Debug: Show Station Descriptions", new BMessage(MSG_SHOW_DESC));
-    fCmpSong->SetValue(cfg.compactModeDesc ? B_CONTROL_ON : B_CONTROL_OFF);    
+    fChkSong = new BCheckBox("fChkSong_toggle", "Debug: Show Station Descriptions", new BMessage(MSG_SHOW_DESC));
+    fChkSong->SetValue(cfg.enableDescriptions ? B_CONTROL_ON : B_CONTROL_OFF);    
 
 
     fPresetToggle = new BCheckBox("preset_toggle", "MilkDrop Presets:", new BMessage(MSG_TOGGLE_PRESETS));
@@ -7154,8 +7153,8 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     .Add(fCompactModeConfig)
     .Add(fChkTheme)
     .Add(fChkDebug)
-    .Add(fCmpTitle)  
-    .Add(fCmpSong)
+    .Add(fChkSong)
+    .Add(fChkTitle)  
     .Add(fChkSysTray)
    	.Add(fEQToggle)
    	.Add(fEnableladspa)  
@@ -7180,8 +7179,8 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
 	if (!cfg.debugEnable) {
 		fChkSysTray->Hide();
 		fEnableladspa->Hide();
-		fCmpTitle->Hide();
-    	fCmpSong->Hide();		
+		fChkTitle->Hide();
+    	fChkSong->Hide();		
 	}
     if (!hasMesaDriver) {
     	if (fVisualsCheckbox)  fVisualsCheckbox->Hide();
@@ -7690,11 +7689,10 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
 
 		case MSG_SHOW_TITLE: {
-			BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("fCmpTitle_toggle"));
+			BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("fChkTitle_toggle"));
 			if (chk) {
-				cfg.compactModeTitle = (chk->Value() == B_CONTROL_ON);
+				cfg.enableTitles = (chk->Value() == B_CONTROL_ON);
 				save_config();
-				ApplyTheme();  
 				
 				// --- FORCE RE-LAYOUT BY PASSING SOURCE POINTER ---
 				BMessage refreshMessage(MSG_COMPACTM_CHANGED);
@@ -7705,11 +7703,10 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		}
         
 		case MSG_SHOW_DESC: {
-			BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("fCmpSong_toggle"));
+			BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("fChkSong_toggle"));
 			if (chk) {
-				cfg.compactModeDesc = (chk->Value() == B_CONTROL_ON);            	
+				cfg.enableDescriptions = (chk->Value() == B_CONTROL_ON);            	
 				save_config();
-				ApplyTheme(); 
 				
 				// --- FORCE RE-LAYOUT BY PASSING SOURCE POINTER ---
 				BMessage refreshMessage(MSG_COMPACTM_CHANGED);
@@ -7902,6 +7899,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		// @Modes
 		case MSG_COMPACTM_CHANGED: {
 			if (cfg.debugEnable) printf("[DEBUG] MSG_COMPACTM_CHANGED received!\n");
+				
+
 
 			void* source = nullptr;
 			message->FindPointer("source", &source);    
@@ -7959,14 +7958,43 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			if (fSongView) ((SongLabel*)fSongView)->SetCompactMode(cfg.compactMode);
 			
 			if (fDescView) {
-				if (cfg.compactModeDesc) fDescView->Show(); else fDescView->Hide();
-				fDescView->InvalidateLayout(true);
+    			// Save current visibility state to avoid redundant updates
+    			bool wasHidden = fDescView->IsHidden();
+    
+    			if (cfg.enableDescriptions) {
+        			fDescView->Show();
+        			if (cfg.debugEnable) printf("[DEBUG] Descriptions enabled.\n");
+    			} else {
+        			fDescView->Hide();
+        			if (cfg.debugEnable) printf("[DEBUG] Descriptions disabled.\n");
+    			}
+
+    			// Force parent layout recalculation ONLY if visibility actually changed
+    			if (wasHidden != !cfg.enableDescriptions && fDescView->Parent()) {
+        			fDescView->Parent()->InvalidateLayout(true);
+        			if (cfg.debugEnable) printf("[DEBUG] Parent layout updated for fDescView.\n");
+    			}
 			}
+
 			if (fSongView) {
-				if (cfg.compactModeTitle) fSongView->Show(); else fSongView->Hide();
-				fSongView->InvalidateLayout(true);
+    			bool wasHidden = fSongView->IsHidden();
+
+    			if (cfg.enableTitles) {
+        			fSongView->Show();
+        			if (cfg.debugEnable) printf("[DEBUG] Titles enabled.\n");
+    			} else {
+        			fSongView->Hide();
+        			if (cfg.debugEnable) printf("[DEBUG] Titles disabled.\n");
+    			}
+
+    			if (wasHidden != !cfg.enableTitles && fSongView->Parent()) {
+        			fSongView->Parent()->InvalidateLayout(true);
+        			if (cfg.debugEnable) printf("[DEBUG] Parent layout updated for fSongView.\n");
+    			}
 			}
+
 			
+
 			
 			
 			// --- 2. COMPACT MODE GEOMETRY BRANCH ---
@@ -7990,8 +8018,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				float sliderWidth = (btnSize * 2.4f) + 10.0f;					
 				
 				float labelHeight = 0.0f; 
-				if (cfg.compactModeTitle) labelHeight += (24.0f * scale);
-				if (cfg.compactModeDesc)  labelHeight += (24.0f * scale);
+				if (cfg.enableTitles) labelHeight += (24.0f * scale);
+				if (cfg.enableDescriptions)  labelHeight += (24.0f * scale);
 				
 				float specWidth = expandedWidth;
 				float specHeight = 10.0f * scale; 
@@ -8001,7 +8029,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					specHeight = (labelHeight == 0.0f) ? 200.0f * scale : 125.0f * scale;
 				}
 				
-				if (cfg.compactModeDesc && cfg.compactModeTitle) { artSize = 175.0f * scale; }
+				if (cfg.enableDescriptions && cfg.enableTitles) { artSize = 175.0f * scale; }
 				if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) { artSize = 175.0f * scale; }
 
 				if (fSpectrum) {
@@ -8015,7 +8043,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					fMetaAndSpectrumStack->SetExplicitMinSize(BSize(specWidth, textStackHeight));
 					fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(specWidth, textStackHeight));
 					fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(specWidth, textStackHeight)); 
-					if (!cfg.compactModeTitle && !cfg.compactModeDesc) fMetaAndSpectrumStack->Hide(); else fMetaAndSpectrumStack->Show();
+					if (!cfg.enableTitles && !cfg.enableDescriptions) fMetaAndSpectrumStack->Hide(); else fMetaAndSpectrumStack->Show();
 				}
 
 				if (fCompactSpectrumWrapper) {
@@ -8087,6 +8115,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					fControlStack->SetExplicitMaxSize(BSize(sliderWidth, B_SIZE_UNSET));
 					fControlStack->SetExplicitPreferredSize(BSize(sliderWidth, B_SIZE_UNSET));
 				}
+				
+
+			
 
 			} else { // --- 3. NORMAL MODE GEOMETRY BRANCH ---
 				if (cfg.debugEnable) printf("[DEBUG] Entering Normal Mode Geometry Branch.\n");
@@ -8128,7 +8159,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					}
 				}
 
-							// ONLY manipulate layout blocks if actively changing from Compact to Normal mode
+				// ONLY manipulate layout blocks if actively changing from Compact to Normal mode
 				if (isRealModeTransition) {
 					if (cfg.debugEnable) printf("[DEBUG] Structural Change -> Rebuilding tree for Normal Mode.\n");
 					
@@ -8308,6 +8339,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			if (fquality)       fquality->Show();
 			if (fListenersView) fListenersView->Show();
 			
+		
 			if (fSpectrum) {
 				if (cfg.showSpectrumVisuals && cfg.eqEnabled) fSpectrum->Show(); else fSpectrum->Hide();
 			}
@@ -8321,6 +8353,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				this->ResizeToPreferred(); 
 				UnlockLooper();
 			}
+			
+			
 
 			ApplyTheme();
 
@@ -8511,18 +8545,18 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         if (chk) {
             cfg.debugEnable = (chk->Value() == B_CONTROL_ON);            
             if (cfg.debugEnable) {
-            	fChkSysTray->Show();
-				fEnableladspa->Show();
-				fCmpTitle->Show();
-    			fCmpSong->Show();	
-    			fVisualsCheckbox->Show();
+            	if (fChkSysTray) fChkSysTray->Show();
+				if (fEnableladspa) fEnableladspa->Show();
+				if (fChkTitle) fChkTitle->Show();
+    			if (fChkSong) fChkSong->Show();	
+    			if (fVisualsCheckbox) fVisualsCheckbox->Show();
  	
             } else {      
-            	fChkSysTray->Hide();
-            	fEnableladspa->Hide();
-				fCmpTitle->Hide();
-    			fCmpSong->Hide();	        
-    			fVisualsCheckbox->Hide();
+            	if (fChkSysTray) fChkSysTray->Hide();
+            	if (fEnableladspa) fEnableladspa->Hide();
+				if (fChkTitle) fChkTitle->Hide();
+    			if (fChkSong) fChkSong->Hide();	        
+    			if (fVisualsCheckbox) fVisualsCheckbox->Hide();
             }
             InvalidateLayout();
             save_config();
@@ -8892,17 +8926,17 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         
 //--------------------------------- Projectm   
 		
-case MSG_HIDE_VISUALS_REQUEST: {
-    if (fVisualsCheckbox != nullptr && fVisualsCheckbox->Value() == B_CONTROL_ON) {
-        // 1. Uncheck the UI element visually
-        fVisualsCheckbox->SetValue(B_CONTROL_OFF);
+		case MSG_HIDE_VISUALS_REQUEST: {
+    		if (fVisualsCheckbox != nullptr && fVisualsCheckbox->Value() == B_CONTROL_ON) {
+        		// 1. Uncheck the UI element visually
+        		fVisualsCheckbox->SetValue(B_CONTROL_OFF);
         
-        // 2. Safely fire the checkbox's assigned message (MSG_TOGGLE_VISUALS) 
-        // into the main loop to execute all the layout & pipeline cleanup.
-        fVisualsCheckbox->Invoke(); 
-    }
-    break;
-}
+        		// 2. Safely fire the checkbox's assigned message (MSG_TOGGLE_VISUALS) 
+        		// into the main loop to execute all the layout & pipeline cleanup.
+        		fVisualsCheckbox->Invoke(); 
+    		}
+    		break;
+		}
 
 
 //--------------------------------- Projectm   

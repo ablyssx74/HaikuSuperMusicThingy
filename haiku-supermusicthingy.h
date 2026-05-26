@@ -212,8 +212,8 @@ private:
     BCheckBox* fEnableSpectrum;
     BCheckBox* fChkSysTray;
     BCheckBox* fChkTheme;
-    BCheckBox* fCmpSong;
-    BCheckBox* fCmpTitle;
+    BCheckBox* fChkSong;
+    BCheckBox* fChkTitle;
     BCheckBox* fChkPresetTimer;
     
 	BMenuField* fPresetField; 
