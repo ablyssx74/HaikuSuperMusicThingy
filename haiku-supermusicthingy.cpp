@@ -7778,13 +7778,13 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			status_t postStatus = this->PostMessage(layoutRefresh);
 			
 			if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_EQ] Thread Messaging Report -> Payload pointer bind status: %d, PostMessage status: %d\n", 
-				ptrStatus, postStatus);
+				(int)ptrStatus, (int)postStatus);
 		} else {
 			if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_EQ] [WARNING] Failed to locate \"eq_toggle\" via FindView lookup!\n");
 		}
 		break;
 	}
-
+//#
 	case MSG_TOGGLE_Spectrum: {
 		if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_Spectrum] Event hook triggered.\n");
 		if (fEnableSpectrum) {
@@ -7809,7 +7809,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		status_t postStatus = this->PostMessage(layoutRefresh);
 		
 		if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_Spectrum] Thread Messaging Report -> Payload pointer bind status: %d, PostMessage status: %d\n", 
-			ptrStatus, postStatus);
+			(int)ptrStatus, (int)postStatus);
 		break;
 	}
 
