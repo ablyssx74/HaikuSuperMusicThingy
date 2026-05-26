@@ -8516,18 +8516,13 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				fCmpTitle->Show();
     			fCmpSong->Show();	
     			fVisualsCheckbox->Show();
-    			fChkPresetTimer->Show();
-        		fPresetToggle->Show();
-        		//fPresetScroll->Show();  	
+ 	
             } else {      
             	fChkSysTray->Hide();
             	fEnableladspa->Hide();
 				fCmpTitle->Hide();
     			fCmpSong->Hide();	        
     			fVisualsCheckbox->Hide();
-    			fChkPresetTimer->Hide();
-        		fPresetToggle->Hide();
-        		fPresetScroll->Hide();   
             }
             InvalidateLayout();
             save_config();
@@ -8877,10 +8872,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         				fPresetToggle->SetValue(B_CONTROL_OFF);
         				fPresetToggle->Invoke(); 
     				}    	
-    	
-    			//fPresetToggle->SetValue(B_CONTROL_OFF);
-    	 		//fPresetToggle->Invoke(); 
-                if (fChkPresetTimer) fChkPresetTimer->Hide();
+                 if (fChkPresetTimer) fChkPresetTimer->Hide();
                 if (fPresetToggle) fPresetToggle->Hide();               
                 cfg.showVisuals = false;
                 save_config();
