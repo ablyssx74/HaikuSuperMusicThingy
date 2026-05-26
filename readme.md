@@ -50,7 +50,7 @@ make release ENABLE_PROJECTM=OFF
 
 <img align="left"  width="122" height="250" alt="Image" src="https://github.com/user-attachments/assets/f59e74cc-909f-49b1-ae42-4f4b53268e46" />
 
-<img align="left"  width="300" height="300"  src="https://github.com/user-attachments/assets/da1745c3-4259-48c3-9cd4-9e116a57db85" />
+<img align="left"  width="300" height="122"  src="https://github.com/user-attachments/assets/da1745c3-4259-48c3-9cd4-9e116a57db85" />
 
 
 
