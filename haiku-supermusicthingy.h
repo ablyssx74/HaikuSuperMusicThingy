@@ -156,6 +156,7 @@ public:
 	
 	  
 private:
+
 	thread_id fVisualsThreadID;
 
 	bool fFullscreenActive = false; 

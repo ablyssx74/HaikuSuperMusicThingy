@@ -1216,7 +1216,7 @@ public:
             BRect sourceRect = bubbleRect;
             sourceRect.OffsetBy(refractionWarpX, 10.0f); 
 
-            // FIX: Use Haiku's native stack state to record a perfect vector shape mask
+            // Use Haiku's native stack state to record a perfect vector shape mask
             PushState();
             
             // We create a temporary recording picture containing our perfect round circle shape
@@ -1226,7 +1226,7 @@ public:
             FillEllipse(BPoint(bx, by), br, br);
             EndPicture();
             
-            // FIX: Pass the address-of pointer (&roundMask) to match standard Interface Kit specifications
+            // Pass the address-of pointer (&roundMask) to match standard Interface Kit specifications
             ClipToPicture(&roundMask, BPoint(0,0), false);
 
             // Draw the captured app graphics masked perfectly round inside the sphere box
@@ -7120,7 +7120,7 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
 
 
 
-         
+//@main2
 // ==========================================
 // --- Layout ---
 // ==========================================
@@ -7164,8 +7164,8 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
      #ifdef USE_PROJECTM
     .AddStrut(5)
     .Add(fVisualsCheckbox)
-    .Add(fPresetToggle)    
     .Add(fChkPresetTimer)
+    .Add(fPresetToggle)    
     .Add(fPresetScroll)       
      #endif
     .AddGlue()
@@ -7183,16 +7183,18 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
 		fCmpTitle->Hide();
     	fCmpSong->Hide();		
 	}
-    if (!hasMesaDriver && !cfg.debugEnable) {
+    if (!hasMesaDriver) {
     	if (fVisualsCheckbox)  fVisualsCheckbox->Hide();
-    	if (fChkPresetTimer)   fChkPresetTimer->Hide();
+        if (fChkPresetTimer)   fChkPresetTimer->Hide();
         if (fPresetToggle)     fPresetToggle->Hide();
         if (fPresetScroll)     fPresetScroll->Hide();   
     }
     if (!visualsRunning) {
-    	 if (fPresetToggle)   fPresetToggle->Hide(); 
-    	 if (fChkPresetTimer)   fChkPresetTimer->Hide(); 
+    	 printf("Test4.\n");
+    	 fPresetToggle->Hide(); 
+    	 fChkPresetTimer->Hide(); 
     }
+
 
     // ==========================================
     // TAB 4: ABOUT VIEW
@@ -7747,7 +7749,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_EQ] Event hook triggered.\n");
 		BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("eq_toggle"));
 		if (chk) {
-			// FIX: Directly parse state using explicit ternary bounds
+			// Directly parse state using explicit ternary bounds
 			cfg.eqEnabled = (chk->Value() == B_CONTROL_ON) ? 1 : 0;            
 			if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_EQ] Checkbox evaluated state: %d (Target config: cfg.eqEnabled)\n", cfg.eqEnabled);
 	
@@ -7786,7 +7788,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 	case MSG_TOGGLE_Spectrum: {
 		if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_Spectrum] Event hook triggered.\n");
 		if (fEnableSpectrum) {
-			// FIX: Force absolute boolean parity conversion from the Haiku UI state value
+			// Force absolute boolean parity conversion from the Haiku UI state value
 			cfg.showSpectrumVisuals = (fEnableSpectrum->Value() == B_CONTROL_ON) ? 1 : 0;
 			if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_Spectrum] Checkbox evaluated state: %d (Target config: cfg.showSpectrumVisuals)\n", cfg.showSpectrumVisuals);
 		} else {
@@ -8134,7 +8136,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					if (fTabView) {
 						if (cfg.debugEnable) printf("[DEBUG] Cleaning up dynamic group panels from fTabView hierarchy cleanly.\n");
 						
-						// FIX: Stop the loop at > 0 so index 0 (your Radio Tab) is NEVER deleted!
+						// Stop the loop at > 0 so index 0 (your Radio Tab) is NEVER deleted!
 						int32 initialTabsCount = fTabView->CountTabs();
 						for (int32 i = initialTabsCount - 1; i > 0; i--) {
 							fTabView->RemoveTab(i);
@@ -8355,7 +8357,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				if (fPlayerGroup) fPlayerGroup->InvalidateLayout(true);
 				if (fTabView) fTabView->InvalidateLayout(true);
 
-				// 2. FIX: If a full structural switch happened, force a total window layout flush!
+				// 2. If a full structural switch happened, force a total window layout flush!
 				// This mimics a fresh start by forcing Haiku to dump all cached component sizes.
 				if (isRealModeTransition) {
 					if (cfg.debugEnable) printf("[DEBUG] Real Mode Transition -> Executing deep tree layout flush.\n");
@@ -8517,7 +8519,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     			fVisualsCheckbox->Show();
     			fChkPresetTimer->Show();
         		fPresetToggle->Show();
-        		fPresetScroll->Show();  	
+        		//fPresetScroll->Show();  	
             } else {      
             	fChkSysTray->Hide();
             	fEnableladspa->Hide();
@@ -8815,49 +8817,11 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             break;
         }
   
-  
+//@vcase  
 //--------------------------------- Projectm         
-        #ifdef USE_PROJECTM
-        
-        
-        case MSG_TOGGLE_VISUALS: {
-            bool currentVisualsState = (fVisualsCheckbox->Value() == B_CONTROL_ON);
-            
-            // --- THE VISIBILITY FIX ---
-            if (currentVisualsState) {
-                // Safely bring the controls back into the active layout pool
-                if (fPresetToggle)   fPresetToggle->Show();
-                if (fChkPresetTimer) fChkPresetTimer->Show();
-                
-                // Fire up your active SDL layout pipeline
-                StartVisuals(); 
-            } else {
-                // Collapse the controls out of sight when visuals are deactivated
-                if (fPresetToggle) {
-                    fPresetToggle->SetValue(B_CONTROL_OFF);
-                    fPresetToggle->Hide();
-                }
-                if (fChkPresetTimer) fChkPresetTimer->Hide();
-                if (fPresetScroll)   fPresetScroll->Hide();
-                
-                // Park your background loops into low-power hibernation
-                StopVisuals();
-            }
-
-            // Drop size limits and force a complete UI recalculation
-            this->SetSizeLimits(0, B_SIZE_UNLIMITED, 0, B_SIZE_UNLIMITED);
-            InvalidateLayout(true);
-            ResizeToPreferred();
-            
-            if (this->GetLayout() != nullptr) {
-                BSize minSize = this->GetLayout()->MinSize();
-                this->SetSizeLimits(minSize.width, B_SIZE_UNLIMITED, minSize.height, B_SIZE_UNLIMITED);
-            }
-            break;
-        }
-    
-        
-//--------------------------------- Projectm           
+        #ifdef USE_PROJECTM         
+//--------------------------------- Projectm 
+          
 		case MSG_REFRESH_PRESETS: {
     		const char* home = getenv("HOME");
     		if (home && fPresetList) {
@@ -8892,45 +8856,65 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		} else {
         		fPresetScroll->Hide();    	
         	}    
-    		InvalidateLayout();
+    		InvalidateLayout(true);
     		ResizeToPreferred();
     		break;
 		}
 
+//--------------------------------- Projectm   
+        
+        case MSG_TOGGLE_VISUALS: {
+            bool currentVisualsState = (fVisualsCheckbox->Value() == B_CONTROL_ON);            
+            if (currentVisualsState) {
+                if (fChkPresetTimer) fChkPresetTimer->Show();          
+                if (fPresetToggle) fPresetToggle->Show();
+                
+                cfg.showVisuals = true;
+                save_config();
+                StartVisuals(); 
+            } else { 
+                bool show = (fPresetToggle->Value() == B_CONTROL_ON);    
+    				if (show) {
+        				fPresetToggle->SetValue(B_CONTROL_OFF);
+        				fPresetToggle->Invoke(); 
+    				}    	
+    	
+    			//fPresetToggle->SetValue(B_CONTROL_OFF);
+    	 		//fPresetToggle->Invoke(); 
+                if (fChkPresetTimer) fChkPresetTimer->Hide();
+                if (fPresetToggle) fPresetToggle->Hide();               
+                cfg.showVisuals = false;
+                save_config();
+                StopVisuals();
+            }
+
+            this->SetSizeLimits(0, B_SIZE_UNLIMITED, 0, B_SIZE_UNLIMITED);
+            InvalidateLayout(true);
+            ResizeToPreferred();
+            
+            if (this->GetLayout() != nullptr) {
+                BSize minSize = this->GetLayout()->MinSize();
+                this->SetSizeLimits(minSize.width, B_SIZE_UNLIMITED, minSize.height, B_SIZE_UNLIMITED);
+            }
+            break;
+        }
+        
+//--------------------------------- Projectm   
 		
-		case MSG_HIDE_VISUALS_REQUEST: {
-			if (cfg.debugEnable) printf("[DEBUG Visual UI] Received hide visuals request from SDL interface.\n");
-			
-			// 1. Uncheck the main option
-			if (fVisualsCheckbox != nullptr) {
-				fVisualsCheckbox->SetValue(B_CONTROL_OFF);
-				fVisualsCheckbox->Invalidate();
-			}
-			
-			// 2. Hide ALL related controls to match your initialization rules
-			if (fPresetToggle) {
-				fPresetToggle->SetValue(B_CONTROL_OFF);
-				fPresetToggle->Hide();
-			}
-			if (fChkPresetTimer) fChkPresetTimer->Hide();
-			if (fPresetScroll)   fPresetScroll->Hide();
-
-			// 3. Put your background rendering loops to sleep
-			StopVisuals();
-
-			// 4. Force a fresh layout recalculation pass
-			this->SetSizeLimits(0, B_SIZE_UNLIMITED, 0, B_SIZE_UNLIMITED);
-			InvalidateLayout(true);
-			ResizeToPreferred();
-			
-			if (this->GetLayout() != nullptr) {
-				BSize minSize = this->GetLayout()->MinSize();
-				this->SetSizeLimits(minSize.width, B_SIZE_UNLIMITED, minSize.height, B_SIZE_UNLIMITED);
-			}
-			break;
-		}
+case MSG_HIDE_VISUALS_REQUEST: {
+    if (fVisualsCheckbox != nullptr && fVisualsCheckbox->Value() == B_CONTROL_ON) {
+        // 1. Uncheck the UI element visually
+        fVisualsCheckbox->SetValue(B_CONTROL_OFF);
+        
+        // 2. Safely fire the checkbox's assigned message (MSG_TOGGLE_VISUALS) 
+        // into the main loop to execute all the layout & pipeline cleanup.
+        fVisualsCheckbox->Invoke(); 
+    }
+    break;
+}
 
 
+//--------------------------------- Projectm   
 
         case MSG_VOL_STEP_REQUEST: {
             int32 direction = 0;
@@ -8956,7 +8940,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
 
 
-		
+//--------------------------------- Projectm  		
 		#endif
 //--------------------------------- Projectm  
 //@vcase   
