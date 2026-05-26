@@ -7189,8 +7189,7 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
         if (fPresetToggle)     fPresetToggle->Hide();
         if (fPresetScroll)     fPresetScroll->Hide();   
     }
-    if (!visualsRunning) {
-    	 printf("Test4.\n");
+    if (!visualsRunning) {    	
     	 fPresetToggle->Hide(); 
     	 fChkPresetTimer->Hide(); 
     }
