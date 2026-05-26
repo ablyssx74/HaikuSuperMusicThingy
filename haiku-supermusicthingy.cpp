@@ -7784,7 +7784,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		}
 		break;
 	}
-//#
+
 	case MSG_TOGGLE_Spectrum: {
 		if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_Spectrum] Event hook triggered.\n");
 		if (fEnableSpectrum) {
