@@ -93,6 +93,8 @@ package: all
 	mkdir -p $(PACKAGE_DIR)/apps
 	mkdir -p $(PACKAGE_DIR)/bin
 ifeq ($(ENABLE_PROJECTM), ON)
+	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/milkdrops/presets_stock
+	cp -r presets_stock/. $(PACKAGE_DIR)/data/$(NAME)/milkdrops/presets_stock/
  ifeq ($(UNAME_M), x86_64)
 	mkdir -p $(PACKAGE_DIR)/lib
 	cp lib/lib* $(PACKAGE_DIR)/lib

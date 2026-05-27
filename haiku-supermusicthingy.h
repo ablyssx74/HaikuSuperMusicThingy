@@ -231,14 +231,13 @@ private:
     BStringView*  fListenersView;
     BStringView*  fquality; 
     BTextView*    fSongView;
-    //BSlider*      fVolumeSlider;
-    BControl* fVolumeSlider; 
+    BControl* 	  fVolumeSlider; 
     BButton*      fShuffleBtn;
     BButton* 	  fApplyEQBtn;
     BCheckBox*    fVisualsCheckbox; 
     BCheckBox*    fShuffleFavsCheckbox; 
-    BCheckBox* fCompactModeRadio;  
-    BCheckBox* fCompactModeConfig;
+    BCheckBox*    fCompactModeRadio;  
+    BCheckBox*    fCompactModeConfig;
     void _SyncCompactCheckboxes(bool value);
     BListView*    fStationList; 
     SongLabel*    fDescView;
@@ -250,6 +249,8 @@ private:
     BGroupView*   fEQContainer;
     SpectrumView* fSpectrum;
     std::map<std::string, BBitmap*> fIconCache;
+
+   
     #ifdef USE_PROJECTM
     projectm_handle fProjectM; 
 	#else

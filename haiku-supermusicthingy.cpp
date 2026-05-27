@@ -46,6 +46,8 @@
 #include <NodeInfo.h>
 #include <Path.h>
 #include <TranslationUtils.h>
+#include <StorageKit.h>
+#include <SupportKit.h>
 
 // ====================================================================
 // Third Party Engines & Libraries
@@ -343,15 +345,76 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* use
 
 
 
+
+
+// Helper function to safely hard-copy a single file using BFile streams
+status_t CopyFile(BEntry& sourceEntry, BDirectory& destDir, const char* fileName) {
+    BFile sourceFile(&sourceEntry, B_READ_ONLY);
+    if (sourceFile.InitCheck() != B_OK) return sourceFile.InitCheck();
+
+    BFile destFile;
+    // Open destination file: create if missing, erase if it already exists, open for writing
+    status_t status = destDir.CreateFile(fileName, &destFile, false);
+    if (status != B_OK) return status;
+
+    // Stream the data from source to destination using a small memory buffer
+    char buffer[4096];
+    ssize_t bytesRead;
+    while ((bytesRead = sourceFile.Read(buffer, sizeof(buffer))) > 0) {
+        destFile.Write(buffer, bytesRead);
+    }
+    return B_OK;
+}
+
+// Helper function to recursively copy a folder's contents
+status_t CopyDirectory(BDirectory& sourceDir, BDirectory& destDir) {
+    BEntry entry;
+    sourceDir.Rewind();
+
+    while (sourceDir.GetNextEntry(&entry) == B_OK) {
+        char name[B_FILE_NAME_LENGTH];
+        entry.GetName(name);
+
+        if (entry.IsDirectory()) {
+            // Create the sub-folder in the destination
+            BDirectory subDestDir;
+            if (destDir.CreateDirectory(name, &subDestDir) == B_OK) {
+                BDirectory subSourceDir(&entry);
+                CopyDirectory(subSourceDir, subDestDir); // Recurse
+            }
+        } else if (entry.IsFile()) {
+            // Replaced the broken entry.CopyInto line with our safe file copy helper
+            CopyFile(entry, destDir, name);
+        }
+    }
+    return B_OK;
+}
+
 void ensure_config_dir() {
     BPath path;
     if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) == B_OK) {
-        path.Append("SuperMusicThingy");
+        path.Append("SuperMusicThingy/milk_presets");
+        
         if (create_directory(path.Path(), 0755) == B_OK) {
-        } else {            
+            BPath destPath(path);
+            destPath.Append("presets_stock");
+            
+            BDirectory destDir;
+            // Create the local presets_stock folder if it doesn't exist yet
+            if (destDir.CreateDirectory(destPath.Path(), &destDir) == B_OK) {
+                const char* targetPath = "/boot/system/data/HaikuSuperMusicThingy/milkdrops/presets_stock";
+                BDirectory sourceDir(targetPath);
+                
+                if (sourceDir.InitCheck() == B_OK) {
+                    // Perform the hard copy of the files
+                    CopyDirectory(sourceDir, destDir);
+                }
+            }
         }
     }
 }
+
+
 
 
 BBitmap* GetVectorIcon(const unsigned char* data, size_t size, float dimensions) {
@@ -509,6 +572,8 @@ private:
     float fHoverAlpha;       
     bigtime_t fLastTime;    
 };
+
+
 
 
 
@@ -5924,9 +5989,7 @@ bool is_favorite() {
 
 
 void PopulatePresetList(BListView* list, const char* folderPath) {
-	if (list == nullptr)
-    return;
-    list->MakeEmpty();
+    if (list == nullptr) return;
     if (!std::filesystem::exists(folderPath)) return;
 
     for (const auto& entry : std::filesystem::recursive_directory_iterator(folderPath)) {
@@ -5938,6 +6001,7 @@ void PopulatePresetList(BListView* list, const char* folderPath) {
         }
     }
 }
+
 
 
 
@@ -6374,7 +6438,7 @@ private:
 
 class IconView : public BView {
 public:
-    IconView(BBitmap* bitmap)
+    IconView(BBitmap* bitmap) // Leaf Icons
         : BView("icon_view", B_WILL_DRAW),
           fBitmap(bitmap) {
         // Essential: Tell the layout kit we want a fixed size
@@ -6401,8 +6465,6 @@ private:
     BBitmap* fBitmap;
 };
 
-
-
 void SuperMusicWindow::UpdateStatus(const char* station, const char* song) {
     if (!Lock()) return;
 
@@ -6421,6 +6483,18 @@ void SuperMusicWindow::UpdateStatus(const char* station, const char* song) {
 }
 
 
+#include <cstdlib> // For rand()
+#include <cmath>   // For sinf(), cosf()
+
+struct SnowParticle {
+    float x;
+    float y;
+    float speedY;
+    float swaySpeed;
+    float swayAmplitude;
+    float swayPhase;
+    float size; // Controls the radius of the snowflake
+};
 
 class CreditsSlider : public BView {
 public:
@@ -6429,18 +6503,14 @@ public:
         fScrollY = 0.0f;
         
         // Populate text matrix lines
-        fLines.Add(""); 
-        fLines.Add(""); 
-        fLines.Add(""); 
-        fLines.Add(""); 
-        fLines.Add(""); 
-        fLines.Add(""); 
-        fLines.Add("Special Thanks For Testing & Suggestions:");
+        fLines.Add("Special Thanks For Testing");
+        fLines.Add("&");
+        fLines.Add("Suggestions");
         fLines.Add("cocobean");
         fLines.Add("Starcrasher");
         fLines.Add("kim1963");
         fLines.Add("");
-        fLines.Add("Powered By:");
+        fLines.Add("Powered By");
         fLines.Add("SomaFM (Radio Service)");
         fLines.Add("MPV (Playback Core)");
         fLines.Add("nlohmann/json (The Data)");
@@ -6448,37 +6518,54 @@ public:
         fLines.Add("libsdl / projectM / OpenGL (The Visuals)");
         fLines.Add("SVGear (Scalable Vector Graphics)");
         fLines.Add("libcurl (Network/Streaming)");
+
+        // Note: The loop has been moved out of the constructor to avoid the 0px size bug!
     }
 
     ~CreditsSlider() {
-        // No asynchronous pointers to clean up anymore!
     }
-
-    void AttachedToWindow() override {
+    
+  void AttachedToWindow() override {
         BView::AttachedToWindow();
         if (Parent()) SetViewColor(Parent()->ViewColor());
         
         // Define the global window pulse interval in microseconds (35000 µs = 35ms)
         if (Window()) Window()->SetPulseRate(35000);
     }
+    
+    
 
-    void Pulse() override {
+ 	void Pulse() override {
         fScrollY += 0.28f; 
         
         BFont textFont(be_plain_font);
         font_height fh;
         textFont.GetHeight(&fh);
         float lineHeight = fh.ascent + fh.descent + fh.leading + 6.0f;
-        
-        // Calculate the exact height of just the text block itself
-        float textBlockHeight = (fLines.CountStrings() * lineHeight);
+    	float textBlockHeight = (fLines.CountStrings() * lineHeight);
 
-        // Add a small padding cushion for a clean pause before looping
-        if (fScrollY > (textBlockHeight + 40.0f)) {
-            fScrollY = 0.0f; // Instantly snap back to the top right away!
-        }
-        Invalidate();
-    }
+    	float viewHeight = Bounds().Height() > 0 ? Bounds().Height() : 250.0f;
+
+    	// Loop instantly right when the last line finishes passing the upper limit
+   		 if (fScrollY > textBlockHeight) {
+        	fScrollY = 0.0f; 
+    		}
+
+    	// --- 2. UPDATE SNOWFLAKE POSITIONS ---
+    	float viewWidth = Bounds().Width() > 0 ? Bounds().Width() : 400.0f;
+    	for (int i = 0; i < kMaxSnow; i++) {
+        		fSnow[i].y += fSnow[i].speedY;
+        		fSnow[i].swayPhase += fSnow[i].swaySpeed;
+
+        		if (fSnow[i].y > viewHeight + 10.0f || fSnow[i].x < -10.0f || fSnow[i].x > viewWidth + 10.0f) {
+            		ResetSnowflake(i, false); 
+        		}
+    		}
+
+    		Invalidate();
+		}
+
+
 
     BSize MinSize() override { return BSize(150.0f, 100.0f); }
     BSize PreferredSize() override { return BSize(150.0f, B_SIZE_UNSET); }
@@ -6491,42 +6578,74 @@ public:
         SetLowColor(bgColor);
         FillRect(Bounds(), B_SOLID_LOW);
 
-        BFont plainFont(be_plain_font);
-        BFont boldFont(be_bold_font);
-        font_height fh;
-        plainFont.GetHeight(&fh);
-        float lineHeight = fh.ascent + fh.descent + fh.leading + 6.0f;
-
         float viewWidth = Bounds().Width();
         float viewHeight = Bounds().Height();
-        
-		// Start scrolling directly from the top boundary right under AI Assisted!
-		float startY = 15.0f - fScrollY; 
 
         // =================================================================
-        // Force the text anti-aliasing to use alpha blending
+        // PHASE 1: DRAW BACKGROUND PROCEDURAL SNOWFLAKES
         // =================================================================
         SetDrawingMode(B_OP_ALPHA);
-        SetBlendingMode(B_CONSTANT_ALPHA, B_ALPHA_OVERLAY);
+        
+        rgb_color snowColor;
+        
+        snowColor = make_color(255, 255, 255, 75); // Semi-transparent white
 
-        for (int32 i = 0; i < fLines.CountStrings(); i++) {
-            float textY = startY + (i * lineHeight);
-            
-            if (textY < -20.0f || textY > viewHeight + 20.0f)
-                continue;
+        SetHighColor(snowColor);
 
-            const char* currentText = fLines.StringAt(i).String();
-            bool isHeader = fLines.StringAt(i).EndsWith(":");
+        for (int i = 0; i < kMaxSnow; i++) {
+            float currentX = fSnow[i].x + (sinf(fSnow[i].swayPhase) * fSnow[i].swayAmplitude);
+            float currentY = fSnow[i].y;
+            float r = fSnow[i].size;
+
+            // Draw six-pointed geometric crosses
+            StrokeLine(BPoint(currentX, currentY - r), BPoint(currentX, currentY + r));
             
-            // --- DYNAMIC THEME COLOR EVALUATOR ---
+            float xOffset1 = r * 0.866f; // cos(30)
+            float yOffset1 = r * 0.500f; // sin(30)
+            StrokeLine(BPoint(currentX - xOffset1, currentY - yOffset1), BPoint(currentX + xOffset1, currentY + yOffset1));
+            StrokeLine(BPoint(currentX - xOffset1, currentY + yOffset1), BPoint(currentX + xOffset1, currentY - yOffset1));
+        }
+
+    // =================================================================
+    // PHASE 2: DRAW FOREGROUND SCROLLING TEXTS
+    // =================================================================
+    BFont plainFont(be_plain_font);
+    BFont boldFont(be_bold_font);
+    font_height fh;
+    plainFont.GetHeight(&fh);
+    float lineHeight = fh.ascent + fh.descent + fh.leading + 6.0f;
+
+    // Start scrolling upward directly from the bottom edge of the view container
+      float startY = viewHeight - fScrollY; 
+
+
+    SetBlendingMode(B_CONSTANT_ALPHA, B_ALPHA_OVERLAY);
+
+    for (int32 i = 0; i < fLines.CountStrings(); i++) {
+        float textY = startY + (i * lineHeight);
+        
+        // Culling bounds protection
+        if (textY < -20.0f || textY > viewHeight + 20.0f)
+            continue;
+
+        BString currentLine = fLines.StringAt(i);
+        const char* currentText = currentLine.String();
+
+            bool isHeader = (currentLine.FindFirst("Testing") != B_ERROR) ||
+           					(currentLine.FindFirst("&") != B_ERROR) ||
+                            (currentLine.FindFirst("Suggestions") != B_ERROR) ||
+                            (currentLine.FindFirst("Powered By") != B_ERROR);
+            
             rgb_color textColor;
             rgb_color headerColor;
-			if (cfg.uTheme == "Dark") {
+            if (cfg.uTheme == "Dark") {
                 textColor = make_color(255, 255, 255, 255);
                 headerColor = make_color(240, 180, 40, 255); 
             } else {
                 textColor = ui_color(B_DOCUMENT_TEXT_COLOR);
-                headerColor = ui_color(B_LINK_TEXT_COLOR);
+               // headerColor = ui_color(B_LINK_TEXT_COLOR);
+                headerColor = ui_color(B_MENU_SELECTED_ITEM_TEXT_COLOR);
+
             }
 
             if (isHeader) {
@@ -6545,41 +6664,185 @@ public:
             DrawString(currentText, BPoint(textX, textY + fh.ascent));
         }
 
-        // --- CLEAN INTERPOLATED EDGE FADER GRADIENT OVERLAYS ---
-        float fadeZoneHeight = 45.0f; 
-        
-        // Switch to B_OP_COPY to avoid alpha channel buffer corruption bugs
-        SetDrawingMode(B_OP_COPY);
-
-        for (int y = 0; y < (int)fadeZoneHeight; y++) {
-            float factor = 1.0f - ((float)y / fadeZoneHeight); 
-            
-            rgb_color blendedColor;
-            blendedColor.red   = (uint8)(bgColor.red   * factor + bgColor.red   * (1.0f - factor));
-            blendedColor.green = (uint8)(bgColor.green * factor + bgColor.green * (1.0f - factor));
-            blendedColor.blue  = (uint8)(bgColor.blue  * factor + bgColor.blue  * (1.0f - factor));
-            blendedColor.alpha = 255; // Keep it fully opaque to fix the 32-bit Haiku bug!
-
-            SetHighColor(blendedColor);
-
-            // Draw Top Fade Line
-            StrokeLine(BPoint(0.0f, (float)y), BPoint(viewWidth, (float)y), B_SOLID_HIGH);
-
-            // Draw Bottom Fade Line
-            float bottomY = viewHeight - 1.0f - y;
-            StrokeLine(BPoint(0.0f, bottomY), BPoint(viewWidth, bottomY), B_SOLID_HIGH);
-        }
 
         PopState();
     }
 
 private:
-    float          fScrollY;
-    BStringList    fLines;
+    void ResetSnowflake(int index, bool randomizeInitialY) {
+        // Fallback checks using safe layout sizes for the panel view container
+        float viewWidth = Bounds().Width() > 5.0f ? Bounds().Width() : 400.0f;
+        float viewHeight = Bounds().Height() > 5.0f ? Bounds().Height() : 250.0f;
+
+        // Spread snowflakes completely across the real width bounds
+        fSnow[index].x = (float)(rand() % (int)viewWidth);
+        fSnow[index].y = randomizeInitialY ? (float)(rand() % (int)viewHeight) : -10.0f;
+        
+        fSnow[index].speedY = 0.2f + ((rand() % 100) / 100.0f) * 0.4f; 
+        fSnow[index].swaySpeed = 0.01f + ((rand() % 100) / 100.0f) * 0.03f;
+        fSnow[index].swayAmplitude = 2.0f + (rand() % 5); 
+        fSnow[index].swayPhase = ((rand() % 100) / 100.0f) * 6.28f;
+        fSnow[index].size = 2.0f + (rand() % 4);
+    }
+
+    static const int kMaxSnow = 25; 
+    SnowParticle     fSnow[kMaxSnow];
+    float            fScrollY;
+    BStringList      fLines;
 };
 
 
+class SnowyHeaderView : public BView {
+public:
+    SnowyHeaderView(const char* name) : BView(name, B_WILL_DRAW | B_PULSE_NEEDED) {
+        SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+    }
 
+    void AttachedToWindow() override {
+        BView::AttachedToWindow();
+        if (Parent()) SetViewColor(Parent()->ViewColor());
+        
+        // Match the exact same timing rate as your Crawler view
+        for (int i = 0; i < kMaxSnow; i++) {
+            ResetSnowflake(i, true);
+        }
+    }
+
+    void Pulse() override {
+        float viewWidth = Bounds().Width() > 0 ? Bounds().Width() : 400.0f;
+        float viewHeight = Bounds().Height() > 0 ? Bounds().Height() : 400.0f;
+
+        for (int i = 0; i < kMaxSnow; i++) {
+            fSnow[i].y += fSnow[i].speedY;
+            fSnow[i].swayPhase += fSnow[i].swaySpeed;
+
+            if (fSnow[i].y > viewHeight + 10.0f || fSnow[i].x < -10.0f || fSnow[i].x > viewWidth + 10.0f) {
+                ResetSnowflake(i, false);
+            }
+        }
+        Invalidate();
+    }
+
+	void Draw(BRect updateRect) {
+    	PushState();
+    	rgb_color bgColor = ViewColor();
+    	SetLowColor(bgColor);
+    	FillRect(Bounds(), B_SOLID_LOW);
+
+    	// Snow setup rendering layer
+    	SetDrawingMode(B_OP_ALPHA);
+
+    	rgb_color snowColor;
+
+        snowColor = make_color(255, 255, 255, 75); // Semi-transparent white
+
+    	SetHighColor(snowColor);
+
+    	for (int i = 0; i < kMaxSnow; i++) {
+        	float currentX = fSnow[i].x + (sinf(fSnow[i].swayPhase) * fSnow[i].swayAmplitude);
+        	float currentY = fSnow[i].y;
+        	float r = fSnow[i].size;
+
+        	StrokeLine(BPoint(currentX, currentY - r), BPoint(currentX, currentY + r));
+        	float xOffset1 = r * 0.866f;
+        	float yOffset1 = r * 0.500f;
+        	StrokeLine(BPoint(currentX - xOffset1, currentY - yOffset1), BPoint(currentX + xOffset1, currentY + yOffset1));
+        	StrokeLine(BPoint(currentX - xOffset1, currentY + yOffset1), BPoint(currentX + xOffset1, currentY - yOffset1));
+    	}
+    	PopState();
+	}
+
+
+private:
+    void ResetSnowflake(int index, bool randomizeInitialY) {
+        float viewWidth = Bounds().Width() > 5.0f ? Bounds().Width() : 400.0f;
+        float viewHeight = Bounds().Height() > 5.0f ? Bounds().Height() : 250.0f;
+
+        fSnow[index].x = (float)(rand() % (int)viewWidth);
+        fSnow[index].y = randomizeInitialY ? (float)(rand() % (int)viewHeight) : -10.0f;
+        fSnow[index].speedY = 0.2f + ((rand() % 100) / 100.0f) * 0.4f; 
+        fSnow[index].swaySpeed = 0.01f + ((rand() % 100) / 100.0f) * 0.03f;
+        fSnow[index].swayAmplitude = 2.0f + (rand() % 5); 
+        fSnow[index].swayPhase = ((rand() % 100) / 100.0f) * 6.28f;
+        fSnow[index].size = 2.0f + (rand() % 4);
+    }
+
+    static const int kMaxSnow = 20; 
+    SnowParticle     fSnow[kMaxSnow];
+};
+
+class SnowyFooterView : public BView {
+public:
+    SnowyFooterView(const char* name) : BView(name, B_WILL_DRAW | B_PULSE_NEEDED) {
+        SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+    }
+
+    void AttachedToWindow() override {
+        BView::AttachedToWindow();
+        if (Parent()) SetViewColor(Parent()->ViewColor());
+        
+        for (int i = 0; i < kMaxSnow; i++) {
+            ResetSnowflake(i, true);
+        }
+    }
+
+    void Pulse() override {
+        float viewWidth = Bounds().Width() > 0 ? Bounds().Width() : 400.0f;
+        float viewHeight = Bounds().Height() > 0 ? Bounds().Height() : 250.0f;
+
+        for (int i = 0; i < kMaxSnow; i++) {
+            fSnow[i].y += fSnow[i].speedY;
+            fSnow[i].swayPhase += fSnow[i].swaySpeed;
+
+            if (fSnow[i].y > viewHeight + 10.0f || fSnow[i].x < -10.0f || fSnow[i].x > viewWidth + 10.0f) {
+                ResetSnowflake(i, false);
+            }
+        }
+        Invalidate();
+    }
+
+    void Draw(BRect updateRect) override {
+        PushState();
+        rgb_color bgColor = ViewColor();
+        SetLowColor(bgColor);
+        FillRect(Bounds(), B_SOLID_LOW);
+
+        SetDrawingMode(B_OP_ALPHA);
+        rgb_color snowColor = (cfg.uTheme == "Dark") 
+            ? make_color(255, 255, 255, 75) : make_color(100, 149, 237, 75);
+        SetHighColor(snowColor);
+
+        for (int i = 0; i < kMaxSnow; i++) {
+            float currentX = fSnow[i].x + (sinf(fSnow[i].swayPhase) * fSnow[i].swayAmplitude);
+            float currentY = fSnow[i].y;
+            float r = fSnow[i].size;
+
+            StrokeLine(BPoint(currentX, currentY - r), BPoint(currentX, currentY + r));
+            float xOffset1 = r * 0.866f;
+            float yOffset1 = r * 0.500f;
+            StrokeLine(BPoint(currentX - xOffset1, currentY - yOffset1), BPoint(currentX + xOffset1, currentY + yOffset1));
+            StrokeLine(BPoint(currentX - xOffset1, currentY + yOffset1), BPoint(currentX + xOffset1, currentY - yOffset1));
+        }
+        PopState();
+    }
+
+private:
+    void ResetSnowflake(int index, bool randomizeInitialY) {
+        float viewWidth = Bounds().Width() > 5.0f ? Bounds().Width() : 400.0f;
+        float viewHeight = Bounds().Height() > 5.0f ? Bounds().Height() : 250.0f;
+
+        fSnow[index].x = (float)(rand() % (int)viewWidth);
+        fSnow[index].y = randomizeInitialY ? (float)(rand() % (int)viewHeight) : -10.0f;
+        fSnow[index].speedY = 0.2f + ((rand() % 100) / 100.0f) * 0.4f; 
+        fSnow[index].swaySpeed = 0.01f + ((rand() % 100) / 100.0f) * 0.03f;
+        fSnow[index].swayAmplitude = 2.0f + (rand() % 5); 
+        fSnow[index].swayPhase = ((rand() % 100) / 100.0f) * 6.28f;
+        fSnow[index].size = 2.0f + (rand() % 4);
+    }
+
+    static const int kMaxSnow = 10; // Lower density since this is just a small buffer zone
+    SnowParticle     fSnow[kMaxSnow];
+};
 
 
 void SuperMusicWindow::UpdateTrayState(bool enabled, bool hideWindow) {
@@ -6636,8 +6899,8 @@ SuperMusicWindow::SuperMusicWindow()
     fProjectM = pm; 
 	#endif
     
-    setenv("LADSPA_PATH", "/boot/home/config/non-packaged/lib/ladspa", 1);     
- 
+    setenv("LADSPA_PATH", "/boot/home/config/non-packaged/lib/ladspa", 1);  
+        
     BFont largeFont(be_bold_font);
     BFont smallFont(be_bold_font);
     
@@ -6646,7 +6909,8 @@ SuperMusicWindow::SuperMusicWindow()
 	smallFont.SetSize(12.0f * scale);
 	
     fTabView = new BTabView("tab_container");
-    //fTabView->SetExplicitMinSize(BSize(380 * scale, 700 * scale));
+    
+
 
     fTabView->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
 
@@ -6745,7 +7009,7 @@ BLayoutBuilder::Group<>(fControlStack, B_HORIZONTAL, 5)
     .Add(fStopBtn, B_ALIGN_VERTICAL_CENTER)
     .Add(fPauseBtn, B_ALIGN_VERTICAL_CENTER)
     .Add(fPlayBtn, B_ALIGN_VERTICAL_CENTER)
-    .Add(fShuffleBtn, B_ALIGN_VERTICAL_CENTER)
+    .Add(fShuffleBtn, B_ALIGN_VERTICAL_CENTER)    
 .End();
 
 
@@ -6816,14 +7080,6 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     // Set container color to prevent bleed-through
     fStationGroup->SetViewColor(ui_color(B_LIST_BACKGROUND_COLOR));
     
-    fPresetList = new PresetListView("preset_list");
-	fPresetList->SetSelectionMessage(new BMessage(MSG_PRESET_SELECTED));
-    
-    fPresetScroll = new BScrollView("preset_scroll", fPresetList, 0, true, true, B_NO_BORDER);
-    fPresetScroll->Hide();
-    fPresetScroll->SetExplicitMinSize(BSize(B_SIZE_UNSET, 150));
-	fPresetScroll->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 300));
-
     fStationList = new BListView("station_list");
     fStationList->SetInvocationMessage(new BMessage(MSG_PLAY_STATION)); 
     
@@ -6987,20 +7243,32 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     fChkTheme = new BCheckBox("chk_theme", "Dark Theme", new BMessage(MSG_CFG_THEME));
     fChkTheme->SetValue(cfg.uTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);    
     
-    fChkDebug = new BCheckBox("chk_debug", "Debug Mode", new BMessage(MSG_CFG_DEBUG));
-    fChkDebug->SetValue(cfg.debugEnable ? B_CONTROL_ON : B_CONTROL_OFF);    
+    fChkDebug = new BCheckBox("chk_debug", "Debug Mode [?]", new BMessage(MSG_CFG_DEBUG));
+    fChkDebug->SetValue(cfg.debugEnable ? B_CONTROL_ON : B_CONTROL_OFF); 
     
-    fChkTitle = new BCheckBox("fChkTitle_toggle", "Show Song Titles", new BMessage(MSG_SHOW_TITLE));
+    fChkDebug->SetToolTip("Unhides options that are not 100% working in the app.\nShows debug info if app is started from terminal.");   
+    
+    fChkTitle = new BCheckBox("fChkTitle_toggle", "Song Titles", new BMessage(MSG_SHOW_TITLE));
     fChkTitle->SetValue(cfg.enableTitles ? B_CONTROL_ON : B_CONTROL_OFF);
+
     
-    fChkSong = new BCheckBox("fChkSong_toggle", "Show Station Descriptions", new BMessage(MSG_SHOW_DESC));
+    fChkSong = new BCheckBox("fChkSong_toggle", "Station Descriptions", new BMessage(MSG_SHOW_DESC));
     fChkSong->SetValue(cfg.enableDescriptions ? B_CONTROL_ON : B_CONTROL_OFF);    
+    
 
+    fPresetList = new PresetListView("preset_list");
+	fPresetList->SetSelectionMessage(new BMessage(MSG_PRESET_SELECTED));
+    
+    fPresetScroll = new BScrollView("preset_scroll", fPresetList, 0, true, true, B_NO_BORDER);
+    fPresetScroll->Hide();
+    fPresetScroll->SetExplicitMinSize(BSize(B_SIZE_UNSET, 150));
+	fPresetScroll->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 300));
+	
+	fPresetToggle = new BCheckBox("preset_toggle", "MilkDrop Presets [?]:", new BMessage(MSG_TOGGLE_PRESETS));
+	fPresetToggle->SetValue(B_CONTROL_OFF);
 
-    fPresetToggle = new BCheckBox("preset_toggle", "MilkDrop Presets:", new BMessage(MSG_TOGGLE_PRESETS));
-    fPresetToggle->SetValue(B_CONTROL_OFF); 
+	fPresetToggle->SetToolTip("Add more milk presets here -> $HOME/config/settings/SuperMusicThingy/milk_presets");
 
-    // Visuals and Favorites
     fVisualsCheckbox = new BCheckBox("visuals_toggle", "projectM Visualizer", new BMessage(MSG_TOGGLE_VISUALS));
     fVisualsCheckbox->SetValue(cfg.showVisuals ? B_CONTROL_ON : B_CONTROL_OFF);  
     
@@ -7030,11 +7298,17 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
 	buttonRow->AddChild(fPresetField); 
 	buttonRow->AddChild(fApplyEQBtn);
 
-	fEQToggle = new BCheckBox("eq_toggle", "15-Band EQ", new BMessage(MSG_TOGGLE_EQ));
+	fEQToggle = new BCheckBox("eq_toggle", "15-Band EQ [?]", new BMessage(MSG_TOGGLE_EQ));
 	fEQToggle->SetValue(cfg.eqEnabled ? B_CONTROL_ON : B_CONTROL_OFF);
 	
-    fEnableSpectrum = new BCheckBox("chk_spectrum", "Spectrum Bars", new BMessage(MSG_TOGGLE_Spectrum));
+	fEQToggle->SetToolTip("15-Band EQ\nMust be enabled for navtive spectrum visualizers to work.");
+
+	
+    fEnableSpectrum = new BCheckBox("chk_spectrum", "Spectrum Bars [?]", new BMessage(MSG_TOGGLE_Spectrum));
 	fEnableSpectrum->SetValue(cfg.showSpectrumVisuals ? B_CONTROL_ON : B_CONTROL_OFF); 
+	
+	fEnableSpectrum->SetToolTip("Show or hide native spectrum visualizers.\nRight mouse click on the spectrum to toggle through all modes.\nDouble right click to toggle fullscreen.\nMotorcycle spectrum: use center mouse wheel to toggle fullscreen,\nleft click to jump, and double left click to do front flip.");   
+
     
 	bool ladspaSupported = IsFFmpegLadspaAvailable();
 	fEnableladspa = new BCheckBox("enable_ladspa", "Ladspa", new BMessage(MSG_TOGGLE_LADSPA)); 
@@ -7144,10 +7418,10 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     .Add(fChkShuffle)
     .Add(fShuffleFavsCheckbox)
     .Add(fCompactModeConfig)
-    .Add(fChkTheme)
-    .Add(fChkDebug)
     .Add(fChkSong)
-    .Add(fChkTitle)  
+    .Add(fChkTitle)
+    .Add(fChkTheme)
+    .Add(fChkDebug)  
     .Add(fChkSysTray)
    	.Add(fEQToggle)
    	.Add(fEnableladspa)  
@@ -7171,9 +7445,7 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
 	}
 	if (!cfg.debugEnable) {
 		fChkSysTray->Hide();
-		fEnableladspa->Hide();
-		fChkTitle->Hide();
-    	fChkSong->Hide();		
+		fEnableladspa->Hide();	
 	}
     if (!hasMesaDriver) {
     	if (fVisualsCheckbox)  fVisualsCheckbox->Hide();
@@ -7181,10 +7453,15 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
         if (fPresetToggle)     fPresetToggle->Hide();
         if (fPresetScroll)     fPresetScroll->Hide();   
     }
-    if (!visualsRunning) {    	
-    	 fPresetToggle->Hide(); 
-    	 fChkPresetTimer->Hide(); 
+    if (!cfg.showVisuals) {    	
+         fPresetToggle->Hide(); 
+         fChkPresetTimer->Hide(); 
+    } else {
+
+        StartVisuals();
     }
+
+    
 
 
     // ==========================================
@@ -7205,10 +7482,8 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     std::time_t t = std::time(nullptr);
     std::tm* now = std::localtime(&t);
     int currentYear = now->tm_year + 1900; 
-    
 
     // Icon and Text Components
-    // Get the vector icon - I bumped the size to 64 for a nice clear logo
     BBitmap* aboutIcon = GetVectorIcon(kIconAbout, kIconAboutSize, 64);
     IconView* appLogo = new IconView(aboutIcon);
     appLogo->SetExplicitAlignment(BAlignment(B_ALIGN_LEFT, B_ALIGN_TOP));
@@ -7241,14 +7516,14 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     BStringView* txtAI = new BStringView("abtAI", "AI Assisted");
     txtAI->SetAlignment(B_ALIGN_CENTER);
 
+    // --- INSTANTIATE THE NEW BACKGROUND ENGINE VIEW ---
+    SnowyHeaderView* animatedHeaderBackground = new SnowyHeaderView("animated_top");
 
-    // Layout
-    CreditsSlider* creditCrawler = new CreditsSlider("about_crawler");
-    
-    // --- BUNDLE STATIC HEADER AND LABELS TOGETHER TIGHTLY ---
-    BGroupView* tightHeaderStack = new BGroupView(B_VERTICAL, 4); // Tight 4px spacing between lines
-    BLayoutBuilder::Group<>(tightHeaderStack, B_VERTICAL, 4)
+    // --- BUILD STATIC ITEMS INSIDE THE ANIMATED BACKGROUND VIEW CONTAINER ---
+    BLayoutBuilder::Group<>(animatedHeaderBackground, B_VERTICAL, 4)
         .SetInsets(0)
+        .Add(appLogo) // Place the leaf logo inside the background layer so it floats over snow
+        .AddStrut(5)
         .Add(titleApp)
         .Add(txtVer)
         .Add(txturl)
@@ -7257,28 +7532,34 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
             .Add(iconLink)	
             .AddGlue()          
         .End()
-        
         .AddStrut(12) 
         .Add(txtCopy)        
         .Add(txtEmail)
         .Add(txtAI)
     .End();
 
-    // --- ASSEMBLE MASTER TAB VIEW CONTAINER ---
-    // Using 0 base spacing and forcing the crawler to absorb 100% of expandable room
+    // Layout Crawler Setup
+    CreditsSlider* creditCrawler = new CreditsSlider("about_crawler");
+
+    // --- INSTANTIATE THE NEW BACKGROUND FOOTER VIEW ---
+    SnowyFooterView* animatedFooterBackground = new SnowyFooterView("animated_bottom");
+    
+    animatedFooterBackground->SetExplicitMinSize(BSize(B_SIZE_UNSET, 250.0f));
+    animatedFooterBackground->SetExplicitMaxSize(BSize(B_SIZE_UNSET, 250.0f));
+
+    // --- ASSEMBLE MASTER TAB CONTAINER ---
     BLayoutBuilder::Group<>(fAboutGroup, B_VERTICAL, 0)
         .SetInsets(10)
-        .Add(appLogo) 
-        .AddStrut(5) 
-        .Add(tightHeaderStack, 0.0f)         
-        .AddStrut(20)
-        .Add(creditCrawler, 1.0f) 
+        .Add(animatedHeaderBackground, 0.0f) // Top headers + snow
+        .AddStrut(20)                        // Middle open spacing
+        .Add(creditCrawler, 1.0f)            // Crawler centered zone (flexible size)
+        .Add(animatedFooterBackground, 0.0f) // 150px Snow Footer
     .End();
 
 
-
-
 //----------- End About Tab
+
+
 
 
 
@@ -7298,19 +7579,15 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
         .Add(fTabView)
     .End();
     
-    PopulateStationList();
+    PopulateStationList();   
+    UpdateFavButtons();
+    DownloadStationIcons();    
+    RefreshFavorites();
+    ApplyTheme();
     
     std::string configPath = std::string(getenv("HOME")) + "/config/settings/SuperMusicThingy/milk_presets/";
     PopulatePresetList(fPresetList, configPath.c_str());
 
-    UpdateFavButtons();
-    DownloadStationIcons();    
-    RefreshFavorites();
-    
-    if (cfg.showVisuals) {
-        StartVisuals();
-    }
-    ApplyTheme();
 
     // =================================================================
     // UNIFY INITIALIZATION BY CALLING THE COMPACT MODE HANDLER
@@ -8296,6 +8573,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
 				BSize unlimited(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED);
 				BSize unset(B_SIZE_UNSET, B_SIZE_UNSET);
+				
+
 
 				if (fVolumeSlider) {
 					fVolumeSlider->SetExplicitMaxSize(unlimited);
@@ -8352,7 +8631,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				if (fCompactSpectrumWrapper) {
 					if (featuresActive) {
 								
-						// FIX: Leave width UNSET so it adapts to child size changes without expanding the window
+						// Leave width UNSET so it adapts to child size changes without expanding the window
 						fCompactSpectrumWrapper->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
 						fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
 						fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
@@ -8439,6 +8718,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
 					// Re-build horizontal control layout
 					BLayoutBuilder::Group<>(fControlStack, B_HORIZONTAL, 5)
+					    
 						.Add(fStopBtn)
 						.Add(fPauseBtn)
 						.Add(fPlayBtn)
@@ -8781,9 +9061,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             if (cfg.debugEnable) {
             	if (fChkSysTray) fChkSysTray->Show();
 				if (fEnableladspa) fEnableladspa->Show();
-				if (fChkTitle) fChkTitle->Show();
-    			if (fChkSong) fChkSong->Show();	
-    			if (fVisualsCheckbox) fVisualsCheckbox->Show();
+    			if (fVisualsCheckbox) fVisualsCheckbox->Show(); 
+    	 		if (fChkPresetTimer)  fChkPresetTimer->Show(); 
+    	 		if (fPresetToggle) fPresetToggle->Show();
  	
             } else {      
             	if (fChkSysTray) fChkSysTray->Hide();
@@ -9090,6 +9370,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		}
     		break;
 		}
+
 		
 		
 //--------------------------------- Projectm   		
@@ -9128,7 +9409,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             if (currentVisualsState) {
                 if (fChkPresetTimer) fChkPresetTimer->Show();          
                 if (fPresetToggle) fPresetToggle->Show();
-                
+               
                 cfg.showVisuals = true;
                 save_config();
                 StartVisuals(); 
@@ -9138,7 +9419,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         				fPresetToggle->SetValue(B_CONTROL_OFF);
         				fPresetToggle->Invoke(); 
     				}    	
-                 if (fChkPresetTimer) fChkPresetTimer->Hide();
+                if (fChkPresetTimer) fChkPresetTimer->Hide();
                 if (fPresetToggle) fPresetToggle->Hide();               
                 cfg.showVisuals = false;
                 save_config();
