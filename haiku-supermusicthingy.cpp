@@ -1767,7 +1767,7 @@ public:
     }
 
 
-
+//@screen
 void CaptureAppSnapshot() {
     // 1. Safety Guard: Make sure the view is attached to a real window context
     if (Window() == nullptr) {
@@ -7304,7 +7304,7 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
 	fEQToggle->SetToolTip("15-Band EQ\nMust be enabled for navtive spectrum visualizers to work.");
 
 	
-    fEnableSpectrum = new BCheckBox("chk_spectrum", "Spectrum Bars [?]", new BMessage(MSG_TOGGLE_Spectrum));
+    fEnableSpectrum = new BCheckBox("chk_spectrum", "Spectrum Visualizer [?]", new BMessage(MSG_TOGGLE_Spectrum));
 	fEnableSpectrum->SetValue(cfg.showSpectrumVisuals ? B_CONTROL_ON : B_CONTROL_OFF); 
 	
 	fEnableSpectrum->SetToolTip("Show or hide native spectrum visualizers.\nRight mouse click on the spectrum to toggle through all modes.\nDouble left click to toggle fullscreen.\nMotorcycle spectrum: use center mouse wheel to toggle fullscreen,\nleft click to jump, and double left click to do front flip.");   
@@ -8233,8 +8233,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			bool forcedState = false;
 			status_t forceFindStatus = message->FindBool("force_compact_state", &forcedState);
 			
-			if (cfg.debugEnable) printf("[DEBUG] Init State - source ptr: %p, config compactMode: %d, forced flag status: %d, forcedState val: %d\n", 
-				source, cfg.compactMode, forceFindStatus, forcedState);
+			if (cfg.debugEnable) printf("[DEBUG] Init State - source ptr: %p, config compactMode: %d, forced flag status: %d, forcedState val: %d\n", source, cfg.compactMode, (int)forceFindStatus, forcedState);
+
 
 			// Track if this pass is an intentional structural mode transition (Normal <-> Compact)
 			bool isRealModeTransition = false;
@@ -8446,20 +8446,37 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				
 				// Size checks		
 				
+				if ((cfg.showSpectrumVisuals) && (cfg.enableDescriptions && cfg.enableTitles)) { 
+   					 artSize = 170.0f * scale; 
+				}
 				if ((cfg.showSpectrumVisuals) && (cfg.enableDescriptions || cfg.enableTitles)) { 
    					 artSize = 170.0f * scale; 
 				}
-
-				if ((!cfg.showSpectrumVisuals) && (!cfg.enableDescriptions && !cfg.enableTitles)) { 
+				
+				if ((!cfg.showSpectrumVisuals || !cfg.eqEnabled) && (cfg.enableDescriptions && cfg.enableTitles)) { 
    					 artSize = 115.0f * scale; 
 				}
 				
+				if ((!cfg.showSpectrumVisuals || !cfg.eqEnabled) && (!cfg.enableDescriptions && cfg.enableTitles)) { 
+   					 artSize = 115.0f * scale; 
+				}
+				if ((!cfg.showSpectrumVisuals || !cfg.eqEnabled) && (cfg.enableDescriptions && !cfg.enableTitles)) { 
+   					 artSize = 115.0f * scale; 
+				}
+				
+				if ((!cfg.showSpectrumVisuals || !cfg.eqEnabled) && (!cfg.enableDescriptions && !cfg.enableTitles)) { 
+   					 artSize = 100.0f * scale; 
+				}
+				
+				
+				
 				float finalWidth; 		
 				if ((!cfg.showSpectrumVisuals || !cfg.eqEnabled) && (cfg.enableDescriptions || cfg.enableTitles))  {
-						finalWidth = 400.0f * scale;
-						} else {
-							finalWidth = B_SIZE_UNSET; 
+						finalWidth = 250.0f * scale;
+					} else {
+						finalWidth = B_SIZE_UNSET;
 				}
+				
 
 				// 1. UPDATE SPECTRUM CORE VIEW
 				if (fSpectrum) {
