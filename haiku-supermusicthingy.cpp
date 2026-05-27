@@ -88,6 +88,8 @@
 #include <thread>
 #include <vector>
 
+
+
 // ====================================================================
 // Local Application Project Headers
 // ====================================================================
@@ -6483,8 +6485,7 @@ void SuperMusicWindow::UpdateStatus(const char* station, const char* song) {
 }
 
 
-#include <cstdlib> // For rand()
-#include <cmath>   // For sinf(), cosf()
+
 
 struct SnowParticle {
     float x;
@@ -6498,7 +6499,7 @@ struct SnowParticle {
 
 class CreditsSlider : public BView {
 public:
-    CreditsSlider(const char* name) : BView(name, B_WILL_DRAW | B_PULSE_NEEDED) {
+    CreditsSlider(const char* name) : BView(name, B_WILL_DRAW | B_PULSE_NEEDED | B_FRAME_EVENTS) {
         SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
         fScrollY = 0.0f;
         
@@ -6518,54 +6519,60 @@ public:
         fLines.Add("libsdl / projectM / OpenGL (The Visuals)");
         fLines.Add("SVGear (Scalable Vector Graphics)");
         fLines.Add("libcurl (Network/Streaming)");
-
-        // Note: The loop has been moved out of the constructor to avoid the 0px size bug!
     }
 
     ~CreditsSlider() {
     }
     
-  void AttachedToWindow() override {
+    void AttachedToWindow() override {
         BView::AttachedToWindow();
         if (Parent()) SetViewColor(Parent()->ViewColor());
         
         // Define the global window pulse interval in microseconds (35000 µs = 35ms)
         if (Window()) Window()->SetPulseRate(35000);
     }
-    
-    
 
- 	void Pulse() override {
+    // --- FIX: POPULATE SNOW ONCE LAYOUT ENGINE ASSIGNS TRUE DIMENSIONS ---
+    void FrameResized(float newWidth, float newHeight) override {
+        BView::FrameResized(newWidth, newHeight);
+        static bool sSnowInitialized = false;
+        if (!sSnowInitialized && newWidth > 5.0f && newHeight > 5.0f) {
+            for (int i = 0; i < kMaxSnow; i++) {
+                ResetSnowflake(i, true); // Randomizes snow across the whole view area
+            }
+            sSnowInitialized = true;
+        }
+    }
+    
+    void Pulse() override {
         fScrollY += 0.28f; 
         
         BFont textFont(be_plain_font);
         font_height fh;
         textFont.GetHeight(&fh);
         float lineHeight = fh.ascent + fh.descent + fh.leading + 6.0f;
-    	float textBlockHeight = (fLines.CountStrings() * lineHeight);
+        float textBlockHeight = (fLines.CountStrings() * lineHeight);
 
-    	float viewHeight = Bounds().Height() > 0 ? Bounds().Height() : 250.0f;
+        float viewHeight = Bounds().Height() > 0 ? Bounds().Height() : 250.0f;
 
-    	// Loop instantly right when the last line finishes passing the upper limit
-   		 if (fScrollY > textBlockHeight) {
-        	fScrollY = 0.0f; 
-    		}
+        // Loop instantly right when the last line finishes passing the upper limit
+        if (fScrollY > textBlockHeight) {
+            fScrollY = 0.0f; 
+        }
 
-    	// --- 2. UPDATE SNOWFLAKE POSITIONS ---
-    	float viewWidth = Bounds().Width() > 0 ? Bounds().Width() : 400.0f;
-    	for (int i = 0; i < kMaxSnow; i++) {
-        		fSnow[i].y += fSnow[i].speedY;
-        		fSnow[i].swayPhase += fSnow[i].swaySpeed;
+        // --- 2. UPDATE SNOWFLAKE POSITIONS ---
+        float viewWidth = Bounds().Width() > 0 ? Bounds().Width() : 400.0f;
+        for (int i = 0; i < kMaxSnow; i++) {
+            fSnow[i].y += fSnow[i].speedY;
+            fSnow[i].swayPhase += fSnow[i].swaySpeed;
 
-        		if (fSnow[i].y > viewHeight + 10.0f || fSnow[i].x < -10.0f || fSnow[i].x > viewWidth + 10.0f) {
-            		ResetSnowflake(i, false); 
-        		}
-    		}
+            if (fSnow[i].y > viewHeight + 10.0f || fSnow[i].x < -10.0f || fSnow[i].x > viewWidth + 10.0f) {
+                ResetSnowflake(i, false); 
+            }
+        }
 
-    		Invalidate();
-		}
-
-
+        Invalidate();
+    }
 
     BSize MinSize() override { return BSize(150.0f, 100.0f); }
     BSize PreferredSize() override { return BSize(150.0f, B_SIZE_UNSET); }
@@ -6586,10 +6593,7 @@ public:
         // =================================================================
         SetDrawingMode(B_OP_ALPHA);
         
-        rgb_color snowColor;
-        
-        snowColor = make_color(255, 255, 255, 75); // Semi-transparent white
-
+        rgb_color snowColor = make_color(255, 255, 255, 75); // Semi-transparent white
         SetHighColor(snowColor);
 
         for (int i = 0; i < kMaxSnow; i++) {
@@ -6606,46 +6610,45 @@ public:
             StrokeLine(BPoint(currentX - xOffset1, currentY + yOffset1), BPoint(currentX + xOffset1, currentY - yOffset1));
         }
 
-    // =================================================================
-    // PHASE 2: DRAW FOREGROUND SCROLLING TEXTS
-    // =================================================================
-    BFont plainFont(be_plain_font);
-    BFont boldFont(be_bold_font);
-    font_height fh;
-    plainFont.GetHeight(&fh);
-    float lineHeight = fh.ascent + fh.descent + fh.leading + 6.0f;
+        // =================================================================
+        // PHASE 2: DRAW FOREGROUND SCROLLING TEXTS
+        // =================================================================
+        BFont plainFont(be_plain_font);
+        BFont boldFont(be_bold_font);
+        font_height fh;
+        plainFont.GetHeight(&fh);
+        float lineHeight = fh.ascent + fh.descent + fh.leading + 6.0f;
 
-    // Start scrolling upward directly from the bottom edge of the view container
-      float startY = viewHeight - fScrollY; 
+        // Start scrolling upward directly from the bottom edge of the view container
+        float startY = viewHeight - fScrollY; 
 
+        SetBlendingMode(B_CONSTANT_ALPHA, B_ALPHA_OVERLAY);
 
-    SetBlendingMode(B_CONSTANT_ALPHA, B_ALPHA_OVERLAY);
+        for (int32 i = 0; i < fLines.CountStrings(); i++) {
+            float textY = startY + (i * lineHeight);
+            
+            // Culling bounds protection
+            if (textY < -20.0f || textY > viewHeight + 20.0f)
+                continue;
 
-    for (int32 i = 0; i < fLines.CountStrings(); i++) {
-        float textY = startY + (i * lineHeight);
-        
-        // Culling bounds protection
-        if (textY < -20.0f || textY > viewHeight + 20.0f)
-            continue;
-
-        BString currentLine = fLines.StringAt(i);
-        const char* currentText = currentLine.String();
+            BString currentLine = fLines.StringAt(i);
+            const char* currentText = currentLine.String();
 
             bool isHeader = (currentLine.FindFirst("Testing") != B_ERROR) ||
-           					(currentLine.FindFirst("&") != B_ERROR) ||
+                            (currentLine.FindFirst("&") != B_ERROR) ||
                             (currentLine.FindFirst("Suggestions") != B_ERROR) ||
                             (currentLine.FindFirst("Powered By") != B_ERROR);
             
             rgb_color textColor;
             rgb_color headerColor;
+            
+            // Fixed: Assuming external configuration structure 'cfg' exists globally
             if (cfg.uTheme == "Dark") {
                 textColor = make_color(255, 255, 255, 255);
                 headerColor = make_color(240, 180, 40, 255); 
             } else {
                 textColor = ui_color(B_DOCUMENT_TEXT_COLOR);
-               // headerColor = ui_color(B_LINK_TEXT_COLOR);
                 headerColor = ui_color(B_MENU_SELECTED_ITEM_TEXT_COLOR);
-
             }
 
             if (isHeader) {
@@ -6664,17 +6667,14 @@ public:
             DrawString(currentText, BPoint(textX, textY + fh.ascent));
         }
 
-
         PopState();
     }
 
 private:
     void ResetSnowflake(int index, bool randomizeInitialY) {
-        // Fallback checks using safe layout sizes for the panel view container
         float viewWidth = Bounds().Width() > 5.0f ? Bounds().Width() : 400.0f;
         float viewHeight = Bounds().Height() > 5.0f ? Bounds().Height() : 250.0f;
 
-        // Spread snowflakes completely across the real width bounds
         fSnow[index].x = (float)(rand() % (int)viewWidth);
         fSnow[index].y = randomizeInitialY ? (float)(rand() % (int)viewHeight) : -10.0f;
         
@@ -6808,8 +6808,8 @@ public:
         FillRect(Bounds(), B_SOLID_LOW);
 
         SetDrawingMode(B_OP_ALPHA);
-        rgb_color snowColor = (cfg.uTheme == "Dark") 
-            ? make_color(255, 255, 255, 75) : make_color(100, 149, 237, 75);
+    	rgb_color snowColor;
+        snowColor = make_color(255, 255, 255, 75); // Semi-transparent white
         SetHighColor(snowColor);
 
         for (int i = 0; i < kMaxSnow; i++) {
@@ -7307,7 +7307,7 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     fEnableSpectrum = new BCheckBox("chk_spectrum", "Spectrum Bars [?]", new BMessage(MSG_TOGGLE_Spectrum));
 	fEnableSpectrum->SetValue(cfg.showSpectrumVisuals ? B_CONTROL_ON : B_CONTROL_OFF); 
 	
-	fEnableSpectrum->SetToolTip("Show or hide native spectrum visualizers.\nRight mouse click on the spectrum to toggle through all modes.\nDouble right click to toggle fullscreen.\nMotorcycle spectrum: use center mouse wheel to toggle fullscreen,\nleft click to jump, and double left click to do front flip.");   
+	fEnableSpectrum->SetToolTip("Show or hide native spectrum visualizers.\nRight mouse click on the spectrum to toggle through all modes.\nDouble left click to toggle fullscreen.\nMotorcycle spectrum: use center mouse wheel to toggle fullscreen,\nleft click to jump, and double left click to do front flip.");   
 
     
 	bool ladspaSupported = IsFFmpegLadspaAvailable();
@@ -8283,61 +8283,103 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			
 			// --- ROBUST STRUCTURAL UPDATE FOR DESCRIPTION VIEW ---
 			if (fDescView) {
-				// Query local structural visibility state instead of inherited window state
-				bool wasLocallyHidden = fDescView->IsHidden(fDescView);
-				bool targetHiddenState = !cfg.enableDescriptions;
+				// 1. Sanitize the view leaf pointer against memory corruption
+				if ((uintptr_t)fDescView > 0x1000) {
+					// Query local structural visibility state instead of inherited window state
+					bool wasLocallyHidden = fDescView->IsHidden(fDescView);
+					bool targetHiddenState = !cfg.enableDescriptions;
 
-				if (wasLocallyHidden != targetHiddenState) {
-					if (!targetHiddenState) {
-						fDescView->Show();
-						if (cfg.debugEnable) printf("[DEBUG] Descriptions structural visibility -> SHOW.\n");
-					} else {
-						fDescView->Hide();
-						if (cfg.debugEnable) printf("[DEBUG] Descriptions structural visibility -> HIDE.\n");
-					}
-
-					// Bubble layout invalidation context up to the top structural ancestor
-					BView* parentNode = fDescView->Parent();
-					if (parentNode) {
-						parentNode->InvalidateLayout(true);
-						
-						// Walk layout hierarchy upwards if nestled inside multiple layout containers
-						while (parentNode->Parent() != nullptr) {
-							parentNode = parentNode->Parent();
-							parentNode->InvalidateLayout(false); // Clear parent element matrix caches
+					if (wasLocallyHidden != targetHiddenState) {
+						if (!targetHiddenState) {
+							fDescView->Show();
+							if (cfg.debugEnable) printf("[DEBUG] Descriptions structural visibility -> SHOW.\n");
+						} else {
+							fDescView->Hide();
+							if (cfg.debugEnable) printf("[DEBUG] Descriptions structural visibility -> HIDE.\n");
 						}
+
+						// 2. Safely bubble layout invalidation context up to the top structural ancestor
+						BView* parentNode = fDescView->Parent();
+						if (parentNode && (uintptr_t)parentNode > 0x1000) {
+							
+							// Flush the immediate parent layout container deeply
+							parentNode->InvalidateLayout(true);
+							
+							// Walk layout hierarchy upwards if nestled inside multiple layout containers
+							while (parentNode->Parent() != nullptr) {
+								BView* nextParent = parentNode->Parent();
+								
+								// Stop loop immediately if pointer wraps around or corrupts
+								if (!nextParent || (uintptr_t)nextParent <= 0x1000)
+									break;
+									
+								parentNode = nextParent;
+								parentNode->InvalidateLayout(false); // Clear parent element matrix caches
+							}
+							
+							// 3. Anchor the root layout container explicitly to force an App Server redraw
+							if (parentNode->GetLayout()) {
+								parentNode->GetLayout()->InvalidateLayout(true);
+							}
+						}
+
+						// 4. Fixed: Force synchronous top-down coordinate reconciliation directly.
+						// No window looper locking required because 'this' is already the BWindow loop.
+						this->Layout(true); 
 					}
 				}
 			}
+
 
 			// --- ROBUST STRUCTURAL UPDATE FOR SONG VIEW ---
 			if (fSongView) {
-				// Query local structural visibility state instead of inherited window state
-				bool wasLocallyHidden = fSongView->IsHidden(fSongView);
-				bool targetHiddenState = !cfg.enableTitles;
+				// 1. Sanitize the view leaf pointer against memory corruption
+				if ((uintptr_t)fSongView > 0x1000) {
+					// Query local structural visibility state instead of inherited window state
+					bool wasLocallyHidden = fSongView->IsHidden(fSongView);
+					bool targetHiddenState = !cfg.enableTitles;
 
-				if (wasLocallyHidden != targetHiddenState) {
-					if (!targetHiddenState) {
-						fSongView->Show();
-						if (cfg.debugEnable) printf("[DEBUG] Titles structural visibility -> SHOW.\n");
-					} else {
-						fSongView->Hide();
-						if (cfg.debugEnable) printf("[DEBUG] Titles structural visibility -> HIDE.\n");
-					}
-
-					// Bubble layout invalidation context up to the top structural ancestor
-					BView* parentNode = fSongView->Parent();
-					if (parentNode) {
-						parentNode->InvalidateLayout(true);
-						
-						// Walk layout hierarchy upwards if nestled inside multiple layout containers
-						while (parentNode->Parent() != nullptr) {
-							parentNode = parentNode->Parent();
-							parentNode->InvalidateLayout(false); // Clear parent element matrix caches
+					if (wasLocallyHidden != targetHiddenState) {
+						if (!targetHiddenState) {
+							fSongView->Show();
+							if (cfg.debugEnable) printf("[DEBUG] Titles structural visibility -> SHOW.\n");
+						} else {
+							fSongView->Hide();
+							if (cfg.debugEnable) printf("[DEBUG] Titles structural visibility -> HIDE.\n");
 						}
+
+						// 2. Safely bubble layout invalidation context up to the top structural ancestor
+						BView* parentNode = fSongView->Parent();
+						if (parentNode && (uintptr_t)parentNode > 0x1000) {
+							
+							// Flush the immediate parent layout container deeply
+							parentNode->InvalidateLayout(true);
+							
+							// Walk layout hierarchy upwards if nestled inside multiple layout containers
+							while (parentNode->Parent() != nullptr) {
+								BView* nextParent = parentNode->Parent();
+								
+								// Stop loop immediately if pointer wraps around or corrupts
+								if (!nextParent || (uintptr_t)nextParent <= 0x1000)
+									break;
+									
+								parentNode = nextParent;
+								parentNode->InvalidateLayout(false); // Clear parent element matrix caches
+							}
+							
+							// 3. Anchor the root layout container explicitly to force an App Server redraw
+							if (parentNode->GetLayout()) {
+								parentNode->GetLayout()->InvalidateLayout(true);
+							}
+						}
+
+						// 4. Force synchronous top-down coordinate reconciliation directly.
+						// Running natively in BWindow::MessageReceived means looper is already locked.
+						this->Layout(true); 
 					}
 				}
 			}
+
 
 		
 			
@@ -8362,7 +8404,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					this->PostMessage(compactMsg);
 					break; 
 				}
-				*/
+				*/				
+								
 				
 				// New soft pump logic
 				static bool sInitialSyncDone = false;
@@ -8378,16 +8421,14 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     			break; 
 				}
 
-
+				
 
 
 
 				// --- ROBUST STRUCTURAL UPDATE FOR COMPACT MODE BRANCH ---
 				
 				float expandedWidth = 375.0f * scale; 
-				float sliderWidth = (btnSize * 2.4f) + 10.0f;	
-				
-
+				float sliderWidth = (btnSize * 2.4f) + 10.0f;		
 				
 				float labelHeight = 0.0f; 
 				if (cfg.enableTitles) labelHeight += (24.0f * scale);
@@ -8404,22 +8445,18 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				}
 				
 				// Size checks		
-				if (cfg.showSpectrumVisuals && cfg.enableDescriptions && cfg.enableTitles) { artSize = 175.0f * scale; }
 				
-				if ((cfg.showSpectrumVisuals && cfg.eqEnabled) && (cfg.enableDescriptions || cfg.enableTitles)) { 
-   					 artSize = 140.0f * scale; 
+				if ((cfg.showSpectrumVisuals) && (cfg.enableDescriptions || cfg.enableTitles)) { 
+   					 artSize = 170.0f * scale; 
 				}
-				
-				if ((!cfg.showSpectrumVisuals || !cfg.eqEnabled) && (cfg.enableDescriptions || cfg.enableTitles)) { 
-   					 artSize = 125.0f * scale; 
-				}
-				if ((!cfg.showSpectrumVisuals || !cfg.eqEnabled) && (!cfg.enableDescriptions || !cfg.enableTitles)) { 
-   					 artSize = 100.0f * scale; 
+
+				if ((!cfg.showSpectrumVisuals) && (!cfg.enableDescriptions && !cfg.enableTitles)) { 
+   					 artSize = 115.0f * scale; 
 				}
 				
 				float finalWidth; 		
 				if ((!cfg.showSpectrumVisuals || !cfg.eqEnabled) && (cfg.enableDescriptions || cfg.enableTitles))  {
-						finalWidth = 500.0f * scale;
+						finalWidth = 400.0f * scale;
 						} else {
 							finalWidth = B_SIZE_UNSET; 
 				}
