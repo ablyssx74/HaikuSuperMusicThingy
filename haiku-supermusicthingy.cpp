@@ -160,8 +160,27 @@ std::string currentAlbumArtUrl = "";
 const uint32 MSG_DISABLE_REPLICA = 'drep';
 
 
-//@Config
+const float kPresetRock[] = {
+    4.0, 3.5, 3.0, 2.5, 2.0, 1.0, -1.0, -1.0, 
+    0.0, 1.0, 1.5, 2.0, 2.5, 3.5, 4.0
+};
 
+const float kPresetJazz[] = {
+    3.0, 2.5, 2.0, 1.5, 1.0, 2.0, -1.0, -1.0, 
+    -0.5, 0.0, 0.5, 1.0, 1.5, 2.5, 3.0
+};
+
+const float kPresetBass[] = {
+    11.0, 9.0, 4.0, 2.0, 1.0, 1.0, 0.0, 0.0, 
+    0.0, 0.0, 1.0, 3.0, 4.0, 7.0, 9.0
+};
+
+const float kPresetFlat[] = {
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+};
+
+//@Config
 struct Config {
     bool showNotifications = false;
     bool debugEnable = false;
@@ -181,7 +200,7 @@ struct Config {
     bool shuffleFavsOnly = false;
     bool compactMode = false;
     int notifyIconSize = 64; 
-    std::string uTheme = "Default";
+    std::string uTheme = "Dark";
     std::string quality = "128k";
     bool eqEnabled = true;
     float eqBands[15] = {0.0f}; 
@@ -259,7 +278,7 @@ void load_config() {
     cfg.shuffleFavsOnly = false; 
     cfg.eqEnabled = true;
     for (int i = 0; i < 15; i++) {
-        cfg.eqBands[i] = 0.0f; // flat EQ defaults
+       cfg.eqBands[i] = kPresetRock[i]; 
     }
     cfg.limitIn = 0.0f;
     cfg.limitLmt = 0.0f;
@@ -490,32 +509,6 @@ private:
     float fHoverAlpha;       
     bigtime_t fLastTime;    
 };
-
-
-
-
-
-const float kPresetRock[] = {
-    4.0, 3.5, 3.0, 2.5, 2.0, 1.0, -1.0, -1.0, 
-    0.0, 1.0, 1.5, 2.0, 2.5, 3.5, 4.0
-};
-
-const float kPresetJazz[] = {
-    3.0, 2.5, 2.0, 1.5, 1.0, 2.0, -1.0, -1.0, 
-    -0.5, 0.0, 0.5, 1.0, 1.5, 2.5, 3.0
-};
-
-const float kPresetBass[] = {
-    11.0, 9.0, 4.0, 2.0, 1.0, 1.0, 0.0, 0.0, 
-    0.0, 0.0, 1.0, 3.0, 4.0, 7.0, 9.0
-};
-
-const float kPresetFlat[] = {
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-};
-
-
 
 
 
@@ -6997,10 +6990,10 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     fChkDebug = new BCheckBox("chk_debug", "Debug Mode", new BMessage(MSG_CFG_DEBUG));
     fChkDebug->SetValue(cfg.debugEnable ? B_CONTROL_ON : B_CONTROL_OFF);    
     
-    fChkTitle = new BCheckBox("fChkTitle_toggle", "Debug: Show Station Titles", new BMessage(MSG_SHOW_TITLE));
+    fChkTitle = new BCheckBox("fChkTitle_toggle", "Show Song Titles", new BMessage(MSG_SHOW_TITLE));
     fChkTitle->SetValue(cfg.enableTitles ? B_CONTROL_ON : B_CONTROL_OFF);
     
-    fChkSong = new BCheckBox("fChkSong_toggle", "Debug: Show Station Descriptions", new BMessage(MSG_SHOW_DESC));
+    fChkSong = new BCheckBox("fChkSong_toggle", "Show Station Descriptions", new BMessage(MSG_SHOW_DESC));
     fChkSong->SetValue(cfg.enableDescriptions ? B_CONTROL_ON : B_CONTROL_OFF);    
 
 
@@ -7691,12 +7684,21 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		case MSG_SHOW_TITLE: {
 			BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("fChkTitle_toggle"));
 			if (chk) {
-				cfg.enableTitles = (chk->Value() == B_CONTROL_ON);
+				bool targetState = (chk->Value() == B_CONTROL_ON);
+				cfg.enableTitles = targetState;
 				save_config();
 				
-				// --- FORCE RE-LAYOUT BY PASSING SOURCE POINTER ---
+				// --- ASYNC DOUBLE-PUMP HACK FOR TITLES ---
+				// 1. Send the inverted state to shake up the layout engine topology
+				cfg.enableTitles = !targetState; 
+				BMessage invertMessage(MSG_COMPACTM_CHANGED);
+				invertMessage.AddPointer("source", this);
+				this->PostMessage(&invertMessage);
+
+				// 2. Immediately send the actual true target state right behind it
+				cfg.enableTitles = targetState;
 				BMessage refreshMessage(MSG_COMPACTM_CHANGED);
-				refreshMessage.AddPointer("source", this); // Prevents the nullptr fallback trap
+				refreshMessage.AddPointer("source", this); 
 				this->PostMessage(&refreshMessage);
 			}
 			break;
@@ -7705,16 +7707,26 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		case MSG_SHOW_DESC: {
 			BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("fChkSong_toggle"));
 			if (chk) {
-				cfg.enableDescriptions = (chk->Value() == B_CONTROL_ON);            	
+				bool targetState = (chk->Value() == B_CONTROL_ON);
+				cfg.enableDescriptions = targetState;            	
 				save_config();
 				
-				// --- FORCE RE-LAYOUT BY PASSING SOURCE POINTER ---
+				// --- ASYNC DOUBLE-PUMP HACK FOR DESCRIPTIONS ---
+				// 1. Send the inverted state to shake up the layout engine topology
+				cfg.enableDescriptions = !targetState;
+				BMessage invertMessage(MSG_COMPACTM_CHANGED);
+				invertMessage.AddPointer("source", this);
+				this->PostMessage(&invertMessage);
+
+				// 2. Immediately send the actual true target state right behind it
+				cfg.enableDescriptions = targetState;            	
 				BMessage refreshMessage(MSG_COMPACTM_CHANGED);
-				refreshMessage.AddPointer("source", this); // Prevents the nullptr fallback trap
+				refreshMessage.AddPointer("source", this); 
 				this->PostMessage(&refreshMessage);
 			}
 			break;
 		}
+
 
 
 
@@ -7784,30 +7796,64 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 	case MSG_TOGGLE_Spectrum: {
 		if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_Spectrum] Event hook triggered.\n");
 		if (fEnableSpectrum) {
-			// Force absolute boolean parity conversion from the Haiku UI state value
 			cfg.showSpectrumVisuals = (fEnableSpectrum->Value() == B_CONTROL_ON) ? 1 : 0;
-			if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_Spectrum] Checkbox evaluated state: %d (Target config: cfg.showSpectrumVisuals)\n", cfg.showSpectrumVisuals);
+			if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_Spectrum] Checkbox evaluated state: %d\n", cfg.showSpectrumVisuals);
 		} else {
 			if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_Spectrum] [WARNING] fEnableSpectrum pointer is null!\n");
 		}
 		
-
-		
-		if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_Spectrum] Persisting config, updating mpv filters, and applying themes.\n");
 		save_config();
 		this->UpdateMPVFilters();
 		ApplyTheme();
 		
-		// --- DELEGATE STRUCTURAL LAYOUT TO MASTER ENGINE ---
-		if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_Spectrum] Allocating and queuing master layout payload (MSG_COMPACTM_CHANGED).\n");
-		BMessage* layoutRefresh = new BMessage(MSG_COMPACTM_CHANGED);
-		status_t ptrStatus = layoutRefresh->AddPointer("source", fEnableSpectrum); // Pass spectrum checkbox control as source
-		status_t postStatus = this->PostMessage(layoutRefresh);
+		// --- DIRECT VISIBILITY DOUBLE-PUMP RECONSTRUCTION ---
+		if (fSpectrum) {
+			// Save the final state we want the spectrum view to settle on
+			bool finalTargetState = (cfg.showSpectrumVisuals == 1);
+
+			// PUMP 1: Force change the target view to its inverse state directly 
+			if (finalTargetState) {
+				fSpectrum->Hide(); // If we want to show it, force hide it first
+			} else {
+				fSpectrum->Show(); // If we want to hide it, force show it first
+			}
+			
+			// Let the layout container know its tree has violently shifted
+			if (fSpectrum->Parent()) fSpectrum->Parent()->InvalidateLayout(true);
+
+			// Post a layout refresh pass while the view is flipped upside down
+			BMessage* invertMsg = new BMessage(MSG_COMPACTM_CHANGED);
+			invertMsg->AddPointer("source", fEnableSpectrum);
+			this->PostMessage(invertMsg);
+
+			// PUMP 2: Immediately restore the real target visibility configuration
+			if (finalTargetState) {
+				fSpectrum->Show();
+			} else {
+				fSpectrum->Hide();
+			}
+
+			// Invalidate structural hierarchies up to root again
+			if (fSpectrum->Parent()) fSpectrum->Parent()->InvalidateLayout(true);
+
+			// Post the final clean configuration execution update message
+			BMessage* finalMsg = new BMessage(MSG_COMPACTM_CHANGED);
+			finalMsg->AddPointer("source", fEnableSpectrum);
+			this->PostMessage(finalMsg);
+
+			if (cfg.debugEnable) {
+				printf("[DEBUG] [MSG_TOGGLE_Spectrum] Fixed Double-pump visibility cycle applied cleanly.\n");
+			}
+		} else {
+			BMessage* layoutRefresh = new BMessage(MSG_COMPACTM_CHANGED);
+			layoutRefresh->AddPointer("source", nullptr);
+			this->PostMessage(layoutRefresh);
+		}
 		
-		if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_Spectrum] Thread Messaging Report -> Payload pointer bind status: %d, PostMessage status: %d\n", 
-			(int)ptrStatus, (int)postStatus);
 		break;
 	}
+
+
 
 	
 	// @Fullscreen
@@ -7956,49 +8002,75 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			 
 			if (fDescView) ((SongLabel*)fDescView)->SetCompactMode(cfg.compactMode);
 			if (fSongView) ((SongLabel*)fSongView)->SetCompactMode(cfg.compactMode);
+		
 			
+			// --- ROBUST STRUCTURAL UPDATE FOR DESCRIPTION VIEW ---
 			if (fDescView) {
-    			// Save current visibility state to avoid redundant updates
-    			bool wasHidden = fDescView->IsHidden();
-    
-    			if (cfg.enableDescriptions) {
-        			fDescView->Show();
-        			if (cfg.debugEnable) printf("[DEBUG] Descriptions enabled.\n");
-    			} else {
-        			fDescView->Hide();
-        			if (cfg.debugEnable) printf("[DEBUG] Descriptions disabled.\n");
-    			}
+				// Query local structural visibility state instead of inherited window state
+				bool wasLocallyHidden = fDescView->IsHidden(fDescView);
+				bool targetHiddenState = !cfg.enableDescriptions;
 
-    			// Force parent layout recalculation ONLY if visibility actually changed
-    			if (wasHidden != !cfg.enableDescriptions && fDescView->Parent()) {
-        			fDescView->Parent()->InvalidateLayout(true);
-        			if (cfg.debugEnable) printf("[DEBUG] Parent layout updated for fDescView.\n");
-    			}
+				if (wasLocallyHidden != targetHiddenState) {
+					if (!targetHiddenState) {
+						fDescView->Show();
+						if (cfg.debugEnable) printf("[DEBUG] Descriptions structural visibility -> SHOW.\n");
+					} else {
+						fDescView->Hide();
+						if (cfg.debugEnable) printf("[DEBUG] Descriptions structural visibility -> HIDE.\n");
+					}
+
+					// Bubble layout invalidation context up to the top structural ancestor
+					BView* parentNode = fDescView->Parent();
+					if (parentNode) {
+						parentNode->InvalidateLayout(true);
+						
+						// Walk layout hierarchy upwards if nestled inside multiple layout containers
+						while (parentNode->Parent() != nullptr) {
+							parentNode = parentNode->Parent();
+							parentNode->InvalidateLayout(false); // Clear parent element matrix caches
+						}
+					}
+				}
 			}
 
+			// --- ROBUST STRUCTURAL UPDATE FOR SONG VIEW ---
 			if (fSongView) {
-    			bool wasHidden = fSongView->IsHidden();
+				// Query local structural visibility state instead of inherited window state
+				bool wasLocallyHidden = fSongView->IsHidden(fSongView);
+				bool targetHiddenState = !cfg.enableTitles;
 
-    			if (cfg.enableTitles) {
-        			fSongView->Show();
-        			if (cfg.debugEnable) printf("[DEBUG] Titles enabled.\n");
-    			} else {
-        			fSongView->Hide();
-        			if (cfg.debugEnable) printf("[DEBUG] Titles disabled.\n");
-    			}
+				if (wasLocallyHidden != targetHiddenState) {
+					if (!targetHiddenState) {
+						fSongView->Show();
+						if (cfg.debugEnable) printf("[DEBUG] Titles structural visibility -> SHOW.\n");
+					} else {
+						fSongView->Hide();
+						if (cfg.debugEnable) printf("[DEBUG] Titles structural visibility -> HIDE.\n");
+					}
 
-    			if (wasHidden != !cfg.enableTitles && fSongView->Parent()) {
-        			fSongView->Parent()->InvalidateLayout(true);
-        			if (cfg.debugEnable) printf("[DEBUG] Parent layout updated for fSongView.\n");
-    			}
+					// Bubble layout invalidation context up to the top structural ancestor
+					BView* parentNode = fSongView->Parent();
+					if (parentNode) {
+						parentNode->InvalidateLayout(true);
+						
+						// Walk layout hierarchy upwards if nestled inside multiple layout containers
+						while (parentNode->Parent() != nullptr) {
+							parentNode = parentNode->Parent();
+							parentNode->InvalidateLayout(false); // Clear parent element matrix caches
+						}
+					}
+				}
 			}
 
+		
 			
 
 			
 			
 			// --- 2. COMPACT MODE GEOMETRY BRANCH ---
 			if (cfg.compactMode) {
+				
+				/* Old Double Pump Logic
 				static bool sInitialSyncDone = false;
 				if (!sInitialSyncDone && (source == this || source == nullptr)) {
 					sInitialSyncDone = true;
@@ -8013,9 +8085,32 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					this->PostMessage(compactMsg);
 					break; 
 				}
-					
+				*/
+				
+				// New soft pump logic
+				static bool sInitialSyncDone = false;
+				if (!sInitialSyncDone && (source == this || source == nullptr)) {
+    			sInitialSyncDone = true;
+    
+    			// Explicitly force the structural tree build by passing a custom flag
+    			BMessage* initMsg = new BMessage(MSG_COMPACTM_CHANGED);
+    			initMsg->AddPointer("source", source);
+    			initMsg->AddBool("force_compact_state", cfg.compactMode);
+    			initMsg->AddBool("initial_boot_pass", true); // New flag to force structural rebuild
+    			this->PostMessage(initMsg);
+    			break; 
+				}
+
+
+
+
+
+				// --- ROBUST STRUCTURAL UPDATE FOR COMPACT MODE BRANCH ---
+				
 				float expandedWidth = 375.0f * scale; 
-				float sliderWidth = (btnSize * 2.4f) + 10.0f;					
+				float sliderWidth = (btnSize * 2.4f) + 10.0f;	
+				
+
 				
 				float labelHeight = 0.0f; 
 				if (cfg.enableTitles) labelHeight += (24.0f * scale);
@@ -8024,38 +8119,115 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				float specWidth = expandedWidth;
 				float specHeight = 10.0f * scale; 
 				
+				bool featuresActive = (cfg.showSpectrumVisuals && cfg.eqEnabled);
+
 				if (cfg.showSpectrumVisuals) {
 					specWidth = 400.0f * scale;
 					specHeight = (labelHeight == 0.0f) ? 200.0f * scale : 125.0f * scale;
 				}
 				
-				if (cfg.enableDescriptions && cfg.enableTitles) { artSize = 175.0f * scale; }
-				if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) { artSize = 175.0f * scale; }
-
-				if (fSpectrum) {
-					fSpectrum->SetExplicitMinSize(BSize(specWidth, specHeight));
-					fSpectrum->SetExplicitMaxSize(BSize(specWidth, specHeight));
-					fSpectrum->SetExplicitPreferredSize(BSize(specWidth, specHeight));
+				// Size checks		
+				if (cfg.showSpectrumVisuals && cfg.enableDescriptions && cfg.enableTitles) { artSize = 175.0f * scale; }
+				
+				if ((cfg.showSpectrumVisuals && cfg.eqEnabled) && (cfg.enableDescriptions || cfg.enableTitles)) { 
+   					 artSize = 140.0f * scale; 
 				}
 				
-				if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {  
-					float textStackHeight = labelHeight > 0.0f ? labelHeight : 0.0f;
-					fMetaAndSpectrumStack->SetExplicitMinSize(BSize(specWidth, textStackHeight));
-					fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(specWidth, textStackHeight));
-					fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(specWidth, textStackHeight)); 
-					if (!cfg.enableTitles && !cfg.enableDescriptions) fMetaAndSpectrumStack->Hide(); else fMetaAndSpectrumStack->Show();
+				if ((!cfg.showSpectrumVisuals || !cfg.eqEnabled) && (cfg.enableDescriptions || cfg.enableTitles)) { 
+   					 artSize = 125.0f * scale; 
+				}
+				if ((!cfg.showSpectrumVisuals || !cfg.eqEnabled) && (!cfg.enableDescriptions || !cfg.enableTitles)) { 
+   					 artSize = 100.0f * scale; 
+				}
+				
+				float finalWidth; 		
+				if ((!cfg.showSpectrumVisuals || !cfg.eqEnabled) && (cfg.enableDescriptions || cfg.enableTitles))  {
+						finalWidth = 500.0f * scale;
+						} else {
+							finalWidth = B_SIZE_UNSET; 
 				}
 
-				if (fCompactSpectrumWrapper) {
-					float wrapperHeight = specHeight + (4.0f * scale); 
-					fCompactSpectrumWrapper->SetExplicitMinSize(BSize(specWidth, wrapperHeight));
-					fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(specWidth, wrapperHeight));
-					fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(specWidth, wrapperHeight));
-					if (fCompactSpectrumWrapper->IsHidden()) fCompactSpectrumWrapper->Show();
+				// 1. UPDATE SPECTRUM CORE VIEW
+				if (fSpectrum) {
+					bool wasLocallyHidden = fSpectrum->IsHidden(fSpectrum);
+					bool targetHiddenState = !featuresActive;
+
+					if (featuresActive) {
+						if (cfg.debugEnable) {
+							printf("[DEBUG] Compact Mode -> Setting Explicit Spectrum Size: %.2f x %.2f\n", 
+								specWidth, specHeight);
+						}
+						fSpectrum->SetExplicitMinSize(BSize(specWidth, specHeight));
+						fSpectrum->SetExplicitMaxSize(BSize(specWidth, specHeight));
+						fSpectrum->SetExplicitPreferredSize(BSize(specWidth, specHeight));
+					} else {
+						fSpectrum->SetExplicitMinSize(BSize(0, 0));
+						fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 0));
+						fSpectrum->SetExplicitPreferredSize(BSize(0, 0));
+					}
+
+					// Evaluate visibility change and bubble invalidation up the tree
+					if (wasLocallyHidden != targetHiddenState) {
+						if (!targetHiddenState) {
+							fSpectrum->Show();
+							if (cfg.debugEnable) printf("[DEBUG] Compact Spectrum structural visibility -> SHOW.\n");
+						} else {
+							fSpectrum->Hide();
+							if (cfg.debugEnable) printf("[DEBUG] Compact Spectrum structural visibility -> HIDE.\n");
+						}
+
+						BView* parentNode = fSpectrum->Parent();
+						if (parentNode) {
+							parentNode->InvalidateLayout(true);
+							while (parentNode->Parent() != nullptr) {
+								parentNode = parentNode->Parent();
+								parentNode->InvalidateLayout(false);
+							}
+						}
+					}
 				}
+				
+				// 2. UPDATE METADATA & SPECTRUM STACK CONTAINER
+				if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {  
+					if (featuresActive) {
+						// Floating layout protection logic to prevent layout expansion
+						fMetaAndSpectrumStack->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET)); 
+						
+						if (fMetaAndSpectrumStack->IsHidden()) fMetaAndSpectrumStack->Show();
+					} else {
+						// Collapse completely to 0 width/height when visualizer is inactive
+						fMetaAndSpectrumStack->SetExplicitMinSize(BSize(0, 0));
+						fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(0, 0));
+						fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 0)); 
+						fMetaAndSpectrumStack->Hide();
+					}
+				}
+
+				// 3. MAINTAIN COMPACT SPECTRUM WRAPPER WITH FLOATING LOGIC
+				if (fCompactSpectrumWrapper) {
+					if (featuresActive) {
+						// Bulletproof floating logic keeps window bounds flexible
+						fCompactSpectrumWrapper->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+						
+						if (fCompactSpectrumWrapper->IsHidden()) fCompactSpectrumWrapper->Show();
+					} else {
+
+						fCompactSpectrumWrapper->SetExplicitMinSize(BSize(finalWidth, 0));
+						fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 0));
+						fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(finalWidth, 0));
+					}
+				}
+
 
 				// ONLY modify structural tree during a true compact mode swap pass
-				if (isRealModeTransition) {
+				bool isInitialPass = false;
+				message->FindBool("initial_boot_pass", &isInitialPass);
+
+				if (isRealModeTransition || isInitialPass) {
 					if (cfg.debugEnable) printf("[DEBUG] Structural Change -> Rebuilding tree for Compact Mode.\n");
 					fNormalControlsWrapper->GroupLayout()->RemoveView(fControlStack);
 					fCompactControlsWrapper->GroupLayout()->RemoveView(fControlStack);
@@ -8130,34 +8302,96 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					fVolumeSlider->SetExplicitPreferredSize(unset);
 				}
 				
-				// Apply layout constraints and dimensions to spectrum component layers
-				if (fSpectrum) {
-					if (cfg.showSpectrumVisuals && cfg.eqEnabled) {
-						float normalSpecWidth = 375.0f * scale;
-						float normalSpecHeight = 125.0f * scale; 
-						
-						if (cfg.debugEnable) printf("[DEBUG] Normal Mode -> Setting Explicit Spectrum Size: %.2f x %.2f\n", normalSpecWidth, normalSpecHeight);
-						fSpectrum->SetExplicitMinSize(BSize(normalSpecWidth, normalSpecHeight));
-						fSpectrum->SetExplicitMaxSize(BSize(normalSpecWidth, normalSpecHeight));
-						fSpectrum->SetExplicitPreferredSize(BSize(normalSpecWidth, normalSpecHeight));
-					} else {
-						fSpectrum->SetExplicitMinSize(BSize(0, 0));
-						fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 0));
-						fSpectrum->SetExplicitPreferredSize(BSize(0, 0));
+			// --- ROBUST STRUCTURAL UPDATE FOR SpectrumVisuals VIEW ---
+			if (fSpectrum) {
+				// Query local structural visibility state instead of inherited window state
+				bool wasLocallyHidden = fSpectrum->IsHidden(fSpectrum);
+				
+				// Determine target hidden state based on both features being active
+				bool featuresActive = (cfg.showSpectrumVisuals && cfg.eqEnabled);
+				bool targetHiddenState = !featuresActive;
+
+				// 1. APPLY EXPLICIT DIMENSIONS AND WRAPPER CONFIGURATIONS
+				if (featuresActive) {
+					float normalSpecWidth = 375.0f * scale;
+					float normalSpecHeight = 125.0f * scale; 
+					
+					if (cfg.debugEnable) {
+						printf("[DEBUG] Normal Mode -> Setting Explicit Spectrum Size: %.2f x %.2f\n", 
+							normalSpecWidth, normalSpecHeight);
 					}
+					fSpectrum->SetExplicitMinSize(BSize(normalSpecWidth, normalSpecHeight));
+					fSpectrum->SetExplicitMaxSize(BSize(normalSpecWidth, normalSpecHeight));
+					fSpectrum->SetExplicitPreferredSize(BSize(normalSpecWidth, normalSpecHeight));
+				} else {
+					if (cfg.debugEnable) {
+						printf("[DEBUG] Spectrum Disabled -> Collapsing explicit size dimensions to zero.\n");
+					}
+					fSpectrum->SetExplicitMinSize(BSize(0, 0));
+					fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 0));
+					fSpectrum->SetExplicitPreferredSize(BSize(0, 0));
 				}
 
+				// Apply dynamic constraints to the Metadata and Spectrum container stack
 				if (fMetaAndSpectrumStack && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {
-					if (cfg.showSpectrumVisuals && cfg.eqEnabled) {
-						fMetaAndSpectrumStack->SetExplicitMinSize(unset);
-						fMetaAndSpectrumStack->SetExplicitMaxSize(unlimited);
-						fMetaAndSpectrumStack->SetExplicitPreferredSize(unset);
+					BSize unsetSize(B_SIZE_UNSET, B_SIZE_UNSET);
+					BSize unlimitedSize(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED);
+
+					if (featuresActive) {
+						fMetaAndSpectrumStack->SetExplicitMinSize(unsetSize);
+						fMetaAndSpectrumStack->SetExplicitMaxSize(unlimitedSize);
+						fMetaAndSpectrumStack->SetExplicitPreferredSize(unsetSize);
 					} else {
 						fMetaAndSpectrumStack->SetExplicitMinSize(BSize(0, 0));
 						fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
 						fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(0, 0));
 					}
 				}
+
+				// Maintain safety wrapper sizing limits if present in the tree
+				if (fCompactSpectrumWrapper) {
+					if (featuresActive) {
+								
+						// FIX: Leave width UNSET so it adapts to child size changes without expanding the window
+						fCompactSpectrumWrapper->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+						
+						if (fCompactSpectrumWrapper->IsHidden()) fCompactSpectrumWrapper->Show();
+					} else {
+						// Completely collapse all dimensions to zero when inactive
+						fCompactSpectrumWrapper->SetExplicitMinSize(BSize(0, 0));
+						fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 0));
+						fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(0, 0));
+					}
+				}
+
+
+				// 2. EVALUATE VISIBILITY AND BUBBLE LAYOUT INVALIDATION
+				if (wasLocallyHidden != targetHiddenState) {
+					if (!targetHiddenState) {
+						fSpectrum->Show();
+						if (cfg.debugEnable) printf("[DEBUG] SpectrumVisuals structural visibility -> SHOW.\n");
+					} else {
+						fSpectrum->Hide();
+						if (cfg.debugEnable) printf("[DEBUG] SpectrumVisuals structural visibility -> HIDE.\n");
+					}
+
+					// Bubble layout invalidation context up to the top structural ancestor
+					BView* parentNode = fSpectrum->Parent();
+					if (parentNode) {
+						parentNode->InvalidateLayout(true);
+						
+						// Walk layout hierarchy upwards if nestled inside multiple layout containers
+						while (parentNode->Parent() != nullptr) {
+							parentNode = parentNode->Parent();
+							parentNode->InvalidateLayout(false); // Clear parent element matrix caches
+						}
+					}
+				}
+			}
+
+				
 
 				// ONLY manipulate layout blocks if actively changing from Compact to Normal mode
 				if (isRealModeTransition) {
@@ -8553,9 +8787,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
  	
             } else {      
             	if (fChkSysTray) fChkSysTray->Hide();
-            	if (fEnableladspa) fEnableladspa->Hide();
-				if (fChkTitle) fChkTitle->Hide();
-    			if (fChkSong) fChkSong->Hide();	        
+            	if (fEnableladspa) fEnableladspa->Hide();        
     			if (fVisualsCheckbox) fVisualsCheckbox->Hide();
             }
             InvalidateLayout();
