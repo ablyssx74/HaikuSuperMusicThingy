@@ -7,7 +7,7 @@ resource app_version {
     middle = 0,
     variety = 0,
     internal = 0,
-    short_info = "SomaFM music player",
+    short_info = "SomaFM Music Player",
     long_info = "HaikuSuperMusicThingy is a free streaming media client for SomaFM. Fast, light, and fun!"
 };
 

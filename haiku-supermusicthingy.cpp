@@ -161,7 +161,7 @@ std::string currentStation = "";
 std::string currentStationID = ""; 
 std::string currentListeners = "";
 std::string currentAlbumArtUrl = "";
-const uint32 MSG_DISABLE_REPLICA = 'drep';
+
 
 
 const float kPresetRock[] = {
@@ -5491,7 +5491,17 @@ public:
 void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
     if (!view) return;
     
-    // Explicitly apply theme properties to the current view component
+    // CRITICAL FIX: Scan up the parent tree. If this view belongs 
+    // to an active BSlider parent container, stop executing immediately.
+    BView* parentCheck = view->Parent();
+    while (parentCheck != nullptr) {
+        if (dynamic_cast<BSlider*>(parentCheck) != nullptr) {
+            return; // Exit out to prevent breaking internal layout typography
+        }
+        parentCheck = parentCheck->Parent();
+    }
+
+    // Explicitly apply theme properties to the current valid view component
     view->SetViewColor(bg);
     view->SetLowColor(bg);
     view->SetHighColor(txt);
@@ -5499,6 +5509,9 @@ void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
     // --- Special Type Invalidation overrides ---
     if (BSlider* slider = dynamic_cast<BSlider*>(view)) {
         slider->UseFillColor(true, &txt);
+        slider->Invalidate();
+        // Return here so we don't dive into internal children manually
+        return; 
     }
 
     if (BTextView* textView = dynamic_cast<BTextView*>(view)) {
@@ -5506,7 +5519,6 @@ void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
     }
 
     if (BStringView* stringView = dynamic_cast<BStringView*>(view)) {
-        // Explicitly forces text label strings to draw cleanly in the correct theme color
         stringView->SetHighColor(txt);
     }
 
@@ -5518,11 +5530,13 @@ void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
 
     view->Invalidate();
     
-    // Safely iterate through every single child object recursively without skipping branches
+    // Safely iterate through child objects recursively
     for (int32 i = 0; i < view->CountChildren(); i++) {
         RecursiveColorApply(view->ChildAt(i), bg, txt);
     }
 }
+
+
 
 
 
@@ -5637,32 +5651,41 @@ void SuperMusicWindow::ApplyTheme() {
 
             // --- Limiter Sliders Sync ---
             BSlider* limiterSliders[] = { fLimitInput, fLimitLimit, fLimitRelease };
+            int32 currentLimitValues[] = { (int32)cfg.limitIn, (int32)cfg.limitLmt, (int32)cfg.limitRel };
+
             for (int s = 0; s < 3; s++) {
                 if (limiterSliders[s]) {
                     limiterSliders[s]->SetViewColor(bgVal);
                     limiterSliders[s]->SetLowColor(bgVal);
                     limiterSliders[s]->SetHighColor(txtVal); 
                     
-                    for (int32 c = 0; c < limiterSliders[s]->CountChildren(); c++) {
-                        BView* child = limiterSliders[s]->ChildAt(c);
-                        if (child) {
-                            child->SetViewColor(bgVal);
-                            child->SetLowColor(bgVal);
-                            child->SetHighColor(txtVal);
-                            child->Invalidate();
-                        }
-                    }
+                    // Style the slider elements using native API functions safely
+                    limiterSliders[s]->UseFillColor(true, &txtVal);
+                    
+                    // Sync actual value position
+                    limiterSliders[s]->SetValue(currentLimitValues[s]); 
+                    
+                    // CLEAN FIX: Removed the internal child loop that skewed geometry
                     limiterSliders[s]->Invalidate();
                 }
             }
 
-            if (fTabView) fTabView->Invalidate();
+
+            // FIX: Force backend to match the refreshed states
+            UpdateMPVFilters(); 
+
+            // --- CRITICAL RUNTIME LAYOUT RE-EVALUATION FIX ---
+            if (fTabView) {
+                // Force Haiku's layout builder to completely recalculate container tracking widths
+                fTabView->InvalidateLayout(true); 
+                fTabView->Layout(true);
+                fTabView->Invalidate();
+            }
         } 
 
         Unlock(); 
     }
 }
-
 
 
 
@@ -6891,7 +6914,7 @@ SuperMusicWindow::SuperMusicWindow()
 
 	SetPulseRate(50000); 
     fAlbumArt = nullptr;
-    
+    fIsStartingUp = true;
     fIsQuitting = false;
 	fDownloadThreadID = -1;
     
@@ -7583,8 +7606,9 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     UpdateFavButtons();
     DownloadStationIcons();    
     RefreshFavorites();
-    ApplyTheme();
-    
+
+
+
     std::string configPath = std::string(getenv("HOME")) + "/config/settings/SuperMusicThingy/milk_presets/";
     PopulatePresetList(fPresetList, configPath.c_str());
 
@@ -7883,14 +7907,17 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                         fTabView->AddTab(groups[i], *dynamicTabs[i]);
                     }
 
-                    // 3. Keep the user pinned to the "Config" tab index so the menu doesn't jump
+                    // 3. Smart Tab Selection: If booting up, target the main tab. Otherwise, pin to Config.
+                    const char* targetTabLabel = fIsStartingUp ? "Radio" : "Config"; 
+
                     for (int32 j = 0; j < fTabView->CountTabs(); j++) {
                         BTab* currentTab = fTabView->TabAt(j);
-                        if (currentTab && currentTab->Label() && strcmp(currentTab->Label(), "Config") == 0) {
+                        if (currentTab && currentTab->Label() && strcmp(currentTab->Label(), targetTabLabel) == 0) {
                             fTabView->Select(j);
                             break;
                         }
                     }
+
 
                     // 4. Force the inner controls to blend seamlessly with the dark panel background
                     rgb_color bgDarkColor = rgb_color{40, 40, 40, 255}; 
@@ -7948,14 +7975,26 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                         }
                     }
 
+                    // --- 64-BIT EXCLUSIVE GROUP LAYOUT RESET FIX ---
+                    // Force Haiku's Layout API to calculate bounds for these containers
+                    if (fConfigGroup) {
+                        fConfigGroup->InvalidateLayout(true);
+                        fConfigGroup->Layout(true);
+                        fConfigGroup->Invalidate();
+                    }
+                    if (fStationGroup) fStationGroup->InvalidateLayout(true);
+                    if (fFavGroup)     fFavGroup->InvalidateLayout(true);
+                    if (fAboutGroup)   fAboutGroup->InvalidateLayout(true);
                 }
 
                 this->InvalidateLayout(true);
                 this->Layout(true);
+                fIsStartingUp = false; 
             }
             break;
             #endif
-        } 
+        }
+
 
 
 		case MSG_SHOW_TITLE: {
@@ -8522,9 +8561,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {  
 					if (featuresActive) {
 						// Floating layout protection logic to prevent layout expansion
-						fMetaAndSpectrumStack->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-						fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-						fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET)); 
+						//fMetaAndSpectrumStack->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						//fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						//fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET)); 
 						
 						if (fMetaAndSpectrumStack->IsHidden()) fMetaAndSpectrumStack->Show();
 					} else {
@@ -8540,9 +8579,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				if (fCompactSpectrumWrapper) {
 					if (featuresActive) {
 						// Bulletproof floating logic keeps window bounds flexible
-						fCompactSpectrumWrapper->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-						fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-						fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+						//fCompactSpectrumWrapper->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						//fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						//fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
 						
 						if (fCompactSpectrumWrapper->IsHidden()) fCompactSpectrumWrapper->Show();
 					} else {
@@ -8671,9 +8710,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					BSize unlimitedSize(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED);
 
 					if (featuresActive) {
-						fMetaAndSpectrumStack->SetExplicitMinSize(unsetSize);
-						fMetaAndSpectrumStack->SetExplicitMaxSize(unlimitedSize);
-						fMetaAndSpectrumStack->SetExplicitPreferredSize(unsetSize);
+						//fMetaAndSpectrumStack->SetExplicitMinSize(unsetSize);
+						//fMetaAndSpectrumStack->SetExplicitMaxSize(unlimitedSize);
+						//fMetaAndSpectrumStack->SetExplicitPreferredSize(unsetSize);
 					} else {
 						fMetaAndSpectrumStack->SetExplicitMinSize(BSize(0, 0));
 						fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
@@ -8686,9 +8725,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					if (featuresActive) {
 								
 						// Leave width UNSET so it adapts to child size changes without expanding the window
-						fCompactSpectrumWrapper->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-						fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-						fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+						//fCompactSpectrumWrapper->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						//fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						//fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
 						
 						if (fCompactSpectrumWrapper->IsHidden()) fCompactSpectrumWrapper->Show();
 					} else {
@@ -8924,7 +8963,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			
 			
 
-			ApplyTheme();
+			//ApplyTheme();
 
 			// --- 5. DEFERRED SELECTION MESSAGE PROCESSOR ---
 			BString deferredSelect;
@@ -9077,6 +9116,14 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             break;
         }
 
+        case MSG_CFG_AUTO_SHUFFLE: {
+        BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_shuffle"));
+        	if (chk) {
+            	cfg.autoShuffle = (chk->Value() == B_CONTROL_ON);
+            	save_config(); 
+        	}
+        	break;
+    	}        
 
     	
     	case MSG_CFG_AUTO_PresetTimer: {
@@ -9104,6 +9151,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             }
             break;
         }
+
+
 
 
     	
@@ -10297,6 +10346,19 @@ void SuperMusicApp::MessageReceived(BMessage* message) {
             BApplication::MessageReceived(message);
             break;
     }
+}
+
+void SuperMusicWindow::Show() {
+    // 1. Let the window show and boot up naturally
+    BWindow::Show();
+    
+    // 2. Queue up the theme processing to run on the next frame loop pass
+   
+        if (Lock()) {
+    PostMessage(MSG_CFG_THEME);
+    Unlock();
+	}
+	
 }
 
 

@@ -109,6 +109,7 @@ enum {
     MSG_SHOW_TITLE = 'msct',
     MSG_SHOW_DESC = 'mscd',
     MSG_CFG_DEBUG = 'dbug',
+    MSG_DISABLE_REPLICA = 'drep',
     MODE_BARS = 0,
     MODE_LINE_WAVE,
     MODE_LONG_WAVE, 
@@ -129,16 +130,17 @@ public:
     SuperMusicWindow();
     
     virtual 	 ~SuperMusicWindow();     
-    virtual void MessageReceived(BMessage* message);
+    virtual 	 void MessageReceived(BMessage* message);
     void 		 UpdateStatus(const char* station, const char* song);
     void 		 RefreshFavorites();
     void 		 UpdateFavButtons(); 
     void 		 SendNotification(const char* songTitle); 
     void 		 ApplyTheme(); 
+    virtual 	 void Show();
     void 		 StartVisuals();
     void 		 StopVisuals();
     void 		 ReallyStopVisuals();
-    virtual bool QuitRequested();
+    virtual 	 bool QuitRequested();
     void 		 PlayStation(const Channel& chan);
     void 		 PopulateStationList(); 
     void 		 DownloadStationIcons(); 
@@ -146,17 +148,18 @@ public:
     BBitmap*     fAlbumArt;
     BView*       fArtView;
     std::map<std::string, BBitmap*> fArtCache; 
-    void UpdateMPVFilters(); 	
-    void ApplyPreset(const float* values); 
-	void UpdateTrayState(bool enabled, bool hideWindow = true);
-	void ResizeWindowToFit();
-	void      DoDownloadLoop(); 
-	bool IsFullscreenActive() const { return fFullscreenActive; }
-	thread_id VisualsThreadID() const { return fVisualsThreadID; }
+    void 		 UpdateMPVFilters(); 	
+    void 		 ApplyPreset(const float* values); 
+	void 		 UpdateTrayState(bool enabled, bool hideWindow = true);
+	void 	  	 ResizeWindowToFit();
+	void      	 DoDownloadLoop(); 
+	bool 		 IsFullscreenActive() const { return fFullscreenActive; }
+	thread_id 	 VisualsThreadID() const { return fVisualsThreadID; }
 	
 	  
 private:
-
+	bool fIsStartingUp;
+	
 	thread_id fVisualsThreadID;
 
 	bool fFullscreenActive = false; 
