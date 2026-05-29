@@ -6067,10 +6067,26 @@ void SuperMusicWindow::ApplyTheme() {
             if (fAboutGroup)   fAboutGroup->InvalidateLayout(true);
         }
 
+        // ====================================================================
+        // --- POST-LAYOUT DEEP THEME RE-PROPAGATION FOR 32-BIT ---
+        // ====================================================================
+        // Explicitly re-run your deep color engine *after* all tabs are bound
+        rgb_color activeBg = (cfg.uTheme == "Dark") ? rgb_color{40, 40, 40, 255} : ui_color(B_PANEL_BACKGROUND_COLOR);
+        rgb_color activeTxt = (cfg.uTheme == "Dark") ? rgb_color{255, 255, 255, 255} : ui_color(B_PANEL_TEXT_COLOR);
+
+        if (fTabView) {
+            for (int32 i = 0; i < fTabView->CountTabs(); i++) {
+                if (BTab* tab = fTabView->TabAt(i)) {
+                    if (BView* tabView = tab->View()) {
+                        RecursiveColorApply(tabView, activeBg, activeTxt);
+                    }
+                }
+            }
+        }
+
         this->InvalidateLayout(true);
         this->Layout(true);
         
-       
         // --- FINALLY SAFE TO UNLOCK WINDOW THREAD ---
         Unlock();
     }
