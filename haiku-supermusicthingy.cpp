@@ -1031,7 +1031,7 @@ public:
             DrawBitmap(fCachedImage, fCachedImage->Bounds(), Bounds());
 
             // ====================================================================
-            // --- FIX: LOCAL LIGHT MODE VISUALIZER SPACE SCRUB ---
+            // --- LOCAL LIGHT MODE VISUALIZER SPACE SCRUB ---
             // ====================================================================
             // Erase the hardcoded black horizontal stripe artifact beneath the 
             // cover artwork by painting the lower blank area with system grey.
@@ -3017,7 +3017,7 @@ virtual void Pulse() override {
                     // --- DOG GRAVITY PHYSICS ACCELERATION PASS ---
                     fDogDrawY += (dogVelocityY * dtScale);
                     if (fDogDrawY > 0.0f) {
-                        // TWO-LINE FIX: Square the speedMultiplier on gravity to scale perfectly with the upward push
+                        // TWO-LINE Square the speedMultiplier on gravity to scale perfectly with the upward push
                         dogVelocityY -= (0.35f * dtScale) * (speedMultiplier * speedMultiplier); 
                     } else {
                         fDogDrawY = 0.0f;
@@ -3147,7 +3147,7 @@ virtual void Pulse() override {
                 static int consecutiveFlipCount = 0; // Tracks flips within a single jump
 
                 // --- RIDER MOVEMENT & GRAVITY ---
-                // TWO-LINE FIX: Square the speedMultiplier on gravity to scale perfectly with the upward push
+                // TWO-LINE Square the speedMultiplier on gravity to scale perfectly with the upward push
                 fMotoY += fMotoVelocityY * dtScale * speedMultiplier;
                 fMotoVelocityY -= 0.45f * dtScale * (speedMultiplier * speedMultiplier); 
 
@@ -3967,7 +3967,7 @@ virtual void Draw(BRect updateRect) override {
             SetDrawingMode(B_OP_ALPHA);
             SetHighColor(255, 255, 255, 230); // Clean white dog body
             
-            // FIX: Set scale factor (2x larger in fullscreen mode)
+            // Set scale factor (2x larger in fullscreen mode)
             float proceduralDogScale = isWindowInFullscreen ? 2.0f : 1.0f;
             
             // Draw main body torso (Scaled uniformly)
@@ -3991,7 +3991,7 @@ virtual void Draw(BRect updateRect) override {
             FillRect(BRect(fDogDrawX + (4.0f * proceduralDogScale), fDogDrawY + (3.0f * proceduralDogScale), fDogDrawX + (6.0f * proceduralDogScale), fDogDrawY + (8.0f * proceduralDogScale))); // Front Leg
             
             // Little wagging tail
-            // FIX: Boost the pen size thickness in fullscreen to match the body mass
+            // Boost the pen size thickness in fullscreen to match the body mass
             SetPenSize(isWindowInFullscreen ? 3.0f : 1.5f);
             
             bigtime_t curTime = system_time();
@@ -4085,7 +4085,7 @@ virtual void Draw(BRect updateRect) override {
             SetHighColor(leftPaddleCol);
         }
         
-        // FIX: Dynamically scale thickness (12.0f in fullscreen, 5.0f in window mode)
+        // Dynamically scale thickness (12.0f in fullscreen, 5.0f in window mode)
         float paddleWidth = isWindowInFullscreen ? 12.0f : 5.0f;
         
         // Render left paddle utilizing dynamic width variables
@@ -4102,7 +4102,7 @@ virtual void Draw(BRect updateRect) override {
             SetHighColor(rightPaddleCol);
         }
         
-        // FIX: Mirrors the right-side starting coordinate to perfectly align thicker paddles
+        // Mirrors the right-side starting coordinate to perfectly align thicker paddles
         float rightPaddleStartX = startX + artworkWidth - paddleWidth;
         FillRect(BRect(rightPaddleStartX, fRightPaddlePos - (paddleH / 2.0f), startX + artworkWidth, fRightPaddlePos + (paddleH / 2.0f)));
 
@@ -4148,7 +4148,7 @@ virtual void Draw(BRect updateRect) override {
 
         // --- PASS A: RENDER PRIMARY ACTIVE BALL 1 ---
         if (fMotoCrashTicks <= 0.0f) {
-            // FIX: Multiply the baseline diameter by 2x if the window is currently in fullscreen
+            // Multiply the baseline diameter by 2x if the window is currently in fullscreen
             float dynamicBallSize1 = isWindowInFullscreen ? (fBallSize * 2.0f) : fBallSize;
 
             rgb_color glowColor = fArtworkPalette[10]; 
@@ -4163,7 +4163,7 @@ virtual void Draw(BRect updateRect) override {
 
         // --- PASS B: RENDER CHAOTIC HAZARD BALL 2 ---
         if (fBallSize2 > 0.0f) {
-            // FIX: Multiply the baseline diameter by 2x if the window is currently in fullscreen
+            // Multiply the baseline diameter by 2x if the window is currently in fullscreen
             float dynamicBallSize2 = isWindowInFullscreen ? (fBallSize2 * 2.0f) : fBallSize2;
 
             rgb_color glowColor2 = fArtworkPalette[45]; 
@@ -4281,7 +4281,7 @@ virtual void Draw(BRect updateRect) override {
 		//@replicadraw @ACID_MELT
 		else if (fVisualizerMode == MODE_REPLICA || fVisualizerMode == MODE_ACID_MELT) {
             // ================================================================
-            // --- FIX: THEME-AWARE BASE REPLICANT CLEARING ENGINE ---
+            // --- THEME-AWARE BASE REPLICANT CLEARING ENGINE ---
             // ================================================================
             // If the dark theme is disabled, use native Haiku panel gray instead 
             // of forcing a hardcoded dark rectangle backbuffer.
@@ -4694,7 +4694,7 @@ else if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
 		BFont scoreFont;   
 		GetFont(&scoreFont);
 		
-		// HIGH-RES FIX: Scale font size up (22.0f in fullscreen, 11.0f in window mode)
+		// HIGH-RES Scale font size up (22.0f in fullscreen, 11.0f in window mode)
 		float dynamicScoreSize = isWindowInFullscreen ? 22.0f : 11.0f;
 		scoreFont.SetSize(dynamicScoreSize); 
 		SetFont(&scoreFont);            
@@ -4703,7 +4703,7 @@ else if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
 		BString scoreStr;
 		scoreStr.SetToFormat("SCORE: %" B_PRId32, fMotoScore);
 		
-		// HIGH-RES FIX: Move layout margins out from screen boundaries depending on fullscreen states
+		// HIGH-RES Move layout margins out from screen boundaries depending on fullscreen states
 		float scoreDrawX = startX + artworkWidth - (isWindowInFullscreen ? 140.0f : 68.0f);
 		float scoreDrawY = isWindowInFullscreen ? 30.0f : 15.0f;
 		DrawString(scoreStr.String(), BPoint(scoreDrawX, scoreDrawY));  
@@ -4713,7 +4713,7 @@ else if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
     		BFont stuntFont;
     		GetFont(&stuntFont);
             
-    		// HIGH-RES FIX: Scale the bold stunt popups cleanly up to 26.0f in fullscreen
+    		// HIGH-RES Scale the bold stunt popups cleanly up to 26.0f in fullscreen
     		stuntFont.SetSize(isWindowInFullscreen ? 26.0f : 13.0f); 
     		stuntFont.SetFace(B_BOLD_FACE);
     		SetFont(&stuntFont);
@@ -4733,7 +4733,7 @@ else if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
     		float stringWidth = stuntFont.StringWidth(fStuntTextStr.String());
     		float screenCenterX = startX + (artworkWidth / 2.0f);
     
-    		// HIGH-RES FIX: Scale vertical trajectory coordinate position mapping to prevent overlap
+    		// HIGH-RES Scale vertical trajectory coordinate position mapping to prevent overlap
     		float dynamicStuntY = isWindowInFullscreen ? (fStuntTextY * 2.2f) : fStuntTextY;
     		DrawString(fStuntTextStr.String(), BPoint(screenCenterX - (stringWidth / 2.0f), dynamicStuntY));
     
@@ -4746,7 +4746,7 @@ else if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
     		SetDrawingMode(B_OP_ALPHA);
     		SetHighColor(255, 255, 255, 210); 
     
-    		// HIGH-RES FIX: Introduce a 2.5x spatial structural scale factor in fullscreen
+    		// HIGH-RES Introduce a 2.5x spatial structural scale factor in fullscreen
     		float dogScale = isWindowInFullscreen ? 2.5f : 1.0f;
     		float dogFloorY = baselineY - (5.0f * dogScale) - (fDogDrawY * dogScale); 
     		float dynamicDogX = startX + (fDogDrawX * (isWindowInFullscreen ? 1.5f : 1.0f));
@@ -5895,7 +5895,7 @@ void SuperMusicWindow::ApplyTheme() {
         // Rebuild the tabs to force the top navigation buttons to snap into place
         if (!cfg.compactMode && fTabView) {
         	
-        	// --- FIX: 1A. SMART CONTEXT RETENTION ENGINE ---
+        	// --- 1A. SMART CONTEXT RETENTION ENGINE ---
             std::string savedTabName = "Radio"; // Safe fallback default
             
             // If an explicit programmatic override is active, use that!
@@ -5933,7 +5933,7 @@ void SuperMusicWindow::ApplyTheme() {
                 fTabView->AddTab(groups[i], *dynamicTabs[i]);
             }
 
-            // --- FIX: 3. PROGRAMMATIC TARGET RESOLUTION ---
+            // --- 3. PROGRAMMATIC TARGET RESOLUTION ---
             const char* targetTabLabel = fIsStartingUp ? "Radio" : savedTabName.c_str(); 
             
             for (int32 j = 0; j < fTabView->CountTabs(); j++) {
@@ -6888,7 +6888,7 @@ public:
         if (Window()) Window()->SetPulseRate(35000);
     }
 
-    // --- FIX: POPULATE SNOW ONCE LAYOUT ENGINE ASSIGNS TRUE DIMENSIONS ---
+    // --- POPULATE SNOW ONCE LAYOUT ENGINE ASSIGNS TRUE DIMENSIONS ---
     void FrameResized(float newWidth, float newHeight) override {
         BView::FrameResized(newWidth, newHeight);
         static bool sSnowInitialized = false;
@@ -8603,7 +8603,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         refreshLayout.AddBool("force_compact_state", cfg.compactMode);
         refreshLayout.AddBool("initial_boot_pass", true); 
         
-        // FIX: Call MessageReceived directly so layout modifications 
+        // Call MessageReceived directly so layout modifications 
         // finish executing before we command the layout engine to refresh.
         this->MessageReceived(&refreshLayout); 
         
@@ -9307,7 +9307,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					}
 			} // 👈 CLOSE THE IS_REAL_MODE_TRANSITION WRAPPER HERE!
 
-			// --- FIX: MOVE THIS OUTSIDE THE WRAPPER SO IT RUNS EVERY TIME ---
+			// --- MOVE THIS OUTSIDE THE WRAPPER SO IT RUNS EVERY TIME ---
 			// This forces regular mode footprints back onto objects right after exiting full screen.
 			if (fSpectrum) {
 				fSpectrum->InvalidateLayout(true);
@@ -10665,7 +10665,7 @@ virtual void MouseDown(BPoint point) {
     }
 
     // ====================================================================
-    // --- FIX: ENFORCE EXPLICIT ROUTING ON SYSTEM LEFT CLICK ---
+    // --- ENFORCE EXPLICIT ROUTING ON SYSTEM LEFT CLICK ---
     // ====================================================================
     if (buttons & B_PRIMARY_MOUSE_BUTTON) {
         if (appMessenger.IsValid()) {
@@ -10786,7 +10786,7 @@ void SuperMusicApp::MessageReceived(BMessage* message) {
         case MSG_ACTIVATE_APP:
         case MSG_SHUFFLE:
         case MSG_PAUSE:
-        case MSG_STOP: { // <-- Added MSG_STOP here to forward it to the window
+        case MSG_STOP: { 
             BWindow* win = WindowAt(0);
             if (win) {
                 win->PostMessage(message);
