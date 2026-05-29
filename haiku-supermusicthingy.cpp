@@ -10678,10 +10678,15 @@ virtual void MouseDown(BPoint point) {
         // 4. Equalizer Option
         BMessage* eqMessage = new BMessage(MSG_ACTIVATE_APP);
         eqMessage->AddString("target_tab", "eq"); 
-        popup->AddItem(new BMenuItem("Equalizer", eqMessage));
+        popup->AddItem(new BMenuItem("Config", eqMessage));
         
         popup->AddSeparatorItem();
+        
+        // 5. Playback Controls
         popup->AddItem(new BMenuItem("Shuffle", new BMessage(MSG_SHUFFLE)));
+        popup->AddItem(new BMenuItem("Pause", new BMessage(MSG_PAUSE)));
+        popup->AddItem(new BMenuItem("Stop", new BMessage(MSG_STOP))); 
+        
         popup->AddSeparatorItem();
         popup->AddItem(new BMenuItem("Quit", new BMessage(B_QUIT_REQUESTED)));          
         
@@ -10695,6 +10700,7 @@ virtual void MouseDown(BPoint point) {
         popup->Go(screenPoint, true, true, true);
     }
 }
+
 
 
 
@@ -10758,13 +10764,14 @@ extern "C" _EXPORT BArchivable* instantiate_tray_icon(BMessage* data) {
 void SuperMusicApp::MessageReceived(BMessage* message) { 
     switch (message->what) {
         case MSG_ACTIVATE_APP:
-        case MSG_SHUFFLE: { 
+        case MSG_SHUFFLE:
+        case MSG_PAUSE:
+        case MSG_STOP: { // <-- Added MSG_STOP here to forward it to the window
             BWindow* win = WindowAt(0);
             if (win) {
                 win->PostMessage(message);
             }
             break;
-           
         }
         default:
             BApplication::MessageReceived(message);

@@ -1,0 +1,30 @@
+## Haiku Generic Makefile for Shared Libraries ##
+
+NAME = SuperMusicTrayIconLibrary
+TYPE = SHARED
+SRCS = MyIcon.cpp 
+# Add any other source files needed by your icon view here, separated by spaces
+
+LIBS = be textencoding localestub
+LIBPATHS = 
+SYSTEM_INCLUDE_PATHS = 
+LOCAL_INCLUDE_PATHS = 
+
+# Enforce GCC 2 compilation on 32-bit Hybrid systems for Deskbar compatibility
+ifeq ($(shell uname -m), x86)
+	CC = gcc-x86
+	LD = gcc-x86
+endif
+
+include /system/develop/etc/makefile-engine
+
+
+# Clean out any old object files
+#make -f Makefile.library clean
+
+# Compile the library
+#make -f Makefile.library
+
+#cp objects/SuperMusicTrayIconLibrary ~/config/non-packaged/add-ons/
+
+#addattr SYS:APP_SIG "application/x-vnd.SuperMusicTrayIconLibrary" ~/config/non-packaged/add-ons/SuperMusicTrayIconLibrary
