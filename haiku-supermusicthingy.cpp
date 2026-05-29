@@ -10050,44 +10050,69 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     	case MSG_SET_PRESET_FLAT:
     		ApplyPreset(kPresetFlat);
     		break;    		
-
-
+    		
+    		
 		case MSG_ACTIVATE_APP: {
-			BString targetTab;
-			if (message->FindString("target_tab", &targetTab) != B_OK) {
-				targetTab = "radio"; // Left-clicking unhide icon routes to Radio
-			}
-
-			// --- FIX: STAMP OVERRIDE LOCK TARGET INTO WINDOW SCOPE ---
-			if (targetTab == "stations")  fOverrideTabTarget = "Stations";
-			else if (targetTab == "favorites") fOverrideTabTarget = "Fav";
-			else if (targetTab == "eq")        fOverrideTabTarget = "Config";
-			else                               fOverrideTabTarget = "Radio";
-
+			// --- STEP 1: UNHIDE / ACTIVATE WINDOW IMMEDIATELY ---
 			if (IsHidden()) {
 				if (fSpectrum != nullptr) {
 					BMessage teardownMsg('tdwn'); 
 					fSpectrum->MessageReceived(&teardownMsg);
 				}
-
-				// This fires off ApplyTheme() sequentially. It will now read our string lock!
-				BMessage refreshLayout(MSG_COMPACTM_CHANGED);
-				refreshLayout.AddPointer("source", this);
-				refreshLayout.AddBool("force_compact_state", cfg.compactMode);
-				this->MessageReceived(&refreshLayout);
-
 				Show();
 			} else {
 				Activate(true);
 			}
 
-			// Re-verify actual UI tab selectors for instant compliance
-			if (fTabView) {
-				for (int32 i = 0; i < fTabView->CountTabs(); i++) {
-					BTab* tab = fTabView->TabAt(i);
-					if (tab && tab->Label() && strcmp(tab->Label(), fOverrideTabTarget.String()) == 0) {
-						fTabView->Select(i);
-						break;
+			// --- STEP 2: PARSE TARGET TAB AND MANAGE COMPACT STATE ---
+			BString targetTab;
+			if (message->FindString("target_tab", &targetTab) == B_OK) {
+				
+				// Only break out of compact mode if navigating to an incompatible tab
+				if (cfg.compactMode && (targetTab == "stations" || targetTab == "favorites" || targetTab == "eq")) {
+					// --- CODE INJECTION: TOGGLE COMPACT VISUAL CONTROLS OFF ---
+					// Uncheck the controls to drive the state machine through natural user emulation
+					if (fCompactModeConfig != nullptr) {
+						fCompactModeConfig->SetValue(B_CONTROL_OFF);
+					}
+					if (fCompactModeRadio != nullptr) {
+						fCompactModeRadio->SetValue(B_CONTROL_OFF);
+					}
+
+					BMessage compactMsg(MSG_COMPACTM_CHANGED);
+					
+					// Set the source to one of your controls so the layout engine processes the toggle
+					if (fCompactModeConfig != nullptr) {
+						compactMsg.AddPointer("source", fCompactModeConfig);
+					} else {
+						compactMsg.AddPointer("source", this);
+					}
+					
+					// Force the mode switch payload to Normal Mode (false)
+					compactMsg.AddBool("force_compact_state", false);
+					
+					// Pipe the target tab parameter through to the layout loop
+					compactMsg.AddString("deferred_select", targetTab);
+					
+					this->PostMessage(&compactMsg);
+					break; // Exit early; let MSG_COMPACTM_CHANGED handle tab selection
+				}
+
+				// --- STEP 3: DIRECT OVERRIDE APPLIER ---
+				// (Runs if NOT in compact mode, OR if in compact mode but choosing "radio")
+				if (targetTab == "stations")       fOverrideTabTarget = "Stations";
+				else if (targetTab == "favorites") fOverrideTabTarget = "Fav";
+				else if (targetTab == "eq")        fOverrideTabTarget = "Config";
+				else                               fOverrideTabTarget = "Radio";
+
+				// Directly verify and update UI tab selectors for instant compliance
+				if (fTabView) {
+					for (int32 i = 0; i < fTabView->CountTabs(); i++) {
+						BTab* tab = fTabView->TabAt(i);
+						if (tab && tab->Label() && strcmp(tab->Label(), fOverrideTabTarget.String()) == 0) {
+							fTabView->Select(i);
+							break;
+						}
 					}
 				}
 			}
@@ -10095,12 +10120,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		}
 
 
-
-
-
-
-
-        
+       
 		case MSG_CFG_SYS_TRAY: {
     		BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_sysTray"));
     
