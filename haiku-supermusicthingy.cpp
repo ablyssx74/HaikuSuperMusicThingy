@@ -5759,7 +5759,6 @@ public:
 };
 
 
-
 void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
     if (!view) return;
     
@@ -5767,22 +5766,6 @@ void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
     view->SetViewColor(bg);
     view->SetLowColor(bg);
     view->SetHighColor(txt);
-
-
-	    // --- Special Type Invalidation overrides ---
-    if (BButton* button = dynamic_cast<BButton*>(view)) {
-        // Force the text rendering state of the button 
-        button->SetHighColor(txt);
-        
-        // GCC2 Hybrid Workaround: Explicitly signal a control state change 
-        // to force the internal label cache to dump and redraw cleanly.
-        button->SetLabel(button->Label()); 
-    }
-
-    if (BSlider* slider = dynamic_cast<BSlider*>(view)) {
-        slider->UseFillColor(true, &txt);
-    }
-
     
     // --- Special Type Invalidation overrides ---
     if (BSlider* slider = dynamic_cast<BSlider*>(view)) {
@@ -5909,7 +5892,6 @@ void SuperMusicWindow::ApplyTheme() {
             }   
         } 
 
-        
         // Rebuild the tabs to force the top navigation buttons to snap into place
         if (!cfg.compactMode && fTabView) {
         	
@@ -6030,26 +6012,10 @@ void SuperMusicWindow::ApplyTheme() {
             if (fAboutGroup)   fAboutGroup->InvalidateLayout(true);
         }
 
-        // ====================================================================
-        // --- POST-LAYOUT DEEP THEME RE-PROPAGATION FOR 32-BIT ---
-        // ====================================================================
-        // Explicitly re-run your deep color engine *after* all tabs are bound
-        rgb_color activeBg = (cfg.uTheme == "Dark") ? rgb_color{40, 40, 40, 255} : ui_color(B_PANEL_BACKGROUND_COLOR);
-        rgb_color activeTxt = (cfg.uTheme == "Dark") ? rgb_color{255, 255, 255, 255} : ui_color(B_PANEL_TEXT_COLOR);
-
-        if (fTabView) {
-            for (int32 i = 0; i < fTabView->CountTabs(); i++) {
-                if (BTab* tab = fTabView->TabAt(i)) {
-                    if (BView* tabView = tab->View()) {
-                        RecursiveColorApply(tabView, activeBg, activeTxt);
-                    }
-                }
-            }
-        }
-
         this->InvalidateLayout(true);
         this->Layout(true);
         
+       
         // --- FINALLY SAFE TO UNLOCK WINDOW THREAD ---
         Unlock();
     }
@@ -10828,4 +10794,3 @@ int main() {
     app.Run();    
     return 0;
 }
-
