@@ -159,7 +159,7 @@ public:
 	  
 private:
 	bool fIsStartingUp;
-	
+	BString fOverrideTabTarget = "";
 	thread_id fVisualsThreadID;
 
 	bool fFullscreenActive = false; 

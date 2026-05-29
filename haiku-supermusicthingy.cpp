@@ -186,6 +186,7 @@ const float kPresetFlat[] = {
 
 //@Config
 struct Config {
+	float currentVolume = 1.0f;   
     bool showNotifications = false;
     bool debugEnable = false;
     bool showVisuals = false;
@@ -218,6 +219,7 @@ int selectedConfig = 0;
 
 void save_config() {
     json j;
+    j["currentVolume"] = cfg.currentVolume;
     j["quality"] = cfg.quality;
     j["debugEnable"] = cfg.debugEnable;
     j["compactMode"] = cfg.compactMode;
@@ -260,6 +262,7 @@ void load_config() {
     BPath path;
 
     // 1. ALWAYS populate strict, hardcoded memory safe defaults first
+    cfg.currentVolume = 1.0f;
     cfg.quality = "128k";
     cfg.notifyIconSize = 64;
     cfg.debugEnable = false;
@@ -294,7 +297,8 @@ void load_config() {
         std::ifstream infile(path.Path());        
         if (infile.is_open()) {
             try {
-                json j = json::parse(infile);                
+                json j = json::parse(infile);
+                cfg.currentVolume = j.value("currentVolume", 1.0f);                
                 cfg.quality = j.value("quality", "128k");
                 int val = j.value("notifyIconSize", 64);
                 if (val == 32 || val == 40 || val == 64 || val == 96 || val == 128) {
@@ -942,22 +946,21 @@ bool IsFFmpegLadspaAvailable() {
 // MODULAR ADAPTIVE ACID MELTING FLOOR MODULE
 // ====================================================================
 
-// --- THE INDEPENDENT ACID RENDER VIEW CONTAINER ---
+
+// --- THE RESPONSIVE CYBER NEON EQUALIZER CONTAINER ---
 class AcidMeltingView : public BView {
 public:
     AcidMeltingView(BRect frame, BBitmap* snapshot, BWindow* parentWindow) 
-        : BView(frame, "AcidMeltingView", B_FOLLOW_ALL_SIDES, B_WILL_DRAW) {
-        fCachedImage = snapshot;
+        : BView(frame, "CyberNeonEqualizerView", B_FOLLOW_ALL_SIDES, B_WILL_DRAW) {
+        fCachedImage = snapshot; // Preserved in case you require album art data channels
         fMainAppWindow = parentWindow;
 
-        // Seed 75 organic acid pool columns evenly across the width of the canvas
-        float sliceWidth = frame.Width() / 75.0f;
-        for (int b = 0; b < 75; b++) {
-            fAcidX[b] = ((float)b * sliceWidth) + (sliceWidth / 2.0f);
-            fAcidHeight[b] = 0.0f;
-            fWobblePhase[b] = ((float)(rand() % 100) / 100.0f) * 6.28f;
-            fMeltSpeed[b] = 30.0f + ((float)(rand() % 100) / 100.0f * 70.0f);
-            fLocalPalette[b] = { 40, 220, 70, 255 }; // Translucent green fallback
+        // Initialize historical peak decay buffers for smooth animations
+        for (int b = 0; b < 64; b++) {
+            fSmoothedHeight[b] = 0.0f;
+            fPeakHeight[b] = 0.0f;
+            fPeakAge[b] = 0;
+            fLocalPalette[b] = { 40, 220, 70, 255 }; // Neo-Green default baseline
         }
         SetViewColor(B_TRANSPARENT_COLOR);
     }
@@ -965,112 +968,160 @@ public:
     virtual ~AcidMeltingView() { }
 
     void UpdatePhysics(float* barHeights, float dtScale, float volumeScale, rgb_color* masterPalette) {
-        float viewWidth = Bounds().Width();
         float viewHeight = Bounds().Height();
-        
-        if (viewWidth <= 0.0f) viewWidth = 1.0f;
         if (viewHeight <= 0.0f) viewHeight = 1.0f;
 
-        for (int b = 0; b < 75; b++) {
-            int freqIdx = (int)((fAcidX[b] / viewWidth) * 63.0f);
-            if (freqIdx < 0) freqIdx = 0;
-            if (freqIdx > 63) freqIdx = 63;
-
+        for (int b = 0; b < 64; b++) {
             if (masterPalette != nullptr) {
-                fLocalPalette[b] = masterPalette[freqIdx];
+                fLocalPalette[b] = masterPalette[b];
             }
 
-            float audioDrive = (barHeights[freqIdx] / viewHeight) * volumeScale;
+            // ====================================================================
+            // --- DYNAMIC COMPACT STATE INTENSITY TUNING ---
+            // ====================================================================
+            // If compact mode is true, reduce the multiplier so the capsules don't 
+            // shoot up too high and block the playback controls or text layers.
+            float intensityMultiplier = cfg.compactMode ? 1.5f : 4.5f;
+            float targetDrive = barHeights[b] * volumeScale * intensityMultiplier;
+            // ====================================================================
+            
+            if (targetDrive > viewHeight * 0.85f) {
+                targetDrive = viewHeight * 0.85f; // Hard ceiling limit protection
+            }
 
-            if (audioDrive > 0.08f) {
-                fAcidHeight[b] += (fMeltSpeed[b] * audioDrive * 6.8f) * dtScale;
+            // Balanced attack/decay smoothing logic
+            if (targetDrive > fSmoothedHeight[b]) {
+                fSmoothedHeight[b] += (targetDrive - fSmoothedHeight[b]) * 0.55f * dtScale;
             } else {
-                fAcidHeight[b] -= 8.5f * dtScale;
+                // Linear steady decay drop down to the floor
+                fSmoothedHeight[b] -= (5.0f * dtScale);
             }
+            if (fSmoothedHeight[b] < 0.0f) fSmoothedHeight[b] = 0.0f;
 
-            if (fAcidHeight[b] < 0.0f) fAcidHeight[b] = 0.0f;
-            if (fAcidHeight[b] > viewHeight * 0.75f) fAcidHeight[b] = viewHeight * 0.75f;
-
-            fWobblePhase[b] += (6.0f + audioDrive * 18.0f) * dtScale;
-        }
-
-        // Horizontal puddle blending dispersion pass
-        for (int i = 1; i < 74; i++) {
-            float leftDiff = fAcidHeight[i-1] - fAcidHeight[i];
-            if (leftDiff > 15.0f) fAcidHeight[i] += leftDiff * 0.25f;
-
-            float rightDiff = fAcidHeight[i+1] - fAcidHeight[i];
-            if (rightDiff > 15.0f) fAcidHeight[i] += rightDiff * 0.25f;
+            // Handle peak dots drop-down delays
+            if (fSmoothedHeight[b] >= fPeakHeight[b]) {
+                fPeakHeight[b] = fSmoothedHeight[b];
+                fPeakAge[b] = 0;
+            } else {
+                fPeakAge[b]++;
+                if (fPeakAge[b] > 10) { 
+                    fPeakHeight[b] -= (3.0f * dtScale);
+                }
+            }
+            if (fPeakHeight[b] < 0.0f) fPeakHeight[b] = 0.0f;
         }
 
         Invalidate();
     }
 
+
+
     virtual void Draw(BRect updateRect) override {
-        if (!fCachedImage) return;
+        // --- 1. SMART BACKGROUND DETECTION ---
+        rgb_color sysBgColor = ui_color(B_PANEL_BACKGROUND_COLOR);
+        bool isDarkModeActive = (cfg.uTheme == "Dark");
+
+        // Clear view canvas first to prevent ghosting resize artifacts
+        SetHighColor(isDarkModeActive ? rgb_color{20, 22, 26, 255} : sysBgColor);
+        FillRect(Bounds());
+
+        // --- 2. RENDER BACKGROUND SNAPSHOT ---
+        if (fCachedImage && fCachedImage->IsValid()) {
+            SetDrawingMode(B_OP_COPY);
+            DrawBitmap(fCachedImage, fCachedImage->Bounds(), Bounds());
+
+            // ====================================================================
+            // --- FIX: LOCAL LIGHT MODE VISUALIZER SPACE SCRUB ---
+            // ====================================================================
+            // Erase the hardcoded black horizontal stripe artifact beneath the 
+            // cover artwork by painting the lower blank area with system grey.
+            if (!isDarkModeActive) {
+                float imagePixelHeight = fCachedImage->Bounds().Height();
+                float viewHeight = Bounds().Height();
+                float viewWidth = Bounds().Width();
+
+                if (viewHeight > imagePixelHeight) {
+                    SetHighColor(sysBgColor);
+                    FillRect(BRect(0.0f, imagePixelHeight, viewWidth, viewHeight));
+                }
+            }
+            // ====================================================================
+        }
 
         float viewWidth = Bounds().Width();
         float viewHeight = Bounds().Height();
         
+        int totalBars = 32; 
+        float horizontalPadding = 6.0f;
+        float usableWidth = viewWidth - (horizontalPadding * 2.0f);
+        float barWidth = usableWidth / (float)totalBars;
+        float capsuleSpacing = 3.0f; // Added slight padding between columns for a matrix style look
+        float actualPillWidth = barWidth - capsuleSpacing;
+        if (actualPillWidth < 1.5f) actualPillWidth = 1.5f;
 
-
-        BRect fullImageBounds = fCachedImage->Bounds();
-        SetDrawingMode(B_OP_COPY);
-        DrawBitmap(fCachedImage, fullImageBounds, Bounds());
-
-        for (int b = 0; b < 75; b++) {
-            float h = fAcidHeight[b];
-            if (h <= 1.0f) continue;
-
-            float bx = fAcidX[b];
-            float sliceW = (viewWidth / 75.0f) + 5.5f;
-
-            float rippleY = sinf(fWobblePhase[b]) * (5.0f + h * 0.35f);
-            float finalFloorTopY = viewHeight - (h + rippleY);
-
-            if (finalFloorTopY >= viewHeight) continue;
-            if (finalFloorTopY < 0.0f) finalFloorTopY = 0.0f;
-
-            float pixelXStart = bx - (sliceW / 2.0f);
-            float pixelXEnd   = bx + (sliceW / 2.0f);
-
-            BRect srcRect(pixelXStart, 0.0f, pixelXEnd, viewHeight);
-            BRect destRect(pixelXStart, finalFloorTopY, pixelXEnd, viewHeight);
-
-            PushState();
+        // --- 3. MATRIX RENDER LOOP ---
+        for (int i = 0; i < totalBars; i++) {
+            int srcIdx = i * 2; 
             
-            BPicture sliceMask;
-            BeginPicture(&sliceMask);
-            SetHighColor(255, 255, 255, 255);
-            FillRect(destRect);
-            EndPicture();
-            
-            ClipToPicture(&sliceMask, BPoint(0,0), false);
+            float currentH = fSmoothedHeight[srcIdx]; 
+            float peakH = fPeakHeight[srcIdx];       
 
-            SetDrawingMode(B_OP_COPY);
-            DrawBitmap(fCachedImage, srcRect, destRect);
-            
-            PopState();
+            float barLeftX = horizontalPadding + ((float)i * barWidth);
+            float barRightX = barLeftX + actualPillWidth;
 
-            // Render Adaptive Album Art Filters
-            SetDrawingMode(B_OP_ALPHA);
-            rgb_color artColor = fLocalPalette[b];
+            rgb_color neonColor = fLocalPalette[srcIdx];
 
-            SetHighColor(artColor.red, artColor.green, artColor.blue, 110);
-            FillRect(destRect);
+            // Render Segmented Cyber Pill Capsules
+            if (currentH > 2.0f) {
+                SetDrawingMode(B_OP_ALPHA);
+                
+                int totalSegments = 16; 
+                float segmentHeight = (viewHeight * 0.4f) / (float)totalSegments; // Isolate height allocations
 
-            uint8 frothR = (uint8)min_c(255, artColor.red + 80);
-            uint8 frothG = (uint8)min_c(255, artColor.green + 80);
-            uint8 frothB = (uint8)min_c(255, artColor.blue + 80);
-            
-            SetHighColor(frothR, frothG, frothB, 240);
-            SetPenSize(2.5f);
-            StrokeLine(BPoint(pixelXStart, finalFloorTopY), BPoint(pixelXEnd, finalFloorTopY));
+                for (int s = 0; s < totalSegments; s++) {
+                    // Pull the base anchor slightly higher off the window frame edge
+                    float segBottomY = viewHeight - 6.0f - ((float)s * (segmentHeight + 1.0f));
+                    float segTopY = segBottomY - segmentHeight;
+                    
+                    if ((viewHeight - segTopY) > currentH) break;
+
+                    // Neon Glow Saturation Gradient Pass
+                    uint8 alphaFade = 130 + ((s * 125) / totalSegments);
+                    SetHighColor(neonColor.red, neonColor.green, neonColor.blue, alphaFade);
+
+                    BRect capsuleRect(barLeftX, segTopY, barRightX, segBottomY);
+                    FillRoundRect(capsuleRect, actualPillWidth * 0.5f, 2.0f);
+                }
+            }
+
+            // --- FLOATING PEAK DOTS ---
+            if (peakH > 2.0f) {
+                float peakTopY = viewHeight - 6.0f - peakH;
+                if (peakTopY < 4.0f) peakTopY = 4.0f;
+                float peakBottomY = peakTopY + 2.0f;
+
+                BRect peakPillRect(barLeftX, peakTopY, barRightX, peakBottomY);
+                
+                if (isDarkModeActive) {
+                    SetHighColor(255, 255, 255, 230); 
+                    SetDrawingMode(B_OP_ALPHA);
+                    FillRoundRect(peakPillRect, actualPillWidth * 0.5f, 1.0f);
+                    
+                    SetHighColor(neonColor.red, neonColor.green, neonColor.blue, 140); 
+                    BRect glowRect = peakPillRect;
+                    glowRect.InsetBy(-1.0f, -1.0f);
+                    StrokeRoundRect(glowRect, actualPillWidth * 0.5f, 1.0f);
+                } else {
+                    SetHighColor(neonColor.red, neonColor.green, neonColor.blue, 255);
+                    SetDrawingMode(B_OP_COPY);
+                    FillRoundRect(peakPillRect, actualPillWidth * 0.5f, 1.0f);
+                }
+            }
         }
 
         SetDrawingMode(B_OP_COPY);
-        SetPenSize(1.0f);
     }
+
 
 
     virtual void MouseDown(BPoint point) override {
@@ -1095,11 +1146,10 @@ public:
 private:
     BBitmap*  fCachedImage;
     BWindow*  fMainAppWindow;
-    float     fAcidX[75];        
-    float     fAcidHeight[75];   
-    float     fWobblePhase[75];  
-    float     fMeltSpeed[75];    
-    rgb_color fLocalPalette[75]; 
+    float     fSmoothedHeight[64];   
+    float     fPeakHeight[64];   
+    int32     fPeakAge[64];      
+    rgb_color fLocalPalette[64]; 
 };
 
 
@@ -1107,7 +1157,7 @@ private:
 class AcidMeltingWindow : public BWindow {
 public:
     AcidMeltingWindow(BWindow* parent, BBitmap* snapshot)
-        : BWindow(parent->Frame(), "AcidMeltingWindow", B_NO_BORDER_WINDOW_LOOK, 
+        : BWindow(parent->Frame(), "CyberNeonEqualizerWindow", B_NO_BORDER_WINDOW_LOOK, 
                   B_FLOATING_SUBSET_WINDOW_FEEL, 
                   B_NOT_MOVABLE | B_NOT_RESIZABLE | B_NOT_ZOOMABLE | B_AVOID_FRONT) {
         fParent = parent; 
@@ -1117,6 +1167,18 @@ public:
     }
 
     void UpdateAudioPhysics(float* barHeights, float dtScale, float volumeScale, rgb_color* masterPalette) {
+        // Dynamic Window Boundary Tracking Synchronizer
+        // If parent resizes or fullscreens, our tracking layer scales instantly to match.
+        if (fParent && fParent->Lock()) {
+            BRect parentFrame = fParent->Frame();
+            fParent->Unlock();
+            
+            if (Frame() != parentFrame) {
+                MoveTo(parentFrame.left, parentFrame.top);
+                ResizeTo(parentFrame.Width(), parentFrame.Height());
+            }
+        }
+
         if (Lock()) {
             fOverlayView->UpdatePhysics(barHeights, dtScale, volumeScale, masterPalette);
             Unlock();
@@ -1127,6 +1189,7 @@ private:
     AcidMeltingView* fOverlayView;
     BWindow*         fParent;
 };
+
 
 
 
@@ -1249,14 +1312,23 @@ public:
 
 
 
-    virtual void Draw(BRect updateRect) override {
-         if (!fCachedImage || !fCachedImage->IsValid()) return;
+      virtual void Draw(BRect updateRect) override {
+        if (!fCachedImage || !fCachedImage->IsValid()) return;
 
         float viewWidth = Bounds().Width();
         float viewHeight = Bounds().Height();
 
-        // 1. Clear view canvas with a deep charcoal background 
-        SetHighColor(14, 16, 18, 255);
+        // --- 1. SMART BACKGROUND DETECTION ---
+        rgb_color sysBgColor;
+        bool isDarkModeActive = (cfg.uTheme == "Dark");
+
+        if (isDarkModeActive) {
+            sysBgColor = rgb_color{40, 40, 40, 255}; // Clear view canvas with a deep charcoal background
+        } else {
+            sysBgColor = ui_color(B_PANEL_BACKGROUND_COLOR); // Match native Haiku theme color scheme
+        }
+
+        SetHighColor(sysBgColor);
         FillRect(updateRect);
 
         // --- LAYER 1: DRAW EACH MASKED APPSNAPSHOT BUBBLE ---
@@ -1304,13 +1376,26 @@ public:
             SetPenSize(2.5f);
             StrokeEllipse(BPoint(bx, by), br, br);
 
-            // Translucent ice-white highlight shell rim outline
-            SetHighColor(255, 255, 255, 140);
-            SetPenSize(1.5f);
-            StrokeEllipse(BPoint(bx, by), br - 1.0f, br - 1.0f);
+            // --- SMART 3D REFLECTION CONTRAST ADAPTATION ---
+            if (isDarkModeActive) {
+                // Translucent ice-white highlight shell rim outline
+                SetHighColor(255, 255, 255, 140);
+                SetPenSize(1.5f);
+                StrokeEllipse(BPoint(bx, by), br - 1.0f, br - 1.0f);
+
+                // Specular reflection bead highlight arc in the upper-left corner
+                SetHighColor(255, 255, 255, 220);
+            } else {
+                // In Light Mode, use dark highlights so glassy reflections stay highly visible
+                SetHighColor(0, 0, 0, 40);
+                SetPenSize(1.5f);
+                StrokeEllipse(BPoint(bx, by), br - 1.0f, br - 1.0f);
+
+                SetHighColor(0, 0, 0, 90);
+            }
 
             // Specular reflection bead highlight arc in the upper-left corner of the bubble
-            SetHighColor(255, 255, 255, 220);
+            SetPenSize(1.5f);
             BRect specularArcRect(bx - (br * 0.6f), by - (br * 0.6f), bx - (br * 0.1f), by - (br * 0.1f));
             StrokeArc(specularArcRect, 90.0f, 90.0f); // Upper left curve shine
         }
@@ -1542,7 +1627,10 @@ public:
                         targetNextMode = (targetNextMode + 1) % MODE_COUNT;
                     }
                 }
-
+                
+                
+                
+				//@bypass
                 // Assign the final verified mode
                 fVisualizerMode = targetNextMode;
 
@@ -1601,7 +1689,7 @@ public:
                 if (fVisualizerMode == MODE_REPLICA || fVisualizerMode == MODE_ACID_MELT) {
                     return; 
                 }
-
+				//@motorjump
                 // --- MODE: MOTORCYCLE RIDER INPUTS ---
                 if (fVisualizerMode == MODE_MOTO_RIDER && fMotoCrashTicks == 0.0f) {
                     bigtime_t now = system_time();
@@ -1615,14 +1703,17 @@ public:
                         }
                     }
 
-                    // Configure dynamic jumping multiplier for fullscreen physics tracking
-                    float jumpHeightMultiplier = isWindowInFullscreen ? 3.0f : 1.0f;
-
-                    // --- AIR FLIP ENGINE ---
+                    // --- AIR FLIP ENGINE (WITH COOLDOWN SAFETY) ---
                     if (fMotoY > 0.05f) {
-                        if (now - fLastClickTime < 250000) {
+                        // Check if 250ms have passed since the last click, and ensure 
+                        // we aren't already locked into an active flip rotation
+                        if (!fIsFlipping && (now - fLastClickTime < 250000)) {
                             fIsFlipping = true;
-                            fMotoVelocityY += 2.0f; 
+                            
+                            // Moderated flip-boost: reduce from 2.0f to a stable 0.75f 
+                            // to prevent rapid propeller-spinning in high-altitude full screen
+                            //fMotoVelocityY += 0.75f; 
+                            fMotoVelocityY += 1.25f; 
                             fLastClickTime = now; 
                             return;
                         }
@@ -1631,11 +1722,18 @@ public:
                     // --- GROUND JUMP ENGINE ---
                     if (fMotoY <= 0.05f) {
                         float audioBonus = (fCurrentLevel > -35.0f) ? (35.0f + (float)fCurrentLevel) * 0.12f : 0.0f;
+                        
+                        // Dynamic velocity tuning: Full screen needs slightly more push 
+                        // to clear the vertical canvas pixel height, but 3.0f was over-inflating it.
+                        // Use 1.4f for fullscreen scaling to preserve natural gravity tracking.
+                        float jumpHeightMultiplier = isWindowInFullscreen ? 1.9f : 1.2f;
+                        
                         fMotoVelocityY = (4.0f + audioBonus) * jumpHeightMultiplier; 
                         fLastClickTime = now; 
                         return;
                     }
                 }
+
 
                 // --- MODE: PONG BALLS INTERACTION ---
                 if (fVisualizerMode == MODE_PONG_BALLS) {
@@ -1660,6 +1758,31 @@ public:
     // @specmouse
     virtual void MessageReceived(BMessage* message) override {
         switch (message->what) {
+        	
+        // ================================================================
+        // --- SAFE ASYNC OVERLAY TEARDOWN INTERFACE ---
+        // ================================================================
+        case 'tdwn': {
+            // 1. Terminate the Replica Overlay window cleanly if active
+            if (fReplicaWin != nullptr) {
+                if (fReplicaWin->Lock()) {
+                    fReplicaWin->Quit();
+                    fReplicaWin = nullptr;
+                }
+            }
+
+            // 2. Terminate the Acid Melt Overlay window cleanly if active
+            if (fAcidWin != nullptr) {
+                if (fAcidWin->Lock()) {
+                    fAcidWin->Quit();
+                    fAcidWin = nullptr;
+                }
+            }
+
+            // 3. Fallback the private visualizer mode variable back to standard bars
+            fVisualizerMode = MODE_BARS; 
+            break;
+        }
            // --- UNIFIED MODE DISMISSER FOR BOTH VISUALIZERS ---  
             case 'drep': { 
                 if (fVisualizerMode == MODE_REPLICA || fVisualizerMode == MODE_ACID_MELT) {
@@ -1720,10 +1843,10 @@ public:
             case B_MOUSE_WHEEL_CHANGED: {
                 if (fVisualizerMode == MODE_PONG_BALLS) {
                     float deltaY = 0.0f;
-                    
+                    //@Paddle Speed
                     if (message->FindFloat("be:wheel_delta_y", &deltaY) == B_OK) {
                         // 1. DETERMINE BASE SCROLL SENSITIVITY MULTIPLIER
-                        float scrollSensitivityMultiplier = 15.6f; 
+                        float scrollSensitivityMultiplier = 18.6f; 
                         
                         // 2. DETECT FULLSCREEN MODE HOOKS
                         bool isWindowInFullscreen = false;
@@ -1734,10 +1857,10 @@ public:
                             }
                         }
                         
-                        // --- 50x MAXIMUM POWER JUMP BOOST ---
+                      
                         // Multiply sensitivity explicitly to cross the expanded widescreen vertical coordinate track instantly
                         if (isWindowInFullscreen) {
-                            scrollSensitivityMultiplier *= 5.0f;
+                            scrollSensitivityMultiplier *= 3.0f;
                         }
                         
                         // Calculate final positional delta adjustment
@@ -2568,7 +2691,7 @@ virtual void Pulse() override {
                         }
                     }
 
-   // --- BALL 2 BONUS POINT OUT-OF-BOUNDS HANDLING ---
+   					// --- BALL 2 BONUS POINT OUT-OF-BOUNDS HANDLING ---
                     if (fBallX2 < startX_cached || fBallX2 > startX_cached + artworkWidth_cached) {
                         if (fBallX2 < startX_cached) {
                             fRightScore += 2; 
@@ -2699,34 +2822,34 @@ virtual void Pulse() override {
             }
         }
         
-// ====================================================================
-// 4.5 MODE 4.5 MODE_REPLICA PHYSICS ROUTING @replicaengine
-// ====================================================================
-if (fVisualizerMode == MODE_REPLICA) {
-    if (Window() != nullptr && fReplicaWin != nullptr) {
-        // 1. Keep the independent floating canvas perfectly aligned with the main app bounds
-        fReplicaWin->MoveTo(Window()->Frame().LeftTop());
-        fReplicaWin->ResizeTo(Window()->Frame().Width(), Window()->Frame().Height());
+		// ====================================================================
+		// 4.5 MODE 4.5 MODE_REPLICA PHYSICS ROUTING @replicaengine
+		// ====================================================================
+		if (fVisualizerMode == MODE_REPLICA) {
+    		if (Window() != nullptr && fReplicaWin != nullptr) {
+        		// 1. Keep the independent floating canvas perfectly aligned with the main app bounds
+        		fReplicaWin->MoveTo(Window()->Frame().LeftTop());
+        		fReplicaWin->ResizeTo(Window()->Frame().Width(), Window()->Frame().Height());
         
-        // 2. FORWARD AUDIO DATA DIRECTLY DOWN THE CHANNEL
-        // We pass the raw data down. The ReplicaOverlayView class handles its own 
-        // internal heap allocations safely inside its own window loop context!
-        fReplicaWin->UpdateAudioPhysics(fBarHeights, dtScale, gVolumeScaleFactor);
-    }
-}
+        		// 2. FORWARD AUDIO DATA DIRECTLY DOWN THE CHANNEL
+        		// We pass the raw data down. The ReplicaOverlayView class handles its own 
+        		// internal heap allocations safely inside its own window loop context!
+        		fReplicaWin->UpdateAudioPhysics(fBarHeights, dtScale, gVolumeScaleFactor);
+    		}
+		}
 
-    // ====================================================================
-    // 4.6 MODE 4.6 MODE_ACID_MELT MOVEMENT DISPATCHER
-    // ====================================================================
-    if (fVisualizerMode == MODE_ACID_MELT) {
-        if (Window() != nullptr && fAcidWin != nullptr) {
-            fAcidWin->MoveTo(Window()->Frame().LeftTop());
-            fAcidWin->ResizeTo(Window()->Frame().Width(), Window()->Frame().Height());
+    	// ====================================================================
+    	// 4.6 MODE 4.6 MODE_ACID_MELT MOVEMENT DISPATCHER
+    	// ====================================================================
+    	if (fVisualizerMode == MODE_ACID_MELT) {
+        	if (Window() != nullptr && fAcidWin != nullptr) {
+            	fAcidWin->MoveTo(Window()->Frame().LeftTop());
+            	fAcidWin->ResizeTo(Window()->Frame().Width(), Window()->Frame().Height());
             
-            // PASS PALETTE HERE: Forwards your dynamic fArtworkPalette array directly into the overlay!
-            fAcidWin->UpdateAudioPhysics(fBarHeights, dtScale, gVolumeScaleFactor, fArtworkPalette);
-        }
-    }
+            	// PASS PALETTE HERE: Forwards your dynamic fArtworkPalette array directly into the overlay!
+            	fAcidWin->UpdateAudioPhysics(fBarHeights, dtScale, gVolumeScaleFactor, fArtworkPalette);
+        	}
+    	}
 
 
 
@@ -2819,9 +2942,9 @@ if (fVisualizerMode == MODE_REPLICA) {
                     isWindowInFullscreen = mainWin->IsFullscreenActive();
                 }
             }
-			//@motor
+			//@motorspeed
             // --- 2. CONFIG SPEED MULTIPLIER FOR FULLSCREEN INSANITY ---
-            float speedMultiplier = isWindowInFullscreen ? 5.0f : 1.0f;
+            float speedMultiplier = isWindowInFullscreen ? 1.5f : 1.0f;
 
             if (fMotoCrashTicks > 0) {
                 fMotoCrashTicks -= dtScale;
@@ -2894,24 +3017,29 @@ if (fVisualizerMode == MODE_REPLICA) {
                     // --- DOG GRAVITY PHYSICS ACCELERATION PASS ---
                     fDogDrawY += (dogVelocityY * dtScale);
                     if (fDogDrawY > 0.0f) {
-                        // Gravity scaling matches the upward leap factor to ensure instant landing response
-                        dogVelocityY -= (0.35f * dtScale) * speedMultiplier; 
+                        // TWO-LINE FIX: Square the speedMultiplier on gravity to scale perfectly with the upward push
+                        dogVelocityY -= (0.35f * dtScale) * (speedMultiplier * speedMultiplier); 
                     } else {
                         fDogDrawY = 0.0f;
                         dogVelocityY = 0.0f;
                     }
 
+
                     if (fDogDrawX > artworkWidth_cached + 30.0f) {
                         fDogDrawActive = false;
                     }
                 }
+                
                 // ------------------------------------------------------------
-
                 // Parallax scrolling speed tracking adjustments
                 fMtnScrollX -= (0.95f * dtScale) * speedMultiplier; 
-                if (fMtnScrollX < -240.0f) {
-                    fMtnScrollX += 240.0f;
+                
+                // HIGH-RES MODIFICATION: Mirror drawing geometry bounds to prevent background tearing
+                float currentMtnStepBounds = isWindowInFullscreen ? -540.0f : -240.0f;
+                if (fMtnScrollX < currentMtnStepBounds) {
+                    fMtnScrollX += fabsf(currentMtnStepBounds);
                 } 
+
                 for (int m = 0; m < 4; m++) {
                     if (fMtnHeightScale[m] <= 0.01f) {
                         fMtnHeightScale[m] = 0.7f + ((rand() % 7) / 5.0f); 
@@ -2928,10 +3056,25 @@ if (fVisualizerMode == MODE_REPLICA) {
                     fCloudX[c] -= (0.20f * dtScale) * speedMultiplier;
                     if (fCloudX[c] < -40.0f) {
                         fCloudX[c] = artworkWidth_cached + 10.0f + (rand() % 50);
-                        fCloudY[c] = 4.0f + (rand() % 8);
-                        fCloudSize[c] = 16.0f + (rand() % 14);
+                        
+                        // ========================================================
+                        // --- DYNAMIC FULLSCREEN CLOUD SCALING ---
+                        // ========================================================
+                        if (isWindowInFullscreen) {
+                            // Expand size limits (e.g., range 40.0f to 75.0f) 
+                            fCloudSize[c] = 40.0f + (rand() % 35);
+                            
+                            // Give them a deeper vertical spawn zone to match higher screens
+                            fCloudY[c] = 8.0f + (rand() % 24);
+                        } else {
+                            // Classic Windowed Mode sizes (range 16.0f to 30.0f)
+                            fCloudSize[c] = 16.0f + (rand() % 14);
+                            fCloudY[c] = 4.0f + (rand() % 8);
+                        }
+                        // ========================================================
                     }
                 } 
+
    
        			// Trigger a backfire burst when a heavy bass beat slams past an intense threshold
                 if (fMotoCrashTicks == 0.0f && lowBassPulse > (100.0f * 0.52f)) {
@@ -2970,9 +3113,10 @@ if (fVisualizerMode == MODE_REPLICA) {
                 // ====================================================================
 
                 // --- RIDER MOVEMENT & GRAVITY ---
-                // Removed the redundant/duplicate block from the original code draft
                 fMotoY += fMotoVelocityY * dtScale * speedMultiplier;
-                fMotoVelocityY -= 0.45f * dtScale * speedMultiplier; 
+                fMotoVelocityY -= 0.45f * dtScale * (speedMultiplier * speedMultiplier); // <-- FIXED
+
+
                 if (fMotoY <= 0.0f) {
                     fMotoY = 0.0f; 
                     fMotoVelocityY = 0.0f;                    
@@ -3002,9 +3146,11 @@ if (fVisualizerMode == MODE_REPLICA) {
                 // ====================================================================
                 static int consecutiveFlipCount = 0; // Tracks flips within a single jump
 
-                // Apply physics velocities scaled perfectly with elapsed time
+                // --- RIDER MOVEMENT & GRAVITY ---
+                // TWO-LINE FIX: Square the speedMultiplier on gravity to scale perfectly with the upward push
                 fMotoY += fMotoVelocityY * dtScale * speedMultiplier;
-                fMotoVelocityY -= 0.45f * dtScale * speedMultiplier; 
+                fMotoVelocityY -= 0.45f * dtScale * (speedMultiplier * speedMultiplier); 
+
                 
                 if (fMotoY <= 0.0f) {
                     fMotoY = 0.0f; 
@@ -3226,6 +3372,11 @@ virtual void Draw(BRect updateRect) override {
         // Scale your layout padding dynamically so bars stay beautifully separated!
         const float barPadding = isWindowInFullscreen ? 3.0f : 1.0f;
         float barWidth = artworkWidth / (float)numBars;
+        
+        // HIGH-RESOLUTION EMBOSS METRICS
+        // Dynamically assign 3D border thickness (4 pixels in fullscreen, 2 pixels in window mode)
+        float embossThickness = isWindowInFullscreen ? 3.0f : 1.0f; 
+        float peakIndicatorHeight = isWindowInFullscreen ? 2.0f : 0.0f;
         // ====================================================================
 
 
@@ -3271,9 +3422,6 @@ virtual void Draw(BRect updateRect) override {
             }
             float finalAlphaMultiplier = edgeFade * baseBottomFade;
             
-                              
-                
-
             // --- 2. 2D Distance Blending ---
             float distX = fabsf((float)i - shimmerCenterX);
             float barTopY = height - finalBarHeight;
@@ -3305,7 +3453,8 @@ virtual void Draw(BRect updateRect) override {
             FillRect(BRect(currentXStart, height - finalBarHeight, currentXEnd, height));
 
             // --- 5. Enhanced 2D Emboss Overlay ---
-            if (currentXEnd - currentXStart >= 3.0f) {
+            // Ensure bar size is wide enough to accommodate the high-res borders safely
+            if (currentXEnd - currentXStart >= (embossThickness * 2.0f + 1.0f)) {
                 int16 lightBoost = 25 + (int16)(75.0f * shimmerIntensity);
                 
                 rgb_color leftEdgeColor = barColor;
@@ -3318,17 +3467,17 @@ virtual void Draw(BRect updateRect) override {
                 rightEdgeColor.green = (uint8)max_c(0, rightEdgeColor.green - 40);
                 rightEdgeColor.blue  = (uint8)max_c(0, rightEdgeColor.blue - 40);
                 
-                // Thicker Left Emboss (2 pixels wide)
+                // HIGH-RES IMPLEMENTATION: Thicker Left Light Edge Emboss
                 SetHighColor(leftEdgeColor);
-                FillRect(BRect(currentXStart, height - finalBarHeight, currentXStart + 1.0f, height));
+                FillRect(BRect(currentXStart, height - finalBarHeight, currentXStart + embossThickness, height));
 
-                // Thicker Right Drop Shadow (2 pixels wide)
+                // HIGH-RES IMPLEMENTATION: Thicker Right Dark Shadow Edge Emboss
                 SetHighColor(rightEdgeColor);
-                FillRect(BRect(currentXEnd - 1.0f, height - finalBarHeight, currentXEnd, height));
+                FillRect(BRect(currentXEnd - embossThickness, height - finalBarHeight, currentXEnd, height));
                 
-                // Thicker Top Peak Emboss (2 pixels tall)
+                // HIGH-RES IMPLEMENTATION: Thicker Top Peak Light Bar Accent
                 SetHighColor(leftEdgeColor);
-                FillRect(BRect(currentXStart, height - finalBarHeight, currentXEnd, height - finalBarHeight + 1.0f));
+                FillRect(BRect(currentXStart, height - finalBarHeight, currentXEnd, height - finalBarHeight + embossThickness));
             }
 
             // --- 6. Render Peak Indicators ---
@@ -3345,14 +3494,19 @@ virtual void Draw(BRect updateRect) override {
                 }
                 
                 peakColor.alpha = (uint8)(255.0f * edgeFade * peakBottomFade);
-                
                 SetHighColor(peakColor); 
-                StrokeLine(BPoint(currentXStart, height - scaledPeakHeight),
-                           BPoint(currentXEnd, height - scaledPeakHeight));
+                
+                // HIGH-RES IMPLEMENTATION: Replace single line stroke with a clean thicker block in fullscreen
+                FillRect(BRect(currentXStart, height - scaledPeakHeight - peakIndicatorHeight, 
+                               currentXEnd, height - scaledPeakHeight));
             }
         }
         SetDrawingMode(B_OP_COPY);
     }
+
+    
+    
+    
     else if (fVisualizerMode == MODE_LINE_WAVE) {
         SetDrawingMode(B_OP_ALPHA);
         float midY = height / 2.0f;
@@ -3406,91 +3560,102 @@ virtual void Draw(BRect updateRect) override {
             points[i] = BPoint(currentX, currentY);
         }
 
-            for (int i = 0; i < numBars - 1; i++) {
-                int i0 = (i == 0) ? 0 : i - 1; 
-                int i1 = i; 
-                int i2 = i + 1; 
-                int i3 = (i + 2 >= numBars) ? numBars - 1 : i + 2;
+        // --- HIGH-RESOLUTION SPLINE SCALARS ---
+        // Step 1: Up-sample rendering step density (16 subdivisions for crisp fullscreen curves)
+        const int dynamicSteps = isWindowInFullscreen ? 16 : 4; 
+
+        // Step 2: Scale up layout pen sizes to match higher resolutions
+        float baseFgPenWidth     = isWindowInFullscreen ? 5.5f : 2.5f;
+        float baseShadowPenWidth = isWindowInFullscreen ? 7.5f : 3.5f;
+
+        // Step 3: Scale drop-shadow pixel layout offset metrics
+        float shadowOffsetX = isWindowInFullscreen ? 2.5f : 1.0f;
+        float shadowOffsetY = isWindowInFullscreen ? 3.5f : 1.5f;
+
+        for (int i = 0; i < numBars - 1; i++) {
+            int i0 = (i == 0) ? 0 : i - 1; 
+            int i1 = i; 
+            int i2 = i + 1; 
+            int i3 = (i + 2 >= numBars) ? numBars - 1 : i + 2;
+            
+            BPoint p0 = points[i0]; 
+            BPoint p1 = points[i1]; 
+            BPoint p2 = points[i2]; 
+            BPoint p3 = points[i3];
+            
+            // Keep track of separate rendering points for the shadow and the highlight
+            BPoint prevSegPointShadow = p1;
+            BPoint prevSegmentPoint = p1;
+
+            // Position offset for the 3D Drop-Shadow line using dynamic metrics
+            prevSegPointShadow.x += shadowOffsetX;
+            prevSegPointShadow.y += shadowOffsetY;
+
+            for (int s = 1; s <= dynamicSteps; s++) {
+                float t = (float)s / (float)dynamicSteps; 
+                float t2 = t * t; 
+                float t3 = t2 * t;
                 
-                BPoint p0 = points[i0]; 
-                BPoint p1 = points[i1]; 
-                BPoint p2 = points[i2]; 
-                BPoint p3 = points[i3];
-
-                const int steps = 4; 
+                float f1 = -0.5f * t3 + t2 - 0.5f * t; 
+                float f2 = 1.5f * t3 - 2.5f * t2 + 1.0f; 
+                float f3 = -1.5f * t3 + 2.0f * t2 + 0.5f * t; 
+                float f4 = 0.5f * t3 - 0.5f * t2;
                 
-                // Keep track of separate rendering points for the shadow and the highlight
-                BPoint prevSegPointShadow = p1;
-                BPoint prevSegmentPoint = p1;
-
-                // Position offset for the 3D Drop-Shadow line
-                prevSegPointShadow.x += 1.0f;
-                prevSegPointShadow.y += 1.5f;
-
-                for (int s = 1; s <= steps; s++) {
-                    float t = (float)s / (float)steps; 
-                    float t2 = t * t; 
-                    float t3 = t2 * t;
-                    
-                    float f1 = -0.5f * t3 + t2 - 0.5f * t; 
-                    float f2 = 1.5f * t3 - 2.5f * t2 + 1.0f; 
-                    float f3 = -1.5f * t3 + 2.0f * t2 + 0.5f * t; 
-                    float f4 = 0.5f * t3 - 0.5f * t2;
-                    
-                    BPoint currSegmentPoint(p0.x * f1 + p1.x * f2 + p2.x * f3 + p3.x * f4, 
-                                            p0.y * f1 + p1.y * f2 + p2.y * f3 + p3.y * f4);
-                    
-                    // --- Calculate Shimmer Proximity for this sub-segment ---
-                    float currentSegmentIndex = (currSegmentPoint.x - startX) / barWidth;
-                    float distX = fabsf(currentSegmentIndex - shimmerCenterX);
-                    float distY = fabsf(currSegmentPoint.y - shimmerCenterY);
-                    
-                    float shimmerIntensity = 0.0f;
-                    if (distX < shimmerHalfWidthX && distY < shimmerHalfWidthY) {
-                        float intensityX = 0.5f * (1.0f + cosf((distX / shimmerHalfWidthX) * (float)M_PI));
-                        float intensityY = 0.5f * (1.0f + cosf((distY / shimmerHalfWidthY) * (float)M_PI));
-                        shimmerIntensity = intensityX * intensityY;
-                    }
-
-                    // --- PASS 1: RENDER EMBOSS DROP SHADOW (Thicker Backing) ---
-                    rgb_color shadowColor = fArtworkPalette[i];
-                    shadowColor.red   = (uint8)max_c(0, shadowColor.red - 45);
-                    shadowColor.green = (uint8)max_c(0, shadowColor.green - 45);
-                    shadowColor.blue  = (uint8)max_c(0, shadowColor.blue - 45);
-                    
-                    // Modulate the baseline shadow opacity (160) by our activity alpha
-                    shadowColor.alpha = (uint8)(160.0f * audioActivityAlpha); 
-                    
-                    SetHighColor(shadowColor);
-                    SetPenSize(3.5f); // Thicker line behind
-                    
-                    BPoint currSegPointShadow = currSegmentPoint;
-                    currSegPointShadow.x += 1.0f;
-                    currSegPointShadow.y += 1.5f;
-                    
-                    StrokeLine(prevSegPointShadow, currSegPointShadow);
-                    prevSegPointShadow = currSegPointShadow;
-
-                    // --- PASS 2: RENDER FOREGROUND SPLINE WITH SHIMMER LUMINANCE ---
-                    int16 lightBoost = 20 + (int16)(80.0f * shimmerIntensity);
-                    rgb_color litColor = fArtworkPalette[i];
-                    litColor.red   = (uint8)min_c(255, litColor.red + lightBoost);
-                    litColor.green = (uint8)min_c(255, litColor.green + lightBoost);
-                    litColor.blue  = (uint8)min_c(255, litColor.blue + lightBoost);
-                    
-                    // Modulate foreground text/line opacity by our activity alpha
-                    litColor.alpha = (uint8)(255.0f * audioActivityAlpha);
-                    
-                    SetHighColor(litColor);
-                    SetPenSize(2.5f); // Crisp primary foreground thickness
-                    
-                    StrokeLine(prevSegmentPoint, currSegmentPoint);
-                    prevSegmentPoint = currSegmentPoint;
+                BPoint currSegmentPoint(p0.x * f1 + p1.x * f2 + p2.x * f3 + p3.x * f4, 
+                                        p0.y * f1 + p1.y * f2 + p2.y * f3 + p3.y * f4);
+                
+                // --- Calculate Shimmer Proximity for this sub-segment ---
+                float currentSegmentIndex = (currSegmentPoint.x - startX) / barWidth;
+                float distX = fabsf(currentSegmentIndex - shimmerCenterX);
+                float distY = fabsf(currSegmentPoint.y - shimmerCenterY);
+                
+                float shimmerIntensity = 0.0f;
+                if (distX < shimmerHalfWidthX && distY < shimmerHalfWidthY) {
+                    float intensityX = 0.5f * (1.0f + cosf((distX / shimmerHalfWidthX) * (float)M_PI));
+                    float intensityY = 0.5f * (1.0f + cosf((distY / shimmerHalfWidthY) * (float)M_PI));
+                    shimmerIntensity = intensityX * intensityY;
                 }
+
+                // --- PASS 1: RENDER EMBOSS DROP SHADOW (Thicker Backing) ---
+                rgb_color shadowColor = fArtworkPalette[i];
+                shadowColor.red   = (uint8)max_c(0, shadowColor.red - 45);
+                shadowColor.green = (uint8)max_c(0, shadowColor.green - 45);
+                shadowColor.blue  = (uint8)max_c(0, shadowColor.blue - 45);
+                shadowColor.alpha = (uint8)(160.0f * audioActivityAlpha); 
+                
+                SetHighColor(shadowColor);
+                SetPenSize(baseShadowPenWidth); // Dynamically scaled shadow track thickness
+                
+                BPoint currSegPointShadow = currSegmentPoint;
+                currSegPointShadow.x += shadowOffsetX;
+                currSegPointShadow.y += shadowOffsetY;
+                
+                StrokeLine(prevSegPointShadow, currSegPointShadow);
+                prevSegPointShadow = currSegPointShadow;
+
+                // --- PASS 2: RENDER FOREGROUND SPLINE WITH SHIMMER LUMINANCE ---
+                int16 lightBoost = 20 + (int16)(80.0f * shimmerIntensity);
+                rgb_color litColor = fArtworkPalette[i];
+                litColor.red   = (uint8)min_c(255, litColor.red + lightBoost);
+                litColor.green = (uint8)min_c(255, litColor.green + lightBoost);
+                litColor.blue  = (uint8)min_c(255, litColor.blue + lightBoost);
+                litColor.alpha = (uint8)(255.0f * audioActivityAlpha);
+                
+                SetHighColor(litColor);
+                SetPenSize(baseFgPenWidth); // Dynamically scaled foreground line thickness
+                
+                StrokeLine(prevSegmentPoint, currSegmentPoint);
+                prevSegmentPoint = currSegmentPoint;
             }
-            SetDrawingMode(B_OP_COPY);
-            SetPenSize(1.0f); 
         }
+        SetDrawingMode(B_OP_COPY);
+        SetPenSize(1.0f); 
+    }
+
+        
+        
+        
+        
         else if (fVisualizerMode == MODE_LONG_WAVE) {
             SetDrawingMode(B_OP_ALPHA);
             float midY = height / 2.0f;
@@ -3565,7 +3730,12 @@ virtual void Draw(BRect updateRect) override {
 
           
         // --- PASS 1: GLOW SHADOW PASS ---
-        SetPenSize(6.0f); 
+        // Dynamically scale the underlying glow pen size (15.0f in fullscreen, 6.0f in window mode)
+        SetPenSize(isWindowInFullscreen ? 15.0f : 6.0f); 
+        
+        // Dynamically assign rendering step density (72 steps in fullscreen, 24 steps in window mode)
+        const int dynamicSteps = isWindowInFullscreen ? 72 : 24;
+
         for (int glowMirror = 0; glowMirror < 2; glowMirror++) { 
             for (int i = 0; i < numNodes - 1; i++) {
                 int i0 = (i == 0) ? 0 : i - 1; 
@@ -3590,9 +3760,8 @@ virtual void Draw(BRect updateRect) override {
                 
                 BPoint prevSegmentPoint(p1.x, p1.y);
                 
-                const int steps = 24;
-                for (int s = 1; s <= steps; s++) {
-                    float t = (float)s / (float)steps; 
+                for (int s = 1; s <= dynamicSteps; s++) {
+                    float t = (float)s / (float)dynamicSteps; 
                     float t2 = t * t; 
                     float t3 = t2 * t;
                     
@@ -3626,6 +3795,14 @@ virtual void Draw(BRect updateRect) override {
         }
 
         // --- PASS 2: CRISP FOREGROUND PASS WITH 3D SHADOW EMBOSS AND SHIMMER ---
+        // Scale pen width variables proportionally for wide display canvases
+        float baseFgPenWidth     = isWindowInFullscreen ? 5.0f : 2.0f;
+        float baseShadowPenWidth = isWindowInFullscreen ? 8.0f : 4.0f;
+        
+        // Scale background drop-shadow coordinate displacement values
+        float shadowOffsetX = isWindowInFullscreen ? 2.5f : 1.0f;
+        float shadowOffsetY = isWindowInFullscreen ? 3.5f : 1.5f;
+
         for (int fgMirror = 0; fgMirror < 2; fgMirror++) { 
             for (int i = 0; i < numNodes - 1; i++) {
                 int i0 = (i == 0) ? 0 : i - 1; 
@@ -3651,13 +3828,12 @@ virtual void Draw(BRect updateRect) override {
                 BPoint prevSegmentPointShadow(p1.x, p1.y);
                 BPoint prevSegmentPoint(p1.x, p1.y);
                 
-                // Offset initial shadow coordinates down and right
-                prevSegmentPointShadow.x += 1.0f;
-                prevSegmentPointShadow.y += 1.5f;
+                // Offset initial shadow coordinates using dynamic metrics
+                prevSegmentPointShadow.x += shadowOffsetX;
+                prevSegmentPointShadow.y += shadowOffsetY;
 
-                const int steps = 24;
-                for (int s = 1; s <= steps; s++) {
-                    float t = (float)s / (float)steps; 
+                for (int s = 1; s <= dynamicSteps; s++) {
+                    float t = (float)s / (float)dynamicSteps; 
                     float t2 = t * t; 
                     float t3 = t2 * t;
                     
@@ -3689,11 +3865,11 @@ virtual void Draw(BRect updateRect) override {
                     shadowColor.alpha = (uint8)(140.0f * audioActivityAlpha);
                     
                     SetHighColor(shadowColor);
-                    SetPenSize(4.0f);
+                    SetPenSize(baseShadowPenWidth); // Use dynamic high-resolution pen width
                     
                     BPoint currShadow = curr;
-                    currShadow.x += 1.0f;
-                    currShadow.y += 1.5f;
+                    currShadow.x += shadowOffsetX;
+                    currShadow.y += shadowOffsetY;
                     StrokeLine(prevSegmentPointShadow, currShadow);
                     prevSegmentPointShadow = currShadow;
 
@@ -3706,7 +3882,7 @@ virtual void Draw(BRect updateRect) override {
                     litColor.alpha = (uint8)(255.0f * audioActivityAlpha);
                     
                     SetHighColor(litColor);
-                    SetPenSize(2.0f);
+                    SetPenSize(baseFgPenWidth); // Use dynamic high-resolution pen width
                     StrokeLine(prevSegmentPoint, curr);
                     prevSegmentPoint = curr;
                 }
@@ -3715,6 +3891,7 @@ virtual void Draw(BRect updateRect) override {
         SetDrawingMode(B_OP_COPY);
         SetPenSize(1.0f);
     }
+
 
  else if (fVisualizerMode == MODE_PONG_BALLS) {
         SetDrawingMode(B_OP_ALPHA);
@@ -3786,35 +3963,49 @@ virtual void Draw(BRect updateRect) override {
         DrawString(rightScoreStr.String(), BPoint(midPointX + scoreRightOffset, scoreY));
 
         // --- PROCEDURAL WHITE VECTOR DOG RENDERING OVERLAY ---
-
         if (fDogDrawActive) {
             SetDrawingMode(B_OP_ALPHA);
             SetHighColor(255, 255, 255, 230); // Clean white dog body
             
-            // Draw main body torso
-            FillRect(BRect(fDogDrawX - 7.0f, fDogDrawY - 4.0f, fDogDrawX + 7.0f, fDogDrawY + 3.0f));
+            // FIX: Set scale factor (2x larger in fullscreen mode)
+            float proceduralDogScale = isWindowInFullscreen ? 2.0f : 1.0f;
             
-            // Draw head block
-            FillRect(BRect(fDogDrawX + 4.0f, fDogDrawY - 9.0f, fDogDrawX + 11.0f, fDogDrawY - 3.0f));
+            // Draw main body torso (Scaled uniformly)
+            FillRect(BRect(
+                fDogDrawX - (7.0f * proceduralDogScale), 
+                fDogDrawY - (4.0f * proceduralDogScale), 
+                fDogDrawX + (7.0f * proceduralDogScale), 
+                fDogDrawY + (3.0f * proceduralDogScale)
+            ));
             
-            // Draw legs
-            FillRect(BRect(fDogDrawX - 6.0f, fDogDrawY + 3.0f, fDogDrawX - 4.0f, fDogDrawY + 8.0f)); // Back Leg
-            FillRect(BRect(fDogDrawX + 4.0f, fDogDrawY + 3.0f, fDogDrawX + 6.0f, fDogDrawY + 8.0f)); // Front Leg
+            // Draw head block (Scaled uniformly)
+            FillRect(BRect(
+                fDogDrawX + (4.0f * proceduralDogScale), 
+                fDogDrawY - (9.0f * proceduralDogScale), 
+                fDogDrawX + (11.0f * proceduralDogScale), 
+                fDogDrawY - (3.0f * proceduralDogScale)
+            ));
+            
+            // Draw legs (Scaled uniformly)
+            FillRect(BRect(fDogDrawX - (6.0f * proceduralDogScale), fDogDrawY + (3.0f * proceduralDogScale), fDogDrawX - (4.0f * proceduralDogScale), fDogDrawY + (8.0f * proceduralDogScale))); // Back Leg
+            FillRect(BRect(fDogDrawX + (4.0f * proceduralDogScale), fDogDrawY + (3.0f * proceduralDogScale), fDogDrawX + (6.0f * proceduralDogScale), fDogDrawY + (8.0f * proceduralDogScale))); // Front Leg
             
             // Little wagging tail
-            SetPenSize(1.5f);
+            // FIX: Boost the pen size thickness in fullscreen to match the body mass
+            SetPenSize(isWindowInFullscreen ? 3.0f : 1.5f);
             
-            // Replaced dirty local tick counters with an absolute microsecond clock oscillation.
-            // This forces a 150ms real-time tail wag cycle regardless of whether your app is hitting 20 or 60 FPS.
             bigtime_t curTime = system_time();
             bool tailFlip = ((curTime / 150000) % 2 == 0);
             
             if (tailFlip) {
-                StrokeLine(BPoint(fDogDrawX - 7.0f, fDogDrawY - 2.0f), BPoint(fDogDrawX - 11.0f, fDogDrawY - 6.0f));
+                StrokeLine(BPoint(fDogDrawX - (7.0f * proceduralDogScale), fDogDrawY - (2.0f * proceduralDogScale)), 
+                           BPoint(fDogDrawX - (11.0f * proceduralDogScale), fDogDrawY - (6.0f * proceduralDogScale)));
             } else {
-                StrokeLine(BPoint(fDogDrawX - 7.0f, fDogDrawY - 2.0f), BPoint(fDogDrawX - 12.0f, fDogDrawY - 2.0f));
+                StrokeLine(BPoint(fDogDrawX - (7.0f * proceduralDogScale), fDogDrawY - (2.0f * proceduralDogScale)), 
+                           BPoint(fDogDrawX - (12.0f * proceduralDogScale), fDogDrawY - (2.0f * proceduralDogScale)));
             }
         }
+
 
      // --- VICTORY WIN MESSAGE SCREEN OVERLAY WITH COUNTDOWN ---
         if (fLeftScore >= 10 || fRightScore >= 10) {
@@ -3883,7 +4074,7 @@ virtual void Draw(BRect updateRect) override {
         }
 
 
-        // --- DRAW LEFT PADDLE WITH SAFETY CONTRAST CHECK ---
+         // --- DRAW LEFT PADDLE WITH SAFETY CONTRAST CHECK ---
         rgb_color leftPaddleCol = fArtworkPalette[4];
         float leftPaddleBrightness = (leftPaddleCol.red * 0.299f) + 
                                      (leftPaddleCol.green * 0.587f) + 
@@ -3893,7 +4084,12 @@ virtual void Draw(BRect updateRect) override {
         } else {
             SetHighColor(leftPaddleCol);
         }
-        FillRect(BRect(startX, fLeftPaddlePos - (paddleH / 2.0f), startX + 5.0f, fLeftPaddlePos + (paddleH / 2.0f)));
+        
+        // FIX: Dynamically scale thickness (12.0f in fullscreen, 5.0f in window mode)
+        float paddleWidth = isWindowInFullscreen ? 12.0f : 5.0f;
+        
+        // Render left paddle utilizing dynamic width variables
+        FillRect(BRect(startX, fLeftPaddlePos - (paddleH / 2.0f), startX + paddleWidth, fLeftPaddlePos + (paddleH / 2.0f)));
 
         // --- DRAW RIGHT PADDLE WITH SAFETY CONTRAST CHECK ---
         rgb_color rightPaddleCol = fArtworkPalette[58];
@@ -3905,10 +4101,12 @@ virtual void Draw(BRect updateRect) override {
         } else {
             SetHighColor(rightPaddleCol);
         }
-        FillRect(BRect(startX + artworkWidth - 5.0f, fRightPaddlePos - (paddleH / 2.0f), startX + artworkWidth, fRightPaddlePos + (paddleH / 2.0f)));
+        
+        // FIX: Mirrors the right-side starting coordinate to perfectly align thicker paddles
+        float rightPaddleStartX = startX + artworkWidth - paddleWidth;
+        FillRect(BRect(rightPaddleStartX, fRightPaddlePos - (paddleH / 2.0f), startX + artworkWidth, fRightPaddlePos + (paddleH / 2.0f)));
 
         // --- LAYER: PROCEDURAL RADIAL ARC SHOCKWAVE EXPLOSION ---
-
         if (fPongExplosionTick > 0.0f) {
             // Normalize timeline progress safely against the 20-frame baseline to prevent scaling distortion
             float maxTicksBaseline = 20.0f * fDtScaleCached;
@@ -3950,34 +4148,42 @@ virtual void Draw(BRect updateRect) override {
 
         // --- PASS A: RENDER PRIMARY ACTIVE BALL 1 ---
         if (fMotoCrashTicks <= 0.0f) {
+            // FIX: Multiply the baseline diameter by 2x if the window is currently in fullscreen
+            float dynamicBallSize1 = isWindowInFullscreen ? (fBallSize * 2.0f) : fBallSize;
+
             rgb_color glowColor = fArtworkPalette[10]; 
             SetHighColor(glowColor.red, glowColor.green, glowColor.blue, 120);
-            FillEllipse(BPoint(fBallX, fBallY), (fBallSize / 2.0f) + 3.0f, (fBallSize / 2.0f) + 3.0f);
+            
+            // Adjust radial glow calculations to use the up-scaled size bounds
+            FillEllipse(BPoint(fBallX, fBallY), (dynamicBallSize1 / 2.0f) + 3.0f, (dynamicBallSize1 / 2.0f) + 3.0f);
 
             SetHighColor(255, 255, 255, 255);
-            FillEllipse(BPoint(fBallX, fBallY), fBallSize / 2.0f, fBallSize / 2.0f);
+            FillEllipse(BPoint(fBallX, fBallY), dynamicBallSize1 / 2.0f, dynamicBallSize1 / 2.0f);
         }
 
         // --- PASS B: RENDER CHAOTIC HAZARD BALL 2 ---
-        // Only paint if explicitly flagged active by your probability tracking loops
         if (fBallSize2 > 0.0f) {
-            rgb_color glowColor2 = fArtworkPalette[45]; // High contrasting hue mapping
+            // FIX: Multiply the baseline diameter by 2x if the window is currently in fullscreen
+            float dynamicBallSize2 = isWindowInFullscreen ? (fBallSize2 * 2.0f) : fBallSize2;
+
+            rgb_color glowColor2 = fArtworkPalette[45]; 
             SetHighColor(glowColor2.red, glowColor2.green, glowColor2.blue, 120);
-            FillEllipse(BPoint(fBallX2, fBallY2), (fBallSize2 / 2.0f) + 3.0f, (fBallSize2 / 2.0f) + 3.0f);
+            
+            // Adjust radial glow calculations to use the up-scaled size bounds
+            FillEllipse(BPoint(fBallX2, fBallY2), (dynamicBallSize2 / 2.0f) + 3.0f, (dynamicBallSize2 / 2.0f) + 3.0f);
 
             SetHighColor(255, 0, 180, 255); // Radiant high-heat Magenta core
-            FillEllipse(BPoint(fBallX2, fBallY2), fBallSize2 / 2.0f, fBallSize2 / 2.0f);
+            FillEllipse(BPoint(fBallX2, fBallY2), dynamicBallSize2 / 2.0f, dynamicBallSize2 / 2.0f);
         }
+
 
         // --- PASS C: BONUS POINT ALPHA TEXT ALERT ---
         if (fBonusFlashTick > 0.0f) {
             SetDrawingMode(B_OP_ALPHA);
             
-            // Matches the high-heat Magenta core (255, 0, 180) with dynamic smooth alpha fade
             rgb_color pinkColor = { 255, 0, 180, (uint8)(fBonusFlashAlpha * 255) };
             SetHighColor(pinkColor);
             
-            // Establish proportional UI font scale
             float scale = be_plain_font->Size() / 12.0f;
             SetFont(be_bold_font);
             SetFontSize(14.0f * scale); 
@@ -3985,18 +4191,15 @@ virtual void Draw(BRect updateRect) override {
             const char* bonusText = "+2 Bonus Ball Activatd!!";
             float textWidth = StringWidth(bonusText);
             
-            // Pull layout height directly from the BView Bounds context
             float drawBoundsHeight = Bounds().Height();
             
-            // Perfectly centers the notification banner inside the dynamic view layout bounds
             BPoint textPos;
             textPos.x = startX_cached + ((artworkWidth_cached - textWidth) / 2.0f);
-            textPos.y = (drawBoundsHeight / 2.0f) - (25.0f * scale); // Floats slightly above center screen
+            textPos.y = (drawBoundsHeight / 2.0f) - (25.0f * scale); 
             
             DrawString(bonusText, textPos);
         }
 
-        
         SetDrawingMode(B_OP_COPY);
         SetPenSize(1.0f);
     }
@@ -4008,7 +4211,10 @@ virtual void Draw(BRect updateRect) override {
  else if (fVisualizerMode == MODE_RAINDROPS) {
         // Mode 5: Audio-Reactive Falling Particle Rain Drops
         SetDrawingMode(B_OP_ALPHA);
-        SetPenSize(1.8f);
+        
+        // HIGH-RES MODIFICATION: Dynamic sizing scalar for lines and points
+        float rainScale = isWindowInFullscreen ? 2.5f : 1.0f;
+        SetPenSize(1.8f * rainScale);
 
         // Pull the safe volume tracking factor
         float volumeScale = gVolumeScaleFactor;
@@ -4025,9 +4231,6 @@ virtual void Draw(BRect updateRect) override {
             // --- STRICT READ-ONLY DRIVE METRICS ---
             float audioDrive = (fBarHeights[frequencyIndex] / height) * volumeScale; 
 
-            // Stripped the destructive 'fRainY[i] += ...' accumulator. 
-            // All position offsets are handled exclusively by your delta-time clock steps inside Pulse().
-
             float currentX = startX + (fRainX[i] * artworkWidth);
             float currentY = fRainY[i] * height;
 
@@ -4039,14 +4242,16 @@ virtual void Draw(BRect updateRect) override {
             transparentBlendedColor.blue  = (uint8)(dropColor.blue  * dynamicOpacityPct + bgCol.blue  * (1.0f - dynamicOpacityPct));
             transparentBlendedColor.alpha = 255;
 
-            // Tail length naturally shortens back to a 4px drizzle when muted
-            float tailLength = 4.0f + (audioDrive * 12.0f); 
+            // HIGH-RES MODIFICATION: Scale the rain drizzle tail length proportionally for larger screen heights
+            float tailLength = (4.0f * rainScale) + (audioDrive * 12.0f * rainScale); 
             SetHighColor(transparentBlendedColor);
             StrokeLine(BPoint(currentX, currentY - tailLength), BPoint(currentX, currentY));
         }
         
         // --- LAYER: RENDER ACTIVE DETONATION SPARK PARTICLES ---
-        SetPenSize(2.2f); // Gives particles a visible, punchy retro pixel weight
+        SetPenSize(2.2f * rainScale); 
+        float dynamicSparkSize = 2.0f * rainScale;
+
         for (int s = 0; s < 12; s++) {
             if (fSparkLife[s] > 0.0f) {
                 // Flash high-contrast orange vs neon bright yellow spark clusters
@@ -4060,7 +4265,8 @@ virtual void Draw(BRect updateRect) override {
                 float sx = fSparkX[s];
                 float sy = fSparkY[s];
                 
-                FillRect(BRect(sx, sy, sx + 2.0f, sy + 2.0f));
+                // HIGH-RES MODIFICATION: Expand pixel splash widths uniformly to remain punchy in fullscreen
+                FillRect(BRect(sx, sy, sx + dynamicSparkSize, sy + dynamicSparkSize));
             }
         }
         
@@ -4069,15 +4275,34 @@ virtual void Draw(BRect updateRect) override {
     }
     
     
-			//@replicadraw @ACID_MELT
-            else if (fVisualizerMode == MODE_REPLICA || fVisualizerMode == MODE_ACID_MELT) {
-            SetHighColor(40, 40, 40, 255);
+    
+    
+    
+		//@replicadraw @ACID_MELT
+		else if (fVisualizerMode == MODE_REPLICA || fVisualizerMode == MODE_ACID_MELT) {
+            // ================================================================
+            // --- FIX: THEME-AWARE BASE REPLICANT CLEARING ENGINE ---
+            // ================================================================
+            // If the dark theme is disabled, use native Haiku panel gray instead 
+            // of forcing a hardcoded dark rectangle backbuffer.
+            if (cfg.uTheme == "Dark") {
+                SetHighColor(40, 40, 40, 255);
+            } else {
+                SetHighColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+            }
+            
+            SetLowColor(HighColor());
+            SetDrawingMode(B_OP_COPY);
             FillRect(updateRect);
         }
 
+
+
+
+
     
     // @neon
-   else if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
+else if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
         SetDrawingMode(B_OP_ALPHA);
 
         float centerWindowX = startX + (artworkWidth / 2.0f);
@@ -4097,7 +4322,6 @@ virtual void Draw(BRect updateRect) override {
         
         if (isWindowInFullscreen) {
             // Fullscreen Mode: Calculate an absolute ratio based on screen size!
-            // Change 180.0f to a lower number (like 120.0f) if you want the text even more giant!
             signScaleFactor = (artworkWidth / 210.0f); 
             if (signScaleFactor > 8.05f) signScaleFactor = 8.5f; // Giant upper boundary for 4K setups
         } else {
@@ -4115,7 +4339,6 @@ virtual void Draw(BRect updateRect) override {
         // Re-centered layout using our expanded dynamic vector metrics
         BPoint posOpen(centerWindowX - (totalOpenWidth / 2.0f), centerWindowY - (30.0f * signScaleFactor));
 
-
         // --- 2D ORGANIC SHIMMER ENGINE ---
         bigtime_t sysTime = system_time();
         const float basePeriodSeconds = 8.0f; 
@@ -4130,8 +4353,7 @@ virtual void Draw(BRect updateRect) override {
 
         float bassDrive = fNeonBassSmooth;
         
-        // Decoupled random visual noise ticks. Because fNeonFlickerTimer2 decreases linearly by real-time seconds in Pulse(),
-        // checking the raw flag here provides clean, unified stutter triggers regardless of output FPS constraints.
+        // Decoupled random visual noise ticks
         bool gasFlicker2 = (fNeonFlickerTimer2 > 0.0f) && ((rand() % 100) > 45);
         float auraPulseIntensity = 0.35f + (bassDrive * 0.65f);
 
@@ -4145,6 +4367,7 @@ virtual void Draw(BRect updateRect) override {
         // --- LAYER 0: PHYSICAL UNLIT "DEAD" GLASS TUBE SILHOUETTE ---
         // ================================================================
         SetPenSize(9.5f * signScaleFactor); 
+        SetLineMode(B_ROUND_CAP, B_ROUND_JOIN); // HIGH-DEF LOCK
 
         for (int i = 0; i < 4; i++) {
             float letterX = posOpen.x + (i * (letterWidth + letterPadding));
@@ -4163,23 +4386,21 @@ virtual void Draw(BRect updateRect) override {
             deadTubeColor.alpha = 110; 
 
             SetHighColor(deadTubeColor);
-            // Stateless generation creates shapes exactly on current frame dimensions
             BShape letterShape = GenerateNeonLetterShape(i, BPoint(letterX, posOpen.y), signScaleFactor);
             StrokeShape(&letterShape);
         }
-        
         
         // ================================================================
         // --- LAYER 1: BACKDROP AMBIENT WALL GLOW ---
         // ================================================================            
         SetPenSize(26.0f * signScaleFactor); 
+        SetLineMode(B_ROUND_CAP, B_ROUND_JOIN); // HIGH-DEF LOCK
+
         for (int i = 0; i < 4; i++) {
             float letterX = posOpen.x + (i * (letterWidth + letterPadding));
             float letterCenterX = letterX + (letterWidth / 2.0f);
             float letterCenterY = posOpen.y + (30.0f * signScaleFactor);
 
-            // --- FIXED COMPACT & WIDESCREEN PALETTE INDEX LOOKUP ---
-            // Calculate a perfect horizontal ratio (0.0 to 1.0) across the layout region
             float horizontalRatio = (letterCenterX - startX) / artworkWidth;
             if (horizontalRatio < 0.0f) horizontalRatio = 0.0f;
             if (horizontalRatio > 1.0f) horizontalRatio = 1.0f;
@@ -4187,7 +4408,6 @@ virtual void Draw(BRect updateRect) override {
             int openPaletteIdx = (int)(horizontalRatio * 63.0f);
             rgb_color openLetterColor = fArtworkPalette[openPaletteIdx];
 
-            // Map standard shimmer step frequencies
             float openSegmentIndex = horizontalRatio * (float)numBars;
             float openDistX = fabsf(openSegmentIndex - shimmerCenterX);
             float openDistY = fabsf(letterCenterY - shimmerCenterY);
@@ -4218,6 +4438,7 @@ virtual void Draw(BRect updateRect) override {
         // ================================================================
         SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
         SetPenSize(9.5f * signScaleFactor); 
+        SetLineMode(B_ROUND_CAP, B_ROUND_JOIN); // HIGH-DEF LOCK
         
         for (int i = 0; i < 4; i++) {
             float letterX = posOpen.x + (i * (letterWidth + letterPadding));
@@ -4260,6 +4481,7 @@ virtual void Draw(BRect updateRect) override {
         // --- LAYER 3: INNER HOT CENTER FILAMENTS ---
         // ================================================================
         SetPenSize(2.8f * signScaleFactor); 
+        SetLineMode(B_ROUND_CAP, B_ROUND_JOIN); // HIGH-DEF LOCK
         uint8 whiteAlphaValue = gasFlicker2 ? 80 : 190;
 
         for (int i = 0; i < 4; i++) {
@@ -4286,13 +4508,16 @@ virtual void Draw(BRect updateRect) override {
 
         PopState();
         SetDrawingMode(B_OP_COPY);
+        
+        SetLineMode(B_BUTT_CAP, B_MITER_JOIN, B_DEFAULT_MITER_LIMIT);
         SetPenSize(1.0f);
     }
+
 
     
     
     
-   else if (fVisualizerMode == MODE_MOTO_RIDER) {			
+ else if (fVisualizerMode == MODE_MOTO_RIDER) {			
         // Mode 6: Endless Motorcycle Runner with Parallax & Scoreboard Display
         SetDrawingMode(B_OP_ALPHA);
         float baselineY = height - 2.0f; 
@@ -4302,31 +4527,38 @@ virtual void Draw(BRect updateRect) override {
         // Fetch live audio vars to match the physics thread scaling calculations exactly
         float lowBassPulse = (fBarHeights[2] + fBarHeights[3] + fBarHeights[4]) / 3.0f; 
         float bassNormalized = (height > 0.0f) ? (lowBassPulse / height) : 0.0f;  
+
+        // HIGH-RES MODIFICATION: Scale global world thickness and landscape layout widths
+        float worldScale = isWindowInFullscreen ? 2.2f : 1.0f;
+        float mtnStepWidth = isWindowInFullscreen ? 540.0f : 240.0f;
+        float mtnHalfWidth = mtnStepWidth / 2.0f;
                    
         // --- LAYER 0: SKY RESIDENT LAYER (Drifting Clouds) ---
-        SetPenSize(1.0f); 
+        SetPenSize(isWindowInFullscreen ? 2.5f : 1.0f); 
         SetHighColor(isDarkBg ? rgb_color{110, 125, 140, 120} : rgb_color{200, 205, 210, 150});
         for (int c = 0; c < 3; c++) {
-            float cx = startX + fCloudX[c]; 
-            float cy = fCloudY[c]; 
-            float cw = fCloudSize[c];
-            FillEllipse(BPoint(cx, cy), cw / 2.0f, 3.5f); 
-            FillEllipse(BPoint(cx + (cw * 0.2f), cy - 2.0f), cw / 3.0f, 3.0f); 
-            FillEllipse(BPoint(cx - (cw * 0.2f), cy - 1.0f), cw / 3.5f, 2.5f);
+            // Scale out the cloud tracking index speed dynamically on massive screens
+            float cx = startX + (fCloudX[c] * (isWindowInFullscreen ? 1.5f : 1.0f)); 
+            float cy = fCloudY[c] * (isWindowInFullscreen ? 1.8f : 1.0f); // Push clouds higher up in fullscreen
+            float cw = fCloudSize[c] * worldScale;
+            
+            FillEllipse(BPoint(cx, cy), cw / 2.0f, 3.5f * worldScale); 
+            FillEllipse(BPoint(cx + (cw * 0.2f), cy - (2.0f * worldScale)), cw / 3.0f, 3.0f * worldScale); 
+            FillEllipse(BPoint(cx - (cw * 0.2f), cy - (1.0f * worldScale)), cw / 3.5f, 2.5f * worldScale);
         }   
                   
-        // --- LAYER 1: DISTANT PARALLAX MOUNTAINS (FIXED STUTTER & RANDOM SIZES) ---
+        // --- LAYER 1: DISTANT PARALLAX MOUNTAINS (DYNAMIC STEPS FOR WIDESCREEN) ---
         for (int m = 0; m < 4; m++) {
             // Read custom sizing profile scalar set inside your math loop
             float currentMtnScale = (fMtnHeightScale[m] > 0.01f) ? fMtnHeightScale[m] : (0.8f + (m * 0.15f));
-            float peakHeight = 26.0f * currentMtnScale;    
+            float peakHeight = 26.0f * currentMtnScale * worldScale;    
                         
-            // Matches the strict 240px wide modular boundary step to keep the scrolling continuous
-            float mx = fMtnScrollX + (m * 240.0f);                
+            // Dynamic width step prevents mountains from tearing apart or showing gaps in fullscreen
+            float mx = fMtnScrollX + (m * mtnStepWidth);                
             BPoint triangle[3] = {
                 BPoint(startX + mx, baselineY),
-                BPoint(startX + mx + 120.0f, baselineY - peakHeight), 
-                BPoint(startX + mx + 240.0f, baselineY)
+                BPoint(startX + mx + mtnHalfWidth, baselineY - peakHeight), 
+                BPoint(startX + mx + mtnStepWidth, baselineY)
             };                
             // Base Solid Mountain Color
             SetHighColor(isDarkBg ? rgb_color{55, 68, 82, 255} : rgb_color{190, 198, 205, 255}); 
@@ -4334,138 +4566,159 @@ virtual void Draw(BRect updateRect) override {
                        
             // Outer Structural Depth Accent Edging Line
             SetHighColor(isDarkBg ? rgb_color{85, 100, 115, 255} : rgb_color{165, 175, 185, 255}); 
-            SetPenSize(1.2f); 
+            SetPenSize(1.2f * worldScale); 
             StrokePolygon(triangle, 3);                
         }
                      
         // --- LAYER 2: MIDGROUND LAYER (Random Green Stick Trees) ---
         SetHighColor(35, 155, 75, 255); 
-        SetPenSize(1.5f);   
+        SetPenSize(1.5f * worldScale);   
         for (int t = 0; t < 4; t++) {
-            float tx = startX + fTreeX[t]; 
-            float th = fTreeHeight[t];
+            // Adjust scrolling width tracking step for fullscreen
+            float tx = startX + (fTreeX[t] * (isWindowInFullscreen ? 1.5f : 1.0f)); 
+            float th = fTreeHeight[t] * worldScale;
+            
             StrokeLine(BPoint(tx, baselineY), BPoint(tx, baselineY - th));
-            StrokeLine(BPoint(tx, baselineY - th), BPoint(tx - 4.0f, baselineY - th + 5.0f)); 
-            StrokeLine(BPoint(tx, baselineY - th), BPoint(tx + 4.0f, baselineY - th + 5.0f));
-            StrokeLine(BPoint(tx, baselineY - th + 4.0f), BPoint(tx - 6.0f, baselineY - th + 10.0f)); 
-            StrokeLine(BPoint(tx, baselineY - th + 4.0f), BPoint(tx + 6.0f, baselineY - th + 10.0f));
+            StrokeLine(BPoint(tx, baselineY - th), BPoint(tx - (4.0f * worldScale), baselineY - th + (5.0f * worldScale))); 
+            StrokeLine(BPoint(tx, baselineY - th), BPoint(tx + (4.0f * worldScale), baselineY - th + (5.0f * worldScale)));
+            StrokeLine(BPoint(tx, baselineY - th + (4.0f * worldScale)), BPoint(tx - (6.0f * worldScale), baselineY - th + (10.0f * worldScale))); 
+            StrokeLine(BPoint(tx, baselineY - th + (4.0f * worldScale)), BPoint(tx + (6.0f * worldScale), baselineY - th + (10.0f * worldScale)));
         }
                          
         // --- LAYER 3: LIVE GAME GROUND RUNNER horizon tracks ---
         SetHighColor(isDarkBg ? rgb_color{80, 90, 100, 255} : rgb_color{180, 185, 190, 255}); 
-        SetPenSize(2.0f);  
+        SetPenSize(2.0f * worldScale);  
         StrokeLine(BPoint(startX, baselineY), BPoint(startX + artworkWidth, baselineY)); 
         SetHighColor(bgCol); 
         for (int o = 0; o < 2; o++) {
-            // If the obstacle is either a pit (1) or water pocket (2), carve out the black drop gap
+            float dynamicObsX = startX + (fObsX[o] * (isWindowInFullscreen ? 1.5f : 1.0f));
+            // If the obstacle is either a pit (1) or water pocket (2), carve out the dynamic gap width
             if (fObsIsPit[o] == 1 || fObsIsPit[o] == 2) {
-                StrokeLine(BPoint(startX + fObsX[o] + 1.0f, baselineY), BPoint(startX + fObsX[o] + 23.0f, baselineY));
+                StrokeLine(BPoint(dynamicObsX + 1.0f, baselineY), BPoint(dynamicObsX + (23.0f * worldScale), baselineY));
             }
         }
+
                     
         // --- LAYER 4: MULTI-HAZARD DRAW ENGINES (Rocks, Pits, Water Blue Pools, & Spikes) ---
         int32 themeColorIndex = 20; 
+        
+        // HIGH-RES MODIFICATION: Dynamic sizing scalar for obstacles
+        float hazardScale = isWindowInFullscreen ? 2.5f : 1.0f;
+        float hazardLinePen = isWindowInFullscreen ? 2.5f : 1.0f;
+
         for (int o = 0; o < 2; o++) {
+            // Scale horizontal movement metric to handle the expanded display width
+            float dynamicObsX = startX + (fObsX[o] * (isWindowInFullscreen ? 1.5f : 1.0f));
+
             if (fObsIsPit[o] == 0) {
                 // --- HAZARD TYPE 0: SOLID ROCK BLOCK ---
                 float audioGrowthFactor = 1.0f;
                 if (o == 1) { 
                     audioGrowthFactor += (bassNormalized * 1.6f); 
                 }                    
-                float finalObsHeight = 10.0f * fObsHeightScale[o] * audioGrowthFactor; 
-                float obsWidth = (fObsHeightScale[o] < 0.9f) ? 7.0f : ((fObsHeightScale[o] > 1.2f) ? 5.0f : 10.0f);                    
-                BRect rockBounds(startX + fObsX[o], baselineY - finalObsHeight, startX + fObsX[o] + obsWidth, baselineY);  
+                float finalObsHeight = 10.0f * fObsHeightScale[o] * audioGrowthFactor * hazardScale; 
+                float baseWidth = (fObsHeightScale[o] < 0.9f) ? 7.0f : ((fObsHeightScale[o] > 1.2f) ? 5.0f : 10.0f);                    
+                float obsWidth = baseWidth * hazardScale;
+
+                BRect rockBounds(dynamicObsX, baselineY - finalObsHeight, dynamicObsX + obsWidth, baselineY);  
                 SetHighColor(fArtworkPalette[themeColorIndex]);
                 FillRect(rockBounds);                       
                 if (fObsHeightScale[o] > 1.2f) {
                     SetHighColor(240, 70, 70, 255); 
-                    FillRect(BRect(startX + fObsX[o], baselineY - finalObsHeight, startX + fObsX[o] + obsWidth, baselineY - finalObsHeight + 2.0f));
+                    FillRect(BRect(dynamicObsX, baselineY - finalObsHeight, dynamicObsX + obsWidth, baselineY - finalObsHeight + (2.0f * hazardScale)));
                 } 
                                    
-                // CRITICAL VISIBILITY CORRECTION: Wrap stone geometry in bright safety strokes if background is dark
-                SetPenSize(1.0f);
+                // CRITICAL VISIBILITY CORRECTION: Thicken safety lines on big screens
+                SetPenSize(hazardLinePen);
                 SetHighColor(isDarkBg ? rgb_color{255, 255, 255, 220} : rgb_color{0, 0, 0, 220});
                 StrokeRect(rockBounds);                    
             } else if (fObsIsPit[o] == 1) {
                 // --- HAZARD TYPE 1: EMPTY GROUND PIT GAP ---
                 SetHighColor(fArtworkPalette[themeColorIndex]);
-                FillRect(BRect(startX + fObsX[o] - 2.0f, baselineY - 3.0f, startX + fObsX[o], baselineY));
-                FillRect(BRect(startX + fObsX[o] + 24.0f, baselineY - 3.0f, startX + fObsX[o] + 26.0f, baselineY));   
+                FillRect(BRect(dynamicObsX - (2.0f * hazardScale), baselineY - (3.0f * hazardScale), dynamicObsX, baselineY));
+                FillRect(BRect(dynamicObsX + (24.0f * hazardScale), baselineY - (3.0f * hazardScale), dynamicObsX + (26.0f * hazardScale), baselineY));   
                                  
                 // Add high contrast neon warning trim to edges
+                SetPenSize(hazardLinePen * 1.5f);
                 SetHighColor(255, 60, 60, 255);
-                StrokeLine(BPoint(startX + fObsX[o], baselineY), BPoint(startX + fObsX[o] + 24.0f, baselineY));                    
+                StrokeLine(BPoint(dynamicObsX, baselineY), BPoint(dynamicObsX + (24.0f * hazardScale), baselineY));                    
             } else if (fObsIsPit[o] == 2) {
-            	
-            	
-            	
-            	
-        	// --- HAZARD TYPE 2: NEON WATER POOL (BLUE OBSTACLE) ---
-        	BRect waterBounds(startX + fObsX[o], baselineY + 1.0f, startX + fObsX[o] + 24.0f, baselineY + 6.0f);                    
-        	SetHighColor(0, 130, 255, 255); 
-        
-        	// Rich deep hazard blue pool fill
-        	FillRect(waterBounds);                    
-        	SetHighColor(0, 240, 255, 255); 
-        
-        	// Radiant glowing surface layer line
-        	StrokeLine(BPoint(startX + fObsX[o], baselineY + 1.0f), BPoint(startX + fObsX[o] + 24.0f, baselineY + 1.0f));                    
-        
-        	// Safety shoreline markers
-        	SetHighColor(isDarkBg ? rgb_color{255, 255, 255, 180} : rgb_color{0, 0, 0, 180});
-        	StrokeLine(BPoint(startX + fObsX[o], baselineY), BPoint(startX + fObsX[o], baselineY + 4.0f));
-        	StrokeLine(BPoint(startX + fObsX[o] + 24.0f, baselineY), BPoint(startX + fObsX[o] + 24.0f, baselineY + 4.0f));
-    
-    		} else if (fObsIsPit[o] == 3 || fObsIsPit[o] == 4) {
-        		// --- HAZARD TYPE 3 & 4: PULSING SHARP SHOCK-SPIKE BLADES ---
-        		int spikeCount = (fObsIsPit[o] == 3) ? 4 : 5;
-        		float spikeWidth = 8.0f;
-        		float spikeAudioScale = 1.0f + (bassNormalized * 1.2f);
+                // --- HAZARD TYPE 2: NEON WATER POOL (BLUE OBSTACLE) ---
+                BRect waterBounds(dynamicObsX, baselineY + 1.0f, dynamicObsX + (24.0f * hazardScale), baselineY + (6.0f * hazardScale));                    
+                SetHighColor(0, 130, 255, 255); 
+            
+                // Rich deep hazard blue pool fill
+                FillRect(waterBounds);                    
+                SetHighColor(0, 240, 255, 255); 
+            
+                // Radiant glowing surface layer line
+                SetPenSize(hazardLinePen);
+                StrokeLine(BPoint(dynamicObsX, baselineY + 1.0f), BPoint(dynamicObsX + (24.0f * hazardScale), baselineY + 1.0f));                    
+            
+                // Safety shoreline markers
+                SetHighColor(isDarkBg ? rgb_color{255, 255, 255, 180} : rgb_color{0, 0, 0, 180});
+                StrokeLine(BPoint(dynamicObsX, baselineY), BPoint(dynamicObsX, baselineY + (4.0f * hazardScale)));
+                StrokeLine(BPoint(dynamicObsX + (24.0f * hazardScale), baselineY), BPoint(dynamicObsX + (24.0f * hazardScale), baselineY + (4.0f * hazardScale)));
+            } else if (fObsIsPit[o] == 3 || fObsIsPit[o] == 4) {
+                // --- HAZARD TYPE 3 & 4: PULSING SHARP SHOCK-SPIKE BLADES ---
+                int spikeCount = (fObsIsPit[o] == 3) ? 4 : 5;
+                float spikeWidth = 8.0f * hazardScale;
+                float spikeAudioScale = 1.0f + (bassNormalized * 1.2f);
 
-        		for (int sIdx = 0; sIdx < spikeCount; sIdx++) {
-            		float leftX = startX + fObsX[o] + (sIdx * spikeWidth);
-            		float rightX = leftX + spikeWidth;
-            		float centerX = leftX + (spikeWidth / 2.0f);
+                for (int sIdx = 0; sIdx < spikeCount; sIdx++) {
+                    float leftX = dynamicObsX + (sIdx * spikeWidth);
+                    float rightX = leftX + spikeWidth;
+                    float centerX = leftX + (spikeWidth / 2.0f);
 
-            		// Match physical sizing structure profile equations precisely
-            		float sizeVariation = 0.7f + (((sIdx * 3) % 5) / 6.0f);
-            		float currentSpikeHeight = 7.0f * fObsHeightScale[o] * sizeVariation * spikeAudioScale;
-            		float tipY = baselineY - currentSpikeHeight;
+                    // Match physical sizing structure profile equations precisely
+                    float sizeVariation = 0.7f + (((sIdx * 3) % 5) / 6.0f);
+                    float currentSpikeHeight = 7.0f * fObsHeightScale[o] * sizeVariation * spikeAudioScale * hazardScale;
+                    float tipY = baselineY - currentSpikeHeight;
 
-            		// Solid Semi-Translucent Triangle Body Fill
-            		SetHighColor(255, 90, 0, 95); 
-            		BPoint spikeTri[3] = { BPoint(leftX, baselineY), BPoint(centerX, tipY), BPoint(rightX, baselineY) };
-            		FillPolygon(spikeTri, 3);
+                    // Solid Semi-Translucent Triangle Body Fill
+                    SetHighColor(255, 90, 0, 95); 
+                    BPoint spikeTri[3] = { BPoint(leftX, baselineY), BPoint(centerX, tipY), BPoint(rightX, baselineY) };
+                    FillPolygon(spikeTri, 3);
 
-            		// High Contrast Solid Accent Border Outlines
-            		SetPenSize(1.2f);
-            		SetHighColor(isDarkBg ? rgb_color{255, 110, 50, 240} : rgb_color{210, 40, 10, 240});
-            		StrokeLine(BPoint(leftX, baselineY), BPoint(centerX, tipY));
-            		StrokeLine(BPoint(centerX, tipY), BPoint(rightX, baselineY));
-        		}
-    		}
-		}                      
+                    // High Contrast Solid Accent Border Outlines
+                    SetPenSize(hazardLinePen);
+                    SetHighColor(isDarkBg ? rgb_color{255, 110, 50, 240} : rgb_color{210, 40, 10, 240});
+                    StrokeLine(BPoint(leftX, baselineY), BPoint(centerX, tipY));
+                    StrokeLine(BPoint(centerX, tipY), BPoint(rightX, baselineY));
+                }
+            }
+        }
+                    
 
 		// --- LAYER 5: SCOREBOARD TRACKING DISPLAY TEXT ---
 		BFont scoreFont;   
 		GetFont(&scoreFont);
-		scoreFont.SetSize(11.0f); 
+		
+		// HIGH-RES FIX: Scale font size up (22.0f in fullscreen, 11.0f in window mode)
+		float dynamicScoreSize = isWindowInFullscreen ? 22.0f : 11.0f;
+		scoreFont.SetSize(dynamicScoreSize); 
 		SetFont(&scoreFont);            
+		
 		SetHighColor(isDarkBg ? rgb_color{0, 240, 255, 200} : rgb_color{50, 60, 70, 220});
 		BString scoreStr;
 		scoreStr.SetToFormat("SCORE: %" B_PRId32, fMotoScore);
-		DrawString(scoreStr.String(), BPoint(startX + artworkWidth - 68.0f, 15.0f));  
+		
+		// HIGH-RES FIX: Move layout margins out from screen boundaries depending on fullscreen states
+		float scoreDrawX = startX + artworkWidth - (isWindowInFullscreen ? 140.0f : 68.0f);
+		float scoreDrawY = isWindowInFullscreen ? 30.0f : 15.0f;
+		DrawString(scoreStr.String(), BPoint(scoreDrawX, scoreDrawY));  
 
 		// --- LAYER 5B: UNCLIPPED CENTER-SCREEN STUNT POPUP ---
 		if (fStuntTextLife > 0.0f) {
     		BFont stuntFont;
     		GetFont(&stuntFont);
-    		stuntFont.SetSize(13.0f); 
+            
+    		// HIGH-RES FIX: Scale the bold stunt popups cleanly up to 26.0f in fullscreen
+    		stuntFont.SetSize(isWindowInFullscreen ? 26.0f : 13.0f); 
     		stuntFont.SetFace(B_BOLD_FACE);
     		SetFont(&stuntFont);
     
     		// --- THEME-ADAPTIVE HIGH-CONTRAST COLOR SWITCH pass ---
-    		// Using your uncoupled float lifetime tracker to scale font transparency cleanly
     		float maxStuntTextLife = 35.0f * fDtScaleCached;
     		if (maxStuntTextLife <= 0.0f) maxStuntTextLife = 1.0f;
     		float alphaFadePct = fStuntTextLife / maxStuntTextLife;
@@ -4480,7 +4733,9 @@ virtual void Draw(BRect updateRect) override {
     		float stringWidth = stuntFont.StringWidth(fStuntTextStr.String());
     		float screenCenterX = startX + (artworkWidth / 2.0f);
     
-    		DrawString(fStuntTextStr.String(), BPoint(screenCenterX - (stringWidth / 2.0f), fStuntTextY));
+    		// HIGH-RES FIX: Scale vertical trajectory coordinate position mapping to prevent overlap
+    		float dynamicStuntY = isWindowInFullscreen ? (fStuntTextY * 2.2f) : fStuntTextY;
+    		DrawString(fStuntTextStr.String(), BPoint(screenCenterX - (stringWidth / 2.0f), dynamicStuntY));
     
     		// Restore font to clear trailing canvas modifications
     		SetFont(&scoreFont);
@@ -4491,40 +4746,57 @@ virtual void Draw(BRect updateRect) override {
     		SetDrawingMode(B_OP_ALPHA);
     		SetHighColor(255, 255, 255, 210); 
     
-    		float dogFloorY = baselineY - 5.0f - fDogDrawY; 
+    		// HIGH-RES FIX: Introduce a 2.5x spatial structural scale factor in fullscreen
+    		float dogScale = isWindowInFullscreen ? 2.5f : 1.0f;
+    		float dogFloorY = baselineY - (5.0f * dogScale) - (fDogDrawY * dogScale); 
+    		float dynamicDogX = startX + (fDogDrawX * (isWindowInFullscreen ? 1.5f : 1.0f));
 
-    		// Draw main body torso
-    		FillRect(BRect(startX + fDogDrawX - 7.0f, dogFloorY - 4.0f, startX + fDogDrawX + 7.0f, dogFloorY + 3.0f));
+    		// Draw main body torso (Multiplied by dogScale coordinates)
+    		FillRect(BRect(
+                dynamicDogX - (7.0f * dogScale), 
+                dogFloorY - (4.0f * dogScale), 
+                dynamicDogX + (7.0f * dogScale), 
+                dogFloorY + (3.0f * dogScale)
+            ));
     
-    		// FIXED ORIENTATION: Draw head block on the RIGHT (+4.0f to +11.0f) because he's running right!
-    		FillRect(BRect(startX + fDogDrawX + 4.0f, dogFloorY - 9.0f, startX + fDogDrawX + 11.0f, dogFloorY - 3.0f));
+    		// FIXED ORIENTATION: Draw head block on the RIGHT because he's running right!
+    		FillRect(BRect(
+                dynamicDogX + (4.0f * dogScale), 
+                dogFloorY - (9.0f * dogScale), 
+                dynamicDogX + (11.0f * dogScale), 
+                dogFloorY - (3.0f * dogScale)
+            ));
     
     		// Draw legs
-    		FillRect(BRect(startX + fDogDrawX - 5.0f, dogFloorY + 3.0f, startX + fDogDrawX - 3.0f, dogFloorY + 8.0f)); // Back Leg
-    		FillRect(BRect(startX + fDogDrawX + 3.0f, dogFloorY + 3.0f, startX + fDogDrawX + 5.0f, dogFloorY + 8.0f)); // Front Leg
+    		FillRect(BRect(dynamicDogX - (5.0f * dogScale), dogFloorY + (3.0f * dogScale), dynamicDogX - (3.0f * dogScale), dogFloorY + (8.0f * dogScale))); // Back Leg
+    		FillRect(BRect(dynamicDogX + (3.0f * dogScale), dogFloorY + (3.0f * dogScale), dynamicDogX + (5.0f * dogScale), dogFloorY + (8.0f * dogScale))); // Front Leg
     
     		// Animated fast wagging tail (now pointing LEFT since he runs right)
-    		SetPenSize(1.5f);
+    		SetPenSize(isWindowInFullscreen ? 3.5f : 1.5f);
     
-    		// Replaced mutable static variable increment loops with a unified absolute system clock reading
     		bigtime_t currentClock = system_time();
     		bool tailOscillation = ((currentClock / 120000) % 2 == 0); // Fast 120ms real-world tail wag frequency
     
     		if (tailOscillation) {
-        		StrokeLine(BPoint(startX + fDogDrawX - 7.0f, dogFloorY - 2.0f), BPoint(startX + fDogDrawX - 11.0f, dogFloorY - 6.0f));
+        		StrokeLine(BPoint(dynamicDogX - (7.0f * dogScale), dogFloorY - (2.0f * dogScale)), BPoint(dynamicDogX - (11.0f * dogScale), dogFloorY - (6.0f * dogScale)));
     		} else {
-        		StrokeLine(BPoint(startX + fDogDrawX - 7.0f, dogFloorY - 2.0f), BPoint(startX + fDogDrawX - 12.0f, dogFloorY - 2.0f));
+        		StrokeLine(BPoint(dynamicDogX - (7.0f * dogScale), dogFloorY - (2.0f * dogScale)), BPoint(dynamicDogX - (12.0f * dogScale), dogFloorY - (2.0f * dogScale)));
     		}
 		}
 
         // --- LAYER 6: MOTORCYCLE RIDER VEHICLE BODY & FLIP MECHANIC ---
-        float riderX = startX + 45.0f; 
-        float riderY = baselineY - fMotoY - 6.0f;
+        // HIGH-RES MODIFICATION: Line weights and overall sprite scaling transformations
+        float bikeScale = isWindowInFullscreen ? 2.5f : 1.0f;
+        SetPenSize(isWindowInFullscreen ? 3.5f : 1.5f);
+
+        // Adjust anchor rendering targets so the larger model floats cleanly above ground tracks
+        float riderX = startX + (isWindowInFullscreen ? 112.0f : 45.0f); 
+        float riderY = baselineY - (fMotoY * bikeScale) - (isWindowInFullscreen ? 15.0f : 6.0f);
 
         if (fMotoCrashTicks > 0.0f) {
             SetHighColor(240, 70, 70, 255);
-            StrokeLine(BPoint(riderX - 8, baselineY - 4), BPoint(riderX + 8, baselineY - 8));
-            StrokeLine(BPoint(riderX - 4, baselineY - 10), BPoint(riderX + 6, baselineY - 4));
+            StrokeLine(BPoint(riderX - (8.0f * bikeScale), baselineY - (4.0f * bikeScale)), BPoint(riderX + (8.0f * bikeScale), baselineY - (8.0f * bikeScale)));
+            StrokeLine(BPoint(riderX - (4.0f * bikeScale), baselineY - (10.0f * bikeScale)), BPoint(riderX + (6.0f * bikeScale), baselineY - (4.0f * bikeScale)));
         } else {
             // Compute rotation transformation matrices if mid-air stunt is active
             float rad = fFlipRotation * (M_PI / 180.0f);
@@ -4532,67 +4804,68 @@ virtual void Draw(BRect updateRect) override {
             float sinR = sinf(rad);
 
             SetHighColor(isDarkBg ? rgb_color{255, 255, 255, 255} : rgb_color{0, 0, 0, 255});
-            SetPenSize(1.5f);
 
-            // Calculate relative rotated offsets for bike frame points relative to core body center
-            BPoint frameLeft(riderX + (-10.0f * cosR - 0.0f * sinR), riderY + (-10.0f * sinR + 0.0f * cosR));
-            BPoint frameRight(riderX + (10.0f * cosR - (-2.0f) * sinR), riderY + (10.0f * sinR + (-2.0f) * cosR));
+            // Calculate relative rotated offsets for bike frame points scaled to core body center
+            BPoint frameLeft(riderX + ((-10.0f * cosR - 0.0f * sinR) * bikeScale), riderY + ((-10.0f * sinR + 0.0f * cosR) * bikeScale));
+            BPoint frameRight(riderX + ((10.0f * cosR - (-2.0f) * sinR) * bikeScale), riderY + ((10.0f * sinR + (-2.0f) * cosR) * bikeScale));
             StrokeLine(frameLeft, frameRight);
             
-            BPoint neckBase(riderX + (6.0f * cosR - (-2.0f) * sinR), riderY + (6.0f * sinR + (-2.0f) * cosR));
-            BPoint handlebars(riderX + (8.0f * cosR - (-9.0f) * sinR), riderY + (8.0f * sinR + (-9.0f) * cosR));
+            BPoint neckBase(riderX + ((6.0f * cosR - (-2.0f) * sinR) * bikeScale), riderY + ((6.0f * sinR + (-2.0f) * cosR) * bikeScale));
+            BPoint handlebars(riderX + ((8.0f * cosR - (-9.0f) * sinR) * bikeScale), riderY + ((8.0f * sinR + (-9.0f) * cosR) * bikeScale));
             StrokeLine(neckBase, handlebars);
 
             // Sparks stream dynamically out from the rotated exhaust tailpipe placement
-            BPoint tailpipe(riderX + (-10.0f * cosR - 1.0f * sinR), riderY + (-10.0f * sinR + 1.0f * cosR));
+            BPoint tailpipe(riderX + ((-10.0f * cosR - 1.0f * sinR) * bikeScale), riderY + ((-10.0f * sinR + 1.0f * cosR) * bikeScale));
                 
-                // ====================================================================
-                // FIXED: PURE RENDERING ENGINE DRAW PASS FOR BACKFIRE SPARKS (DRAW)
-                // ====================================================================
-                for (int s = 0; s < 12; s++) {
-                    if (fSparkLife[s] > 0.0f) {
-                        // Flashes random high-contrast arcade colors
-                        SetHighColor(255, rand() % 80 + 150, (rand() % 100 > 50) ? 0 : 255, 255); 
-                        
-                        // Explicitly factor in the rotated tailpipe origin anchor coordinates
-                        float sx = tailpipe.x + fSparkX[s];
-                        float sy = tailpipe.y + fSparkY[s];
-                        
-                        FillRect(BRect(sx, sy, sx + 1.5f, sy + 1.5f));
-                    }
+            // ====================================================================
+            // FIXED: PURE RENDERING ENGINE DRAW PASS FOR BACKFIRE SPARKS (DRAW)
+            // ====================================================================
+            float sparkDotSize = isWindowInFullscreen ? 3.0f : 1.5f;
+            for (int s = 0; s < 12; s++) {
+                if (fSparkLife[s] > 0.0f) {
+                    // Flashes random high-contrast arcade colors
+                    SetHighColor(255, rand() % 80 + 150, (rand() % 100 > 50) ? 0 : 255, 255); 
+                    
+                    // Explicitly factor in the scaled and rotated tailpipe coordinates
+                    float sx = tailpipe.x + (fSparkX[s] * bikeScale);
+                    float sy = tailpipe.y + (fSparkY[s] * bikeScale);
+                    
+                    FillRect(BRect(sx, sy, sx + sparkDotSize, sy + sparkDotSize));
                 }
-                // ====================================================================
-
+            }
+            // ====================================================================
             
-            // Rotated Wheel Positions (Offsets originally were X:-8, Y:+4 and X:+8, Y:+4)
-            BPoint frontWheel(riderX + (8.0f * cosR - 4.0f * sinR), riderY + (8.0f * sinR + 4.0f * cosR));
-            BPoint backWheel(riderX + (-8.0f * cosR - 4.0f * sinR), riderY + (-8.0f * sinR + 4.0f * cosR));
+            // Rotated Wheel Positions (Scaled dynamically)
+            BPoint frontWheel(riderX + ((8.0f * cosR - 4.0f * sinR) * bikeScale), riderY + ((8.0f * sinR + 4.0f * cosR) * bikeScale));
+            BPoint backWheel(riderX + ((-8.0f * cosR - 4.0f * sinR) * bikeScale), riderY + ((-8.0f * sinR + 4.0f * cosR) * bikeScale));
 
+            float dynamicWheelRadius = 4.0f * bikeScale;
             SetHighColor(fArtworkPalette[4]);
-            StrokeEllipse(backWheel, 4, 4);                
+            StrokeEllipse(backWheel, dynamicWheelRadius, dynamicWheelRadius);                
             SetHighColor(fArtworkPalette[58]);
-            StrokeEllipse(frontWheel, 4, 4); 
+            StrokeEllipse(frontWheel, dynamicWheelRadius, dynamicWheelRadius); 
             
             // Rotated Driver Head and Extremities
-            BPoint driverHead(riderX + (0.0f * cosR - (-14.0f) * sinR), riderY + (0.0f * sinR + (-14.0f) * cosR));
-            BPoint driverSpine(riderX + (0.0f * cosR - (-11.0f) * sinR), riderY + (0.0f * sinR + (-11.0f) * cosR));
-            BPoint driverHip(riderX + (-2.0f * cosR - (-4.0f) * sinR), riderY + (-2.0f * sinR + (-4.0f) * cosR));
+            BPoint driverHead(riderX + ((0.0f * cosR - (-14.0f) * sinR) * bikeScale), riderY + ((0.0f * sinR + (-14.0f) * cosR) * bikeScale));
+            BPoint driverSpine(riderX + ((0.0f * cosR - (-11.0f) * sinR) * bikeScale), riderY + ((0.0f * sinR + (-11.0f) * cosR) * bikeScale));
+            BPoint driverHip(riderX + ((-2.0f * cosR - (-4.0f) * sinR) * bikeScale), riderY + ((-2.0f * sinR + (-4.0f) * cosR) * bikeScale));
             
             SetHighColor(isDarkBg ? rgb_color{0, 240, 255, 255} : rgb_color{20, 30, 40, 255});
-            FillEllipse(driverHead, 2.5f, 2.5f); 
+            FillEllipse(driverHead, 2.5f * bikeScale, 2.5f * bikeScale); 
             StrokeLine(driverSpine, driverHip); 
             
-            BPoint driverFoot(riderX + (-6.0f * cosR - 0.0f * sinR), riderY + (-6.0f * sinR + 0.0f * cosR));
+            BPoint driverFoot(riderX + ((-6.0f * cosR - 0.0f * sinR) * bikeScale), riderY + ((-6.0f * sinR + 0.0f * cosR) * bikeScale));
             StrokeLine(driverHip, driverFoot); 
             
-            BPoint handlebarsGrip(riderX + (6.0f * cosR - (-7.0f) * sinR), riderY + (6.0f * sinR + (-7.0f) * cosR));
+            BPoint handlebarsGrip(riderX + ((6.0f * cosR - (-7.0f) * sinR) * bikeScale), riderY + ((6.0f * sinR + (-7.0f) * cosR) * bikeScale));
             StrokeLine(driverHip, handlebarsGrip); 
         }
         
         SetDrawingMode(B_OP_COPY);
         SetPenSize(1.0f);
     }
-} 
+}
+
 
 void UpdateData(const uint8* data, size_t size) {
     if (!cfg.showSpectrumVisuals || !cfg.eqEnabled) return;
@@ -5550,19 +5823,14 @@ void SuperMusicWindow::ApplyTheme() {
     // --- LOCK THE WINDOW ONCE TO PREVENT DEADLOCKS ---
     if (Lock()) {
         // Run a linear two-pass execution to shake loose Haiku's color caches 
-        // without invoking dangerous recursive function deadlocks.
         int totalPasses = (cfg.uTheme == "Default") ? 2 : 1;
-
 
         for (int pass = 1; pass <= totalPasses; pass++) {
             if (cfg.uTheme == "Dark" || (cfg.uTheme == "Default" && pass == 1)) {
-
-                // Pass 1 (or Dark Mode): Load dark colors to force cache invalidation
                 bgVal = {40, 40, 40, 255};      // Dark Grey
                 bg2Val = {0, 0, 0, 255};        // Pure Black for lists
                 txtVal = {255, 255, 255, 255};  // Pure White
             } else {
-                // Pass 2 (Default Mode): Safely capture actual global user colors
                 bgVal = ui_color(B_PANEL_BACKGROUND_COLOR);
                 bg2Val = ui_color(B_PANEL_BACKGROUND_COLOR);
                 txtVal = ui_color(B_PANEL_TEXT_COLOR);
@@ -5586,9 +5854,8 @@ void SuperMusicWindow::ApplyTheme() {
                     }
                 }
             }
-            
 
-             if (fPresetList) {
+            if (fPresetList) {
                 fPresetList->SetViewColor(bg2Val);
                 fPresetList->SetLowColor(bgVal);
                 fPresetList->SetHighColor(txtVal); 
@@ -5606,84 +5873,140 @@ void SuperMusicWindow::ApplyTheme() {
             
             if (fDescView) {
                 fDescView->SetViewColor(bgVal);
-                fDescView->SetFontAndColor(&boldFont, B_FONT_ALL, &txtVal);
-                fDescView->Invalidate();
+                // (fDescView font settings continue here...)
             }
+        } // --- END OF PASSES LOOP ---
+
+        // ====================================================================
+        // --- MOVED CODE INTEGRATION BLOCK ---
+        // ====================================================================
+        
+        // Rebuild the tabs to force the top navigation buttons to snap into place
+        if (!cfg.compactMode && fTabView) {
+        	
+        	// --- FIX: 1A. SMART CONTEXT RETENTION ENGINE ---
+            std::string savedTabName = "Radio"; // Safe fallback default
             
-            if (fSongView) {
-                fSongView->SetViewColor(bgVal);
-                fSongView->SetFontAndColor(&boldFont, B_FONT_ALL, &txtVal);
-                fSongView->Invalidate();
+            // If an explicit programmatic override is active, use that!
+            // Otherwise, safely fallback to tracking whatever tab the user was looking at.
+            if (!fOverrideTabTarget.IsEmpty()) {
+                savedTabName = fOverrideTabTarget.String();
+            } else {
+                int32 currentSelection = fTabView->Selection();
+                if (currentSelection >= 0) {
+                    BTab* activeTab = fTabView->TabAt(currentSelection);
+                    if (activeTab && activeTab->Label()) {
+                        savedTabName = activeTab->Label();
+                    }
+                }
             }
+        	 
+            // 1. Completely strip out existing tab items
+            for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
+                BTab* tab = fTabView->TabAt(i);
+                if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab) {
+                    fTabView->RemoveTab(i);
+                }
+            }
+
+            // 2. Re-allocate them cleanly so they hook into the new look
+            BGroupView* groups[] = { fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
+            const char* labels[] = { "Stations", "Fav", "Config", "About" };
+            BTab** dynamicTabs[] = { &fStationTab, &fFavTab, &fConfigTab, &fAboutTab };
+
+            for (int i = 0; i < 4; i++) { 
+                if (groups[i] == nullptr || dynamicTabs[i] == nullptr) continue;
+                
+                *dynamicTabs[i] = new BTab();
+                (*dynamicTabs[i])->SetLabel(labels[i]);
+                fTabView->AddTab(groups[i], *dynamicTabs[i]);
+            }
+
+            // --- FIX: 3. PROGRAMMATIC TARGET RESOLUTION ---
+            const char* targetTabLabel = fIsStartingUp ? "Radio" : savedTabName.c_str(); 
             
-            if (fStationList) {    
-                 fStationList->SetFlags(fStationList->Flags() | B_FRAME_EVENTS);
-                 
-                 if (fStationList->Parent()) {
-                    fStationList->SetViewColor(bgVal); 
-                    fStationList->SetLowColor(bgVal);
-                    fStationList->SetHighColor(txtVal); 
-                    fStationList->Invalidate();
+            for (int32 j = 0; j < fTabView->CountTabs(); j++) {
+                BTab* currentTab = fTabView->TabAt(j);
+                if (currentTab && currentTab->Label() && strcmp(currentTab->Label(), targetTabLabel) == 0) {
+                    fTabView->Select(j);
+                    break;
                 }
             }
             
-            if (fFavList) {
-                fFavList->SetViewColor(bgVal);
-                fFavList->SetLowColor(bgVal);
-                fFavList->SetHighColor(txtVal); 
-                fFavList->Invalidate(); 
-            }    
-            if (fBtnAddFav) {
-                fBtnAddFav->SetViewColor(bgVal);
-                fBtnAddFav->SetHighColor(txtVal); 
-                fBtnAddFav->Invalidate();
-            }    
+            // Consume the override token so subsequent standard checkbox clicks track naturally
+            fOverrideTabTarget = "";
+   
+            // 4. Force the inner controls to blend seamlessly with the panel backgrounds
 
-            // --- EQ Sliders Sync ---
+            rgb_color bgDarkColor = rgb_color{40, 40, 40, 255}; 
+            bool useDarkColors = (cfg.uTheme == "Dark");
+
+            // Style the 15-band EQ sliders array
             for (int i = 0; i < 15; i++) {
                 if (fEQSliders[i]) {
-                    fEQSliders[i]->SetViewColor(bgVal);
-                    fEQSliders[i]->SetLowColor(bgVal);
-                    fEQSliders[i]->SetHighColor(txtVal); 
+                    if (useDarkColors) {
+                        fEQSliders[i]->SetViewColor(bgDarkColor);
+                        fEQSliders[i]->SetLowColor(bgDarkColor);
+                    } else {
+                        fEQSliders[i]->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+                        fEQSliders[i]->SetLowColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+                    }
                     fEQSliders[i]->Invalidate();
                 }
             }
 
-            // --- Limiter Sliders Sync ---
+            // Style the limiter controllers
             BSlider* limiterSliders[] = { fLimitInput, fLimitLimit, fLimitRelease };
-            int32 currentLimitValues[] = { (int32)cfg.limitIn, (int32)cfg.limitLmt, (int32)cfg.limitRel };
-
+            
             for (int s = 0; s < 3; s++) {
                 if (limiterSliders[s]) {
-                    limiterSliders[s]->SetViewColor(bgVal);
-                    limiterSliders[s]->SetLowColor(bgVal);
-                    limiterSliders[s]->SetHighColor(txtVal); 
+                    if (useDarkColors) {
+                        limiterSliders[s]->SetViewColor(bgDarkColor);
+                        limiterSliders[s]->SetLowColor(bgDarkColor);
+                        limiterSliders[s]->SetHighColor(255, 255, 255, 255); // Force labels to white
+                    } else {
+                        limiterSliders[s]->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+                        limiterSliders[s]->SetLowColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+                        limiterSliders[s]->SetHighColor(0, 0, 0, 255); // Default black text
+                    }
                     
-                    // Style the slider elements using native API functions safely
-                    limiterSliders[s]->UseFillColor(true, &txtVal);
-                    
-                    // Sync actual value position
-                    limiterSliders[s]->SetValue(currentLimitValues[s]); 
-                    
-                    // CLEAN FIX: Removed the internal child loop that skewed geometry
+                    // Recolor any internal view wrappers inside the components
+                    for (int32 c = 0; c < limiterSliders[s]->CountChildren(); c++) {
+                        BView* child = limiterSliders[s]->ChildAt(c);
+                        if (child) {
+                            if (useDarkColors) {
+                                child->SetViewColor(bgDarkColor);
+                                child->SetLowColor(bgDarkColor);
+                                child->SetHighColor(255, 255, 255, 255);
+                            } else {
+                                child->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+                                child->SetLowColor(ui_color(B_PANEL_BACKGROUND_COLOR));
+                                child->SetHighColor(0, 0, 0, 255);
+                            }
+                            child->Invalidate();
+                        }
+                    }
                     limiterSliders[s]->Invalidate();
                 }
             }
 
-
-            // FIX: Force backend to match the refreshed states
-            UpdateMPVFilters(); 
-
-            // --- CRITICAL RUNTIME LAYOUT RE-EVALUATION FIX ---
-            if (fTabView) {
-                // Force Haiku's layout builder to completely recalculate container tracking widths
-                fTabView->InvalidateLayout(true); 
-                fTabView->Layout(true);
-                fTabView->Invalidate();
+            // --- 64-BIT EXCLUSIVE GROUP LAYOUT RESET FIX ---
+            if (fConfigGroup) {
+                fConfigGroup->InvalidateLayout(true);
+                fConfigGroup->Layout(true);
+                fConfigGroup->Invalidate();
             }
-        } 
+            if (fStationGroup) fStationGroup->InvalidateLayout(true);
+            if (fFavGroup)     fFavGroup->InvalidateLayout(true);
+            if (fAboutGroup)   fAboutGroup->InvalidateLayout(true);
+        }
 
-        Unlock(); 
+        this->InvalidateLayout(true);
+        this->Layout(true);
+        
+       
+        // --- FINALLY SAFE TO UNLOCK WINDOW THREAD ---
+        Unlock();
     }
 }
 
@@ -7613,6 +7936,15 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     PopulatePresetList(fPresetList, configPath.c_str());
 
 
+	if (fVolumeSlider) {
+    	fVolumeSlider->SetValue(static_cast<int32>(cfg.currentVolume));
+	}
+	if (mpv) {
+    	double vol = static_cast<double>(cfg.currentVolume);
+    	mpv_set_property(mpv, "volume", MPV_FORMAT_DOUBLE, &vol);
+	}
+
+
     // =================================================================
     // UNIFY INITIALIZATION BY CALLING THE COMPACT MODE HANDLER
     // =================================================================
@@ -7865,7 +8197,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		
 
       
-       case MSG_CFG_THEME: {
+         case MSG_CFG_THEME: {
        		#ifdef IS_HAIKU_32BIT
        		        BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_theme"));
         			if (chk) {
@@ -7878,14 +8210,35 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
        		
             BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_theme"));
             if (chk) {
-                // Fix 1: Declare isDark explicitly
-                bool isDark = (chk->Value() == B_CONTROL_ON);
-                cfg.uTheme = isDark ? "Dark" : "Default";
-                save_config();
+                // If we are currently starting up, preserve the user's existing config file theme!
+                // Otherwise, update the theme variable based on the live user checkbox interaction click.
+                if (!fIsStartingUp) {
+                    cfg.uTheme = (chk->Value() == B_CONTROL_ON) ? "Dark" : "Default";
+                    save_config();
+                }
+                
                 ApplyTheme(); 
                 
                 // Rebuild the tabs to force the top navigation buttons to snap into place
                 if (!cfg.compactMode && fTabView) {
+                    
+                    // --- SMART CONTEXT RETENTION ENGINE ---
+                    std::string savedTabName = "Radio"; // Safe fallback default
+                    
+                    // If an explicit programmatic override is active (like unhiding), use that!
+                    // Otherwise, safely fallback to tracking whatever tab the user was looking at.
+                    if (!fOverrideTabTarget.IsEmpty()) {
+                        savedTabName = fOverrideTabTarget.String();
+                    } else {
+                        int32 currentSelection = fTabView->Selection();
+                        if (currentSelection >= 0) {
+                            BTab* activeTab = fTabView->TabAt(currentSelection);
+                            if (activeTab && activeTab->Label()) {
+                                savedTabName = activeTab->Label();
+                            }
+                        }
+                    }
+
                     // 1. Completely strip out existing tab items
                     for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
                         BTab* tab = fTabView->TabAt(i);
@@ -7907,8 +8260,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                         fTabView->AddTab(groups[i], *dynamicTabs[i]);
                     }
 
-                    // 3. Smart Tab Selection: If booting up, target the main tab. Otherwise, pin to Config.
-                    const char* targetTabLabel = fIsStartingUp ? "Radio" : "Config"; 
+                    // --- PROGRAMMATIC TARGET RESOLUTION ---
+                    const char* targetTabLabel = fIsStartingUp ? "Radio" : savedTabName.c_str(); 
 
                     for (int32 j = 0; j < fTabView->CountTabs(); j++) {
                         BTab* currentTab = fTabView->TabAt(j);
@@ -7918,14 +8271,17 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                         }
                     }
 
+                    // Consume the override token so subsequent standard checkbox clicks track naturally
+                    fOverrideTabTarget = "";
 
-                    // 4. Force the inner controls to blend seamlessly with the dark panel background
+                    // 4. Force the inner controls to blend seamlessly with the panel backgrounds
                     rgb_color bgDarkColor = rgb_color{40, 40, 40, 255}; 
+                    bool useDarkColors = (cfg.uTheme == "Dark");
 
                     // Style the 15-band EQ sliders array
                     for (int i = 0; i < 15; i++) {
                         if (fEQSliders[i]) {
-                            if (isDark) {
+                            if (useDarkColors) {
                                 fEQSliders[i]->SetViewColor(bgDarkColor);
                                 fEQSliders[i]->SetLowColor(bgDarkColor);
                             } else {
@@ -7936,33 +8292,29 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                         }
                     }
 
-                      // Fix 2: Use BSlider* base class matching the class pointer initialization types
+                    // Style the limiter controllers
                     BSlider* limiterSliders[] = { fLimitInput, fLimitLimit, fLimitRelease };
                     
                     for (int s = 0; s < 3; s++) {
                         if (limiterSliders[s]) {
-                            if (isDark) {
+                            if (useDarkColors) {
                                 limiterSliders[s]->SetViewColor(bgDarkColor);
                                 limiterSliders[s]->SetLowColor(bgDarkColor);
-                                
-                                //  Force the text label foreground color to white in dark mode
-                                limiterSliders[s]->SetHighColor(255, 255, 255, 255);
+                                limiterSliders[s]->SetHighColor(255, 255, 255, 255); // Force labels to white
                             } else {
                                 limiterSliders[s]->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
                                 limiterSliders[s]->SetLowColor(ui_color(B_PANEL_BACKGROUND_COLOR));
-                                
-                                // Reset the label color back to default charcoal/black for light mode
-                                limiterSliders[s]->SetHighColor(0, 0, 0, 255);
+                                limiterSliders[s]->SetHighColor(0, 0, 0, 255); // Default black text
                             }
                             
                             // Recolor any internal view wrappers inside the components
                             for (int32 c = 0; c < limiterSliders[s]->CountChildren(); c++) {
                                 BView* child = limiterSliders[s]->ChildAt(c);
                                 if (child) {
-                                    if (isDark) {
+                                    if (useDarkColors) {
                                         child->SetViewColor(bgDarkColor);
                                         child->SetLowColor(bgDarkColor);
-                                        child->SetHighColor(255, 255, 255, 255); // Force inner nested text labels to white
+                                        child->SetHighColor(255, 255, 255, 255);
                                     } else {
                                         child->SetViewColor(ui_color(B_PANEL_BACKGROUND_COLOR));
                                         child->SetLowColor(ui_color(B_PANEL_BACKGROUND_COLOR));
@@ -7976,7 +8328,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
                     }
 
                     // --- 64-BIT EXCLUSIVE GROUP LAYOUT RESET FIX ---
-                    // Force Haiku's Layout API to calculate bounds for these containers
                     if (fConfigGroup) {
                         fConfigGroup->InvalidateLayout(true);
                         fConfigGroup->Layout(true);
@@ -7994,6 +8345,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             break;
             #endif
         }
+
+
 
 
 
@@ -8016,6 +8369,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				BMessage refreshMessage(MSG_COMPACTM_CHANGED);
 				refreshMessage.AddPointer("source", this); 
 				this->PostMessage(&refreshMessage);
+				
 			}
 			break;
 		}
@@ -8039,6 +8393,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				BMessage refreshMessage(MSG_COMPACTM_CHANGED);
 				refreshMessage.AddPointer("source", this); 
 				this->PostMessage(&refreshMessage);
+				
 			}
 			break;
 		}
@@ -8093,7 +8448,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_EQ] Persisting config, updating mpv filters, and applying themes.\n");
 			save_config();
 			UpdateMPVFilters();
-			ApplyTheme(); 
+			//ApplyTheme(); 
 
 			// --- DELEGATE STRUCTURAL LAYOUT TO MASTER ENGINE ---
 			if (cfg.debugEnable) printf("[DEBUG] [MSG_TOGGLE_EQ] Allocating and queuing master layout payload (MSG_COMPACTM_CHANGED).\n");
@@ -8120,7 +8475,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		
 		save_config();
 		this->UpdateMPVFilters();
-		ApplyTheme();
+		//ApplyTheme();
 		
 		// --- DIRECT VISIBILITY DOUBLE-PUMP RECONSTRUCTION ---
 		if (fSpectrum) {
@@ -8175,6 +8530,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 	// @Fullscreen
 	case MSG_TOGGLE_FULLSCREEN: {
     	static bool sIsFullscreen = false;
+
     	static BRect sSavedWindowFrame;
     	static uint32 sSavedLook;
     	static uint32 sSavedFeel;
@@ -8184,9 +8540,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     	this->fFullscreenActive = sIsFullscreen;
 
     	if (sIsFullscreen) {
-        
         	// --- 1. HIDE THE MOUSE CURSOR ---
-        	// Keeps the layout clean and immersive during media playback
         	be_app->HideCursor();
 
         	sSavedWindowFrame = Frame();
@@ -8196,41 +8550,45 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         	BScreen screen(this);
         	BRect screenFrame = screen.Frame();
 
-        if (fSpectrum) {
-            sOriginalParent = fSpectrum->Parent();
-            fSpectrum->RemoveSelf();
+            if (fSpectrum) {
+                sOriginalParent = fSpectrum->Parent();
+                fSpectrum->RemoveSelf();
+                
+                fSpectrum->SetExplicitMinSize(BSize(screenFrame.Width(), screenFrame.Height()));
+                fSpectrum->SetExplicitMaxSize(BSize(screenFrame.Width(), screenFrame.Height()));
+                fSpectrum->SetExplicitPreferredSize(BSize(screenFrame.Width(), screenFrame.Height()));
+                
+                this->AddChild(fSpectrum);
+                fSpectrum->ResizeTo(screenFrame.Width(), screenFrame.Height());
+                fSpectrum->MoveTo(0, 0);
+                fSpectrum->Show();
+            }
+
+            if (fTabView) fTabView->Hide();
+
+            SetLook(B_NO_BORDER_WINDOW_LOOK);
+            SetFeel(B_MODAL_ALL_WINDOW_FEEL); 
+            MoveTo(screenFrame.left, screenFrame.top);
+            ResizeTo(screenFrame.Width(), screenFrame.Height());
             
-            fSpectrum->SetExplicitMinSize(BSize(screenFrame.Width(), screenFrame.Height()));
-            fSpectrum->SetExplicitMaxSize(BSize(screenFrame.Width(), screenFrame.Height()));
-            fSpectrum->SetExplicitPreferredSize(BSize(screenFrame.Width(), screenFrame.Height()));
-            
-            this->AddChild(fSpectrum);
-            fSpectrum->ResizeTo(screenFrame.Width(), screenFrame.Height());
-            fSpectrum->MoveTo(0, 0);
-            fSpectrum->Show();
-        }
-
-        if (fTabView) fTabView->Hide();
-
-        SetLook(B_NO_BORDER_WINDOW_LOOK);
-        SetFeel(B_MODAL_ALL_WINDOW_FEEL); 
-        MoveTo(screenFrame.left, screenFrame.top);
-        ResizeTo(screenFrame.Width(), screenFrame.Height());
-
-        this->ApplyTheme();
+            this->Layout(true);
 
     	} else {
-        
         	// --- 2. RESTORE THE MOUSE CURSOR ---
-        	// Brings back the cursor instantly so you can click normal app buttons again
         	be_app->ShowCursor();
 
         	if (fSpectrum) {
             	fSpectrum->RemoveSelf();
+            fSpectrum->RemoveSelf();
+            fSpectrum->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+            fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+            fSpectrum->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
         	}
 
         	SetLook((window_look)sSavedLook);
         	SetFeel((window_feel)sSavedFeel);
+            
+            // Re-apply original pre-fullscreen bounding frames
         	MoveTo(sSavedWindowFrame.left, sSavedWindowFrame.top);
         	ResizeTo(sSavedWindowFrame.Width(), sSavedWindowFrame.Height());
 
@@ -8240,15 +8598,20 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             	sOriginalParent->AddChild(fSpectrum);
         	}
 
-        	BMessage refreshLayout(MSG_COMPACTM_CHANGED);
-        	refreshLayout.AddPointer("source", this);
-        	refreshLayout.AddBool("force_compact_state", cfg.compactMode);
-        	this->PostMessage(&refreshLayout);
-
-        	this->ApplyTheme();
+        // --- REBUILT COMPACT MESSAGE PIPELINE ---
+        BMessage refreshLayout(MSG_COMPACTM_CHANGED);
+        refreshLayout.AddPointer("source", this);
+        refreshLayout.AddBool("force_compact_state", cfg.compactMode);
+        refreshLayout.AddBool("initial_boot_pass", true); 
+        
+        // FIX: Call MessageReceived directly so layout modifications 
+        // finish executing before we command the layout engine to refresh.
+        this->MessageReceived(&refreshLayout); 
+        
+        // Now recalculate the layout tree with the clean state applied
+        this->Layout(true); 
     	}
     
-    	this->Layout(true);
     	if (fSpectrum) fSpectrum->Invalidate(); 
     	break;
 	}
@@ -8261,7 +8624,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		// @Modes
 		case MSG_COMPACTM_CHANGED: {
 			if (cfg.debugEnable) printf("[DEBUG] MSG_COMPACTM_CHANGED received!\n");
-				
+			
 
 
 			void* source = nullptr;
@@ -8447,18 +8810,25 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 								
 				
 				// New soft pump logic
+				// Updated robust soft pump execution block
 				static bool sInitialSyncDone = false;
-				if (!sInitialSyncDone && (source == this || source == nullptr)) {
-    			sInitialSyncDone = true;
+                
+                // Read the restoration flag out of the incoming loop message
+                bool forceRebuildPass = false;
+                if (message) message->FindBool("initial_boot_pass", &forceRebuildPass);
+
+                // Run the pump if it is the first boot OR an intentional layout refresh request
+				if ((!sInitialSyncDone || forceRebuildPass) && (source == this || source == nullptr)) {
+    			    sInitialSyncDone = true;
     
-    			// Explicitly force the structural tree build by passing a custom flag
-    			BMessage* initMsg = new BMessage(MSG_COMPACTM_CHANGED);
-    			initMsg->AddPointer("source", source);
-    			initMsg->AddBool("force_compact_state", cfg.compactMode);
-    			initMsg->AddBool("initial_boot_pass", true); // New flag to force structural rebuild
-    			this->PostMessage(initMsg);
-    			break; 
+    			    BMessage* initMsg = new BMessage(MSG_COMPACTM_CHANGED);
+    			    initMsg->AddPointer("source", source);
+    			    initMsg->AddBool("force_compact_state", cfg.compactMode);
+    			    initMsg->AddBool("initial_boot_pass", false); // Clear flag to prevent infinite loops
+    			    this->PostMessage(initMsg);
+    			    break; 
 				}
+
 
 				
 
@@ -8480,7 +8850,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
 				if (cfg.showSpectrumVisuals) {
 					specWidth = 400.0f * scale;
-					specHeight = (labelHeight == 0.0f) ? 200.0f * scale : 125.0f * scale;
+					specHeight = (labelHeight == 0.0f) ? 150.0f * scale : 100.0f * scale;
 				}
 				
 				// Size checks		
@@ -8514,6 +8884,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 						finalWidth = 250.0f * scale;
 					} else {
 						finalWidth = B_SIZE_UNSET;
+						
 				}
 				
 
@@ -8521,6 +8892,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				if (fSpectrum) {
 					bool wasLocallyHidden = fSpectrum->IsHidden(fSpectrum);
 					bool targetHiddenState = !featuresActive;
+					
+					
 
 					if (featuresActive) {
 						if (cfg.debugEnable) {
@@ -8561,9 +8934,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				if (fMetaAndSpectrumStack != nullptr && (uintptr_t)fMetaAndSpectrumStack > 0x1000) {  
 					if (featuresActive) {
 						// Floating layout protection logic to prevent layout expansion
-						//fMetaAndSpectrumStack->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-						//fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-						//fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET)); 
+						fMetaAndSpectrumStack->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET)); 
 						
 						if (fMetaAndSpectrumStack->IsHidden()) fMetaAndSpectrumStack->Show();
 					} else {
@@ -8579,9 +8952,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				if (fCompactSpectrumWrapper) {
 					if (featuresActive) {
 						// Bulletproof floating logic keeps window bounds flexible
-						//fCompactSpectrumWrapper->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-						//fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-						//fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+						fCompactSpectrumWrapper->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
 						
 						if (fCompactSpectrumWrapper->IsHidden()) fCompactSpectrumWrapper->Show();
 					} else {
@@ -8594,57 +8967,75 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
 
 				// ONLY modify structural tree during a true compact mode swap pass
-				bool isInitialPass = false;
-				message->FindBool("initial_boot_pass", &isInitialPass);
-
-				if (isRealModeTransition || isInitialPass) {
-					if (cfg.debugEnable) printf("[DEBUG] Structural Change -> Rebuilding tree for Compact Mode.\n");
+				// ====================================================================
+				// --- STRUCTURAL HIERARCHY VERIFICATION PASS ---
+				// ====================================================================
+				// Ensure fControlStack is detached from Normal and attached to Compact wrapper
+				if (fNormalControlsWrapper && fNormalControlsWrapper->GroupLayout() && fControlStack->Parent() == fNormalControlsWrapper) {
 					fNormalControlsWrapper->GroupLayout()->RemoveView(fControlStack);
+				}
+				
+				if (fCompactControlsWrapper && fCompactControlsWrapper->GroupLayout() && fControlStack->Parent() != fCompactControlsWrapper) {
 					fCompactControlsWrapper->GroupLayout()->RemoveView(fControlStack);
 					
-					if (fSpectrum && fSpectrum->Parent()) fSpectrum->RemoveSelf();
-					if (fBtnAddFav && fBtnAddFav->Parent()) fBtnAddFav->RemoveSelf();
-
-					fControlStack->GroupLayout()->RemoveView(fStopBtn);
-					fControlStack->GroupLayout()->RemoveView(fPauseBtn);
-					fControlStack->GroupLayout()->RemoveView(fPlayBtn);
-					fControlStack->GroupLayout()->RemoveView(fShuffleBtn);
+					// 1. CLEAR THE INNER ITEMS ARRAY COMPLETELY BEFORE BUILDING
+					if (fControlStack->GroupLayout()) {
+						while (fControlStack->GroupLayout()->CountItems() > 0) {
+							fControlStack->GroupLayout()->RemoveItem((int32)0);
+						}
+					}
 					
-    				// 1. REBUILD THE 2x2 STACK WITH VERTICAL CENTER ALIGNMENT ON BOTH ROWS
-    				BLayoutBuilder::Group<>(fControlStack, B_VERTICAL, 4)
-    				.AddGlue()
-    				.AddGroup(B_HORIZONTAL, 4)
-        				.Add(fStopBtn)
-        				.Add(fPauseBtn)
-    				.End()
-    				.AddGroup(B_HORIZONTAL, 4)
-        				.Add(fPlayBtn)
-        				.Add(fShuffleBtn)
-    				.End()
-    				.AddGlue() 
+					// 2. REBUILD THE 2x2 GRID POPULATED WITH RE-LINKED BUTTON POINTERS
+					BLayoutBuilder::Group<>(fControlStack, B_VERTICAL, 4)
+						.AddGlue()
+						.AddGroup(B_HORIZONTAL, 4)
+							.Add(fStopBtn)
+							.Add(fPauseBtn)
+						.End()
+						.AddGroup(B_HORIZONTAL, 4)
+							.Add(fPlayBtn)
+							.Add(fShuffleBtn)
+						.End()
+						.AddGlue() 
 					.End();
 
-
-					fCompactControlsWrapper->GroupLayout()->AddView(fControlStack, B_ALIGN_VERTICAL_CENTER); 
-					
-					if (fRightSideControlGroup) {
-						if (fRightSideControlGroup->GroupLayout()->CountItems() > 0) fRightSideControlGroup->GroupLayout()->RemoveItem((int32)0);
-						fRightSideControlGroup->GroupLayout()->AddView(fBtnAddFav);
-					}
-
-					if (cfg.eqEnabled || cfg.showSpectrumVisuals) {
-						if (fCompactSpectrumWrapper->GroupLayout()->CountItems() > 0) fCompactSpectrumWrapper->GroupLayout()->RemoveItem((int32)0);
-						fCompactSpectrumWrapper->GroupLayout()->AddView(fSpectrum);
-					}
-
-					for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
-						BTab* tab = fTabView->TabAt(i);
-						if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab)
-							fTabView->RemoveTab(i);
-					} 
+					fCompactControlsWrapper->GroupLayout()->AddView(fControlStack, B_ALIGN_VERTICAL_CENTER);
 				}
 
+				// Enforce safe structural attachments for your spectrum visualizer
+				if (fCompactSpectrumWrapper && fCompactSpectrumWrapper->GroupLayout() && fSpectrum && fSpectrum->Parent() != fCompactSpectrumWrapper) {
+					if (fSpectrum->Parent()) fSpectrum->RemoveSelf();
+					
+					fSpectrum->InvalidateLayout(true);
+					fSpectrum->SetExplicitMinSize(BSize(specWidth, specHeight));
+					fSpectrum->SetExplicitMaxSize(BSize(specWidth, specHeight));
+					fSpectrum->SetExplicitPreferredSize(BSize(specWidth, specHeight));
+					
+					fCompactSpectrumWrapper->GroupLayout()->AddView(fSpectrum);
+				}
+
+				// Handle dynamic tab strip extraction on every configuration event loop
+				if (fTabView && fTabView->CountTabs() > 1) {
+					for (int32 i = fTabView->CountTabs() - 1; i >= 0; i--) {
+						BTab* tab = fTabView->TabAt(i);
+						if (tab == fStationTab || tab == fFavTab || tab == fConfigTab || tab == fAboutTab) {
+							fTabView->RemoveTab(i);
+						}
+					}
+				}
+
+				// --- LOCK COMPACT SPECTRUM WRAPPER BOUNDS ---
+				if (fCompactSpectrumWrapper) {
+					fCompactSpectrumWrapper->SetExplicitMinSize(BSize(specWidth, B_SIZE_UNSET));
+					fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(specWidth, B_SIZE_UNSET));
+					fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(specWidth, B_SIZE_UNSET));
+				}
+
+				// ====================================================================
+				// --- RESIZING CONTROL PARAMETERS ---
+				// ====================================================================
 				if (fStopBtn && fPauseBtn && fPlayBtn && fShuffleBtn && fBtnAddFav) {
+
 					BSize compactBtnSize(btnSize, btnSize);					
 					fStopBtn->SetExplicitMinSize(compactBtnSize); fStopBtn->SetExplicitMaxSize(compactBtnSize); fStopBtn->SetExplicitPreferredSize(compactBtnSize);
 					fPauseBtn->SetExplicitMinSize(compactBtnSize); fPauseBtn->SetExplicitMaxSize(compactBtnSize); fPauseBtn->SetExplicitPreferredSize(compactBtnSize);
@@ -8660,8 +9051,13 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				
 
 			
-
+				
 			} else { // --- 3. NORMAL MODE GEOMETRY BRANCH ---
+			
+			
+				//float expandedWidth = 375.0f * scale; 
+				//float specWidth = expandedWidth;
+				//float specHeight = 125.0f * scale; 
 				if (cfg.debugEnable) printf("[DEBUG] Entering Normal Mode Geometry Branch.\n");
 
 				BSize unlimited(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED);
@@ -8710,9 +9106,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					BSize unlimitedSize(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED);
 
 					if (featuresActive) {
-						//fMetaAndSpectrumStack->SetExplicitMinSize(unsetSize);
-						//fMetaAndSpectrumStack->SetExplicitMaxSize(unlimitedSize);
-						//fMetaAndSpectrumStack->SetExplicitPreferredSize(unsetSize);
+						fMetaAndSpectrumStack->SetExplicitMinSize(unsetSize);
+						fMetaAndSpectrumStack->SetExplicitMaxSize(unlimitedSize);
+						fMetaAndSpectrumStack->SetExplicitPreferredSize(unsetSize);
 					} else {
 						fMetaAndSpectrumStack->SetExplicitMinSize(BSize(0, 0));
 						fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
@@ -8725,9 +9121,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					if (featuresActive) {
 								
 						// Leave width UNSET so it adapts to child size changes without expanding the window
-						//fCompactSpectrumWrapper->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-						//fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
-						//fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+						fCompactSpectrumWrapper->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+						fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
 						
 						if (fCompactSpectrumWrapper->IsHidden()) fCompactSpectrumWrapper->Show();
 					} else {
@@ -8829,6 +9225,13 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 						if (fSpectrum->Parent() != nullptr) fSpectrum->RemoveSelf();
 						fMetaAndSpectrumStack->GroupLayout()->AddView(fSpectrum);
 					}
+					
+					    // --- CRITICAL WRAPPER COMPRESSION FIX ---
+                        // Right here! This locks down the outer wrapper layout footprint.
+                        fCompactSpectrumWrapper->SetExplicitMinSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+                        fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+                        fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, B_SIZE_UNSET));
+					
 				}
 
 
@@ -8879,8 +9282,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					if (fEQSliders[i]) fEQSliders[i]->SetTarget(this);
 				}
 
-				// Reallocate fresh tab wrappers onto the cleared TabView
-				if (isRealModeTransition || fTabView->CountTabs() < 4) {
+			// Reallocate fresh tab wrappers onto the cleared TabView
+			if (isRealModeTransition || fTabView->CountTabs() < 4) {
 					BGroupView* groups[] = { fStationGroup, fFavGroup, fConfigGroup, fAboutGroup };
 					const char* labels[] = { "Stations", "Fav", "Config", "About" };
 					BTab** dynamicTabs[] = { &fStationTab, &fFavTab, &fConfigTab, &fAboutTab };
@@ -8903,8 +9306,30 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 							fTabView->AddTab(groups[i], *dynamicTabs[i]);
 						}
 					}
-				}
-			} // --- END OF NORMAL MODE GEOMETRY BRANCH ---
+			} // 👈 CLOSE THE IS_REAL_MODE_TRANSITION WRAPPER HERE!
+
+			// --- FIX: MOVE THIS OUTSIDE THE WRAPPER SO IT RUNS EVERY TIME ---
+			// This forces regular mode footprints back onto objects right after exiting full screen.
+			if (fSpectrum) {
+				fSpectrum->InvalidateLayout(true);
+				
+				// Enforce regular mode bounding preferences back onto the core object
+				fSpectrum->SetExplicitMinSize(BSize(400.0f * scale, 125.0f * scale));
+				fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 125.0f * scale));
+				fSpectrum->SetExplicitPreferredSize(BSize(400.0f * scale, 125.0f * scale));
+			}
+
+			// Lock down the parent container stack to protect the vertical footprint
+			if (fMetaAndSpectrumStack) {
+				fMetaAndSpectrumStack->InvalidateLayout(true);
+				fMetaAndSpectrumStack->SetExplicitMinSize(BSize(B_SIZE_UNSET, 125.0f * scale));
+				fMetaAndSpectrumStack->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+				fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, 125.0f * scale));
+			}
+			
+		} // --- END OF NORMAL MODE GEOMETRY BRANCH ---
+
+
 
 
 
@@ -8961,9 +9386,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				UnlockLooper();
 			}
 			
-			
 
-			//ApplyTheme();
+			ApplyTheme();
 
 			// --- 5. DEFERRED SELECTION MESSAGE PROCESSOR ---
 			BString deferredSelect;
@@ -9026,6 +9450,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				UnlockLooper();
 				if (cfg.debugEnable) printf("[DEBUG] Looper Lock Sequence Pass 2 completed.\n");
 			}
+			
 			break;
 		}
 
@@ -9454,8 +9879,12 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         case MSG_VOL_CHANGED: {
             if (fVolumeSlider) {
                 int32 value = fVolumeSlider->Value();
+                
+                cfg.currentVolume = static_cast<float>(value);
+                
                 double vol = (double)value;
                 mpv_set_property(mpv, "volume", MPV_FORMAT_DOUBLE, &vol);
+                save_config(); 
             }
             break;
         }
@@ -9625,60 +10054,49 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
 
 		case MSG_ACTIVATE_APP: {
+			BString targetTab;
+			if (message->FindString("target_tab", &targetTab) != B_OK) {
+				targetTab = "radio"; // Left-clicking unhide icon routes to Radio
+			}
+
+			// --- FIX: STAMP OVERRIDE LOCK TARGET INTO WINDOW SCOPE ---
+			if (targetTab == "stations")  fOverrideTabTarget = "Stations";
+			else if (targetTab == "favorites") fOverrideTabTarget = "Fav";
+			else if (targetTab == "eq")        fOverrideTabTarget = "Config";
+			else                               fOverrideTabTarget = "Radio";
+
 			if (IsHidden()) {
+				if (fSpectrum != nullptr) {
+					BMessage teardownMsg('tdwn'); 
+					fSpectrum->MessageReceived(&teardownMsg);
+				}
+
+				// This fires off ApplyTheme() sequentially. It will now read our string lock!
+				BMessage refreshLayout(MSG_COMPACTM_CHANGED);
+				refreshLayout.AddPointer("source", this);
+				refreshLayout.AddBool("force_compact_state", cfg.compactMode);
+				this->MessageReceived(&refreshLayout);
+
 				Show();
 			} else {
 				Activate(true);
 			}
 
-			BString targetTab;
-			if (message->FindString("target_tab", &targetTab) == B_OK) {
-				if (cfg.compactMode) {
-					// --- CODE INJECTION: TOGGLE COMPACT VISUAL CONTROLS OFF ---
-					// Uncheck the controls to drive the state machine through natural user emulation
-					if (fCompactModeConfig != nullptr) {
-						fCompactModeConfig->SetValue(B_CONTROL_OFF);
-					}
-					if (fCompactModeRadio != nullptr) {
-						fCompactModeRadio->SetValue(B_CONTROL_OFF);
-					}
-
-					BMessage compactMsg(MSG_COMPACTM_CHANGED);
-					
-					// Set the source to one of your controls so the layout engine processes the toggle
-					if (fCompactModeConfig != nullptr) {
-						compactMsg.AddPointer("source", fCompactModeConfig);
-					} else {
-						compactMsg.AddPointer("source", this);
-					}
-					
-					// Force the mode switch payload to Normal Mode (false)
-					compactMsg.AddBool("force_compact_state", false);
-					
-					// Pipe the target tab parameter through to the layout loop
-					compactMsg.AddString("deferred_select", targetTab);
-					
-					this->PostMessage(&compactMsg);
-					break; 
-				}
-				
-				if (fTabView) {
-					const char* matchLabel = "Radio";
-					if (targetTab == "stations")  matchLabel = "Stations"; 
-					if (targetTab == "favorites") matchLabel = "Fav"; 
-					if (targetTab == "eq")        matchLabel = "Config";
-
-					for (int32 i = 0; i < fTabView->CountTabs(); i++) {
-						BTab* tab = fTabView->TabAt(i);
-						if (tab && tab->Label() != nullptr && strcmp(tab->Label(), matchLabel) == 0) {
-							fTabView->Select(i);
-							break;
-						}
+			// Re-verify actual UI tab selectors for instant compliance
+			if (fTabView) {
+				for (int32 i = 0; i < fTabView->CountTabs(); i++) {
+					BTab* tab = fTabView->TabAt(i);
+					if (tab && tab->Label() && strcmp(tab->Label(), fOverrideTabTarget.String()) == 0) {
+						fTabView->Select(i);
+						break;
 					}
 				}
 			}
 			break;
 		}
+
+
+
 
 
 
@@ -10227,9 +10645,16 @@ virtual void MouseDown(BPoint point) {
         }
     }
 
+    // ====================================================================
+    // --- FIX: ENFORCE EXPLICIT ROUTING ON SYSTEM LEFT CLICK ---
+    // ====================================================================
     if (buttons & B_PRIMARY_MOUSE_BUTTON) {
         if (appMessenger.IsValid()) {
-            appMessenger.SendMessage(MSG_ACTIVATE_APP);
+            // Explicitly build a message envelope with a "radio" string payload
+            BMessage showPlayerMsg(MSG_ACTIVATE_APP);
+            showPlayerMsg.AddString("target_tab", "radio");
+            
+            appMessenger.SendMessage(&showPlayerMsg);
         }
     } else if (buttons & B_SECONDARY_MOUSE_BUTTON) {
         BPopUpMenu *popup = new BPopUpMenu("tray_popup", false, false);        
@@ -10270,8 +10695,8 @@ virtual void MouseDown(BPoint point) {
         BPoint screenPoint = ConvertToScreen(point);        
         popup->Go(screenPoint, true, true, true);
     }
-
 }
+
 
 
 private:
@@ -10354,7 +10779,7 @@ void SuperMusicWindow::Show() {
     
     // 2. Queue up the theme processing to run on the next frame loop pass
    
-        if (Lock()) {
+    if (Lock()) {
     PostMessage(MSG_CFG_THEME);
     Unlock();
 	}
