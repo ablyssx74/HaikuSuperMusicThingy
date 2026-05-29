@@ -5760,56 +5760,6 @@ public:
 
 
 
-/*
-void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
-    if (!view) return;
-    
-    // CRITICAL FIX: Scan up the parent tree. If this view belongs 
-    // to an active BSlider parent container, stop executing immediately.
-    BView* parentCheck = view->Parent();
-    while (parentCheck != nullptr) {
-        if (dynamic_cast<BSlider*>(parentCheck) != nullptr) {
-            return; // Exit out to prevent breaking internal layout typography
-        }
-        parentCheck = parentCheck->Parent();
-    }
-
-    // Explicitly apply theme properties to the current valid view component
-    view->SetViewColor(bg);
-    view->SetLowColor(bg);
-    view->SetHighColor(txt);
-    
-    // --- Special Type Invalidation overrides ---
-    if (BSlider* slider = dynamic_cast<BSlider*>(view)) {
-        slider->UseFillColor(true, &txt);
-        slider->Invalidate();
-        // Return here so we don't dive into internal children manually
-        return; 
-    }
-
-    if (BTextView* textView = dynamic_cast<BTextView*>(view)) {
-        textView->SetFontAndColor(NULL, B_FONT_ALL, &txt);
-    }
-
-    if (BStringView* stringView = dynamic_cast<BStringView*>(view)) {
-        stringView->SetHighColor(txt);
-    }
-
-    if (BListView* listView = dynamic_cast<BListView*>(view)) {
-        for (int32 i = 0; i < listView->CountItems(); i++) {
-            listView->InvalidateItem(i);
-        }
-    }
-
-    view->Invalidate();
-    
-    // Safely iterate through child objects recursively
-    for (int32 i = 0; i < view->CountChildren(); i++) {
-        RecursiveColorApply(view->ChildAt(i), bg, txt);
-    }
-}
-
-*/
 void RecursiveColorApply(BView* view, rgb_color bg, rgb_color txt) {
     if (!view) return;
     
@@ -5957,11 +5907,8 @@ void SuperMusicWindow::ApplyTheme() {
                 fBtnAddFav->SetHighColor(txtVal); 
                 fBtnAddFav->Invalidate();
             }   
-        } // --- END OF PASSES LOOP ---
+        } 
 
-        // ====================================================================
-        // --- MOVED CODE INTEGRATION BLOCK ---
-        // ====================================================================
         
         // Rebuild the tabs to force the top navigation buttons to snap into place
         if (!cfg.compactMode && fTabView) {
@@ -6108,144 +6055,6 @@ void SuperMusicWindow::ApplyTheme() {
     }
 }
 
-
-/*
-// @ApplyTheme
-void SuperMusicWindow::ApplyTheme() {
-    rgb_color bgVal;
-    rgb_color bg2Val;
-    rgb_color txtVal;
-
-    // --- LOCK THE WINDOW ONCE TO PREVENT DEADLOCKS ---
-    if (Lock()) {
-        // Run a linear two-pass execution to shake loose Haiku's color caches 
-        // without invoking dangerous recursive function deadlocks.
-        int totalPasses = (cfg.uTheme == "Default") ? 2 : 1;
-
-
-        for (int pass = 1; pass <= totalPasses; pass++) {
-            if (cfg.uTheme == "Dark" || (cfg.uTheme == "Default" && pass == 1)) {
-
-                // Pass 1 (or Dark Mode): Load dark colors to force cache invalidation
-                bgVal = {40, 40, 40, 255};      // Dark Grey
-                bg2Val = {0, 0, 0, 255};        // Pure Black for lists
-                txtVal = {255, 255, 255, 255};  // Pure White
-            } else {
-                // Pass 2 (Default Mode): Safely capture actual global user colors
-                bgVal = ui_color(B_PANEL_BACKGROUND_COLOR);
-                bg2Val = ui_color(B_PANEL_BACKGROUND_COLOR);
-                txtVal = ui_color(B_PANEL_TEXT_COLOR);
-            }
-
-            float scale = be_bold_font->Size() / 12.0f; 
-
-            BFont boldFont(be_bold_font);
-            boldFont.SetSize(12.0 * scale);
-
-            if (fTabView) {
-                fTabView->SetViewColor(bgVal);
-        
-                for (int32 i = 0; i < fTabView->CountTabs(); i++) {
-                    BTab* tab = fTabView->TabAt(i);
-                    if (tab == nullptr) continue; 
-
-                    BView* tabView = tab->View(); 
-                    if (tabView != nullptr) {
-                        RecursiveColorApply(tabView, bgVal, txtVal);
-                    }
-                }
-            }
-            
-
-             if (fPresetList) {
-                fPresetList->SetViewColor(bg2Val);
-                fPresetList->SetLowColor(bgVal);
-                fPresetList->SetHighColor(txtVal); 
-                fPresetList->Invalidate();
-            }
-
-            if (fPresetScroll) {
-                fPresetScroll->SetViewColor(bgVal);
-                if (BScrollBar* sb = fPresetScroll->ScrollBar(B_VERTICAL)) {
-                    sb->SetViewColor(bgVal);
-                    sb->Invalidate();
-                }
-                fPresetScroll->Invalidate();
-            }
-            
-            if (fDescView) {
-                fDescView->SetViewColor(bgVal);
-                fDescView->SetFontAndColor(&boldFont, B_FONT_ALL, &txtVal);
-                fDescView->Invalidate();
-            }
-            
-            if (fSongView) {
-                fSongView->SetViewColor(bgVal);
-                fSongView->SetFontAndColor(&boldFont, B_FONT_ALL, &txtVal);
-                fSongView->Invalidate();
-            }
-            
-            if (fStationList) {    
-                 fStationList->SetFlags(fStationList->Flags() | B_FRAME_EVENTS);
-                 
-                 if (fStationList->Parent()) {
-                    fStationList->SetViewColor(bgVal); 
-                    fStationList->SetLowColor(bgVal);
-                    fStationList->SetHighColor(txtVal); 
-                    fStationList->Invalidate();
-                }
-            }
-            
-            if (fFavList) {
-                fFavList->SetViewColor(bgVal);
-                fFavList->SetLowColor(bgVal);
-                fFavList->SetHighColor(txtVal); 
-                fFavList->Invalidate(); 
-            }    
-            if (fBtnAddFav) {
-                fBtnAddFav->SetViewColor(bgVal);
-                fBtnAddFav->SetHighColor(txtVal); 
-                fBtnAddFav->Invalidate();
-            }    
-
-            // --- EQ Sliders Sync ---
-            for (int i = 0; i < 15; i++) {
-                if (fEQSliders[i]) {
-                    fEQSliders[i]->SetViewColor(bgVal);
-                    fEQSliders[i]->SetLowColor(bgVal);
-                    fEQSliders[i]->SetHighColor(txtVal); 
-                    fEQSliders[i]->Invalidate();
-                }
-            }
-
-            // --- Limiter Sliders Sync ---
-            BSlider* limiterSliders[] = { fLimitInput, fLimitLimit, fLimitRelease };
-            for (int s = 0; s < 3; s++) {
-                if (limiterSliders[s]) {
-                    limiterSliders[s]->SetViewColor(bgVal);
-                    limiterSliders[s]->SetLowColor(bgVal);
-                    limiterSliders[s]->SetHighColor(txtVal); 
-                    
-                    for (int32 c = 0; c < limiterSliders[s]->CountChildren(); c++) {
-                        BView* child = limiterSliders[s]->ChildAt(c);
-                        if (child) {
-                            child->SetViewColor(bgVal);
-                            child->SetLowColor(bgVal);
-                            child->SetHighColor(txtVal);
-                            child->Invalidate();
-                        }
-                    }
-                    limiterSliders[s]->Invalidate();
-                }
-            }
-
-            if (fTabView) fTabView->Invalidate();
-        } 
-
-        Unlock(); 
-    }
-}
-*/
 
 void init_mpv() {
         mpv = mpv_create();
