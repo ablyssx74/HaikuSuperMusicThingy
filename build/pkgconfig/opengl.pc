@@ -1,5 +1,0 @@
-Name: opengl
-Description: Dummy OpenGL for Haiku
-Version: 1.0
-Libs: -L/boot/system/lib -lGL
-Cflags: -I/boot/system/develop/headers
