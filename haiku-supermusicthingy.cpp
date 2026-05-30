@@ -262,7 +262,7 @@ void load_config() {
     BPath path;
 
     // 1. ALWAYS populate strict, hardcoded memory safe defaults first
-    cfg.currentVolume = 1.0f;
+    cfg.currentVolume = 75.0f;
     cfg.quality = "128k";
     cfg.notifyIconSize = 64;
     cfg.debugEnable = false;
@@ -942,11 +942,6 @@ bool IsFFmpegLadspaAvailable() {
 
 
 
-// ====================================================================
-// MODULAR ADAPTIVE ACID MELTING FLOOR MODULE
-// ====================================================================
-
-
 // --- THE RESPONSIVE CYBER NEON EQUALIZER CONTAINER ---
 class AcidMeltingView : public BView {
 public:
@@ -1022,7 +1017,7 @@ public:
         bool isDarkModeActive = (cfg.uTheme == "Dark");
 
         // Clear view canvas first to prevent ghosting resize artifacts
-        SetHighColor(isDarkModeActive ? rgb_color{20, 22, 26, 255} : sysBgColor);
+        SetHighColor(isDarkModeActive ? rgb_color{40, 40, 40, 255} : sysBgColor);
         FillRect(Bounds());
 
         // --- 2. RENDER BACKGROUND SNAPSHOT ---
@@ -1208,7 +1203,6 @@ public:
         fMainAppWindow = parentWindow; 
         
         
-        // Seed 75 organic bubbles across the window canvas
         // Seed 75 organic bubbles across the window canvas with high size variance
         for (int b = 0; b < 75; b++) {
             fBubbleX[b] = (float)(rand() % 1000) / 1000.0f * frame.Width();
