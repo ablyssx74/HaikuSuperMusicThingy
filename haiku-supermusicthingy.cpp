@@ -934,7 +934,7 @@ bool IsFFmpegLadspaAvailable() {
 
     if (cfg.debugEnable) {
         printf("[DEBUG FFmpeg Prober] Active Runtime Engine LADSPA Support Evaluation: %s\n", 
-               hasLadspa ? "AVAILABLE" : "UNAVAILABLE / CRIPPLED");
+               hasLadspa ? "AVAILABLE" : "UNAVAILABLE");
     }
 
     return hasLadspa;
@@ -6884,7 +6884,8 @@ public:
         fLines.Add("Starcrasher");
         fLines.Add("kim1963");
         fLines.Add("");
-        fLines.Add("Powered By");
+        fLines.Add("");
+         fLines.Add("Powered By");
         fLines.Add("SomaFM (Radio Service)");
         fLines.Add("MPV (Playback Core)");
         fLines.Add("nlohmann/json (The Data)");
@@ -6892,6 +6893,14 @@ public:
         fLines.Add("libsdl / projectM / OpenGL (The Visuals)");
         fLines.Add("SVGear (Scalable Vector Graphics)");
         fLines.Add("libcurl (Network/Streaming)");
+        fLines.Add("");
+        fLines.Add("");
+        fLines.Add("");
+        fLines.Add("");
+        fLines.Add("");
+        fLines.Add("");
+        fLines.Add("");
+        fLines.Add("");
     }
 
     ~CreditsSlider() {
@@ -7900,7 +7909,7 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
         .Add(titleApp)
         .Add(txtVer)
         .Add(txturl)
-        .AddGroup(B_HORIZONTAL, 100) 
+        .AddGroup(B_HORIZONTAL, 150) 
             .AddGlue()        
             .Add(iconLink)	
             .AddGlue()          
