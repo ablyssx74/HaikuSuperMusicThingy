@@ -3370,13 +3370,16 @@ virtual void Draw(BRect updateRect) override {
         // RE-DECLARE GEOMETRY CONSTANTS ADAPTED FOR WIDESCREEN REALESTATE
         // ====================================================================
         // Scale your layout padding dynamically so bars stay beautifully separated!
-        const float barPadding = isWindowInFullscreen ? 3.0f : 1.0f;
+       // const float barPadding = isWindowInFullscreen ? 3.0f : 1.0f;
+        const float barPadding = isWindowInFullscreen ? 6.0f : 2.0f;
         float barWidth = artworkWidth / (float)numBars;
         
         // HIGH-RESOLUTION EMBOSS METRICS
         // Dynamically assign 3D border thickness (4 pixels in fullscreen, 2 pixels in window mode)
-        float embossThickness = isWindowInFullscreen ? 3.0f : 1.0f; 
-        float peakIndicatorHeight = isWindowInFullscreen ? 2.0f : 0.0f;
+        //float embossThickness = isWindowInFullscreen ? 3.0f : 1.0f;          
+        //float peakIndicatorHeight = isWindowInFullscreen ? 2.0f : 0.0f;
+        float embossThickness = isWindowInFullscreen ? 6.0f : 2.5f;
+        float peakIndicatorHeight = isWindowInFullscreen ? 5.0f : 2.0f;
         // ====================================================================
 
 
@@ -3562,15 +3565,20 @@ virtual void Draw(BRect updateRect) override {
 
         // --- HIGH-RESOLUTION SPLINE SCALARS ---
         // Step 1: Up-sample rendering step density (16 subdivisions for crisp fullscreen curves)
-        const int dynamicSteps = isWindowInFullscreen ? 16 : 4; 
+        //const int dynamicSteps = isWindowInFullscreen ? 16 : 4; 
+         const int dynamicSteps = isWindowInFullscreen ? 64 : 32; 
 
         // Step 2: Scale up layout pen sizes to match higher resolutions
         float baseFgPenWidth     = isWindowInFullscreen ? 5.5f : 2.5f;
         float baseShadowPenWidth = isWindowInFullscreen ? 7.5f : 3.5f;
+       // float baseFgPenWidth     = isWindowInFullscreen ? 10.0f : 5.0f;
+       // float baseShadowPenWidth = isWindowInFullscreen ? 14.0f : 7.0f;
 
         // Step 3: Scale drop-shadow pixel layout offset metrics
-        float shadowOffsetX = isWindowInFullscreen ? 2.5f : 1.0f;
-        float shadowOffsetY = isWindowInFullscreen ? 3.5f : 1.5f;
+        //float shadowOffsetX = isWindowInFullscreen ? 2.5f : 1.0f;
+        //float shadowOffsetY = isWindowInFullscreen ? 3.5f : 1.5f;
+        float shadowOffsetX = isWindowInFullscreen ? 6.0f : 3.0f;
+        float shadowOffsetY = isWindowInFullscreen ? 8.0f : 4.5f;
 
         for (int i = 0; i < numBars - 1; i++) {
             int i0 = (i == 0) ? 0 : i - 1; 
@@ -3731,10 +3739,13 @@ virtual void Draw(BRect updateRect) override {
           
         // --- PASS 1: GLOW SHADOW PASS ---
         // Dynamically scale the underlying glow pen size (15.0f in fullscreen, 6.0f in window mode)
-        SetPenSize(isWindowInFullscreen ? 15.0f : 6.0f); 
+        //SetPenSize(isWindowInFullscreen ? 15.0f : 6.0f); 
+       // SetPenSize(isWindowInFullscreen ? 32.0f : 16.0f); 
+         SetPenSize(isWindowInFullscreen ? 24.0f : 12.0f); 
         
         // Dynamically assign rendering step density (72 steps in fullscreen, 24 steps in window mode)
-        const int dynamicSteps = isWindowInFullscreen ? 72 : 24;
+        // const int dynamicSteps = isWindowInFullscreen ? 72 : 64;
+        const int dynamicSteps = isWindowInFullscreen ? 256 : 128;
 
         for (int glowMirror = 0; glowMirror < 2; glowMirror++) { 
             for (int i = 0; i < numNodes - 1; i++) {
@@ -3796,13 +3807,18 @@ virtual void Draw(BRect updateRect) override {
 
         // --- PASS 2: CRISP FOREGROUND PASS WITH 3D SHADOW EMBOSS AND SHIMMER ---
         // Scale pen width variables proportionally for wide display canvases
-        float baseFgPenWidth     = isWindowInFullscreen ? 5.0f : 2.0f;
-        float baseShadowPenWidth = isWindowInFullscreen ? 8.0f : 4.0f;
+        //float baseFgPenWidth     = isWindowInFullscreen ? 5.0f : 2.0f;
+        //float baseShadowPenWidth = isWindowInFullscreen ? 8.0f : 4.0f;
+        float baseFgPenWidth     = isWindowInFullscreen ? 8.0f : 4.0f;
+        float baseShadowPenWidth = isWindowInFullscreen ? 12.0f : 6.0f;
         
         // Scale background drop-shadow coordinate displacement values
-        float shadowOffsetX = isWindowInFullscreen ? 2.5f : 1.0f;
-        float shadowOffsetY = isWindowInFullscreen ? 3.5f : 1.5f;
+        //float shadowOffsetX = isWindowInFullscreen ? 2.5f : 1.0f;
+        //float shadowOffsetY = isWindowInFullscreen ? 3.5f : 1.5f;
+        float shadowOffsetX = isWindowInFullscreen ? 6.0f : 3.0f;
+        float shadowOffsetY = isWindowInFullscreen ? 8.0f : 4.5f;
 
+		//for (int fgMirror = 0; fgMirror < 4; fgMirror++) { // 4-way canvas symmetry
         for (int fgMirror = 0; fgMirror < 2; fgMirror++) { 
             for (int i = 0; i < numNodes - 1; i++) {
                 int i0 = (i == 0) ? 0 : i - 1; 
@@ -4214,6 +4230,7 @@ virtual void Draw(BRect updateRect) override {
         
         // HIGH-RES MODIFICATION: Dynamic sizing scalar for lines and points
         float rainScale = isWindowInFullscreen ? 2.5f : 1.0f;
+        //float rainScale = isWindowInFullscreen ? 5.0f : 2.5f;
         SetPenSize(1.8f * rainScale);
 
         // Pull the safe volume tracking factor
@@ -7394,7 +7411,7 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
         .Add(fCompactSpectrumWrapper)      
     .End()
     
-    .AddStrut(0)            
+    .AddGlue()              
     .AddGroup(B_HORIZONTAL, 5) 
         // Left Side: Stats and checkboxes
         .AddGroup(B_VERTICAL, 0) 
@@ -7421,8 +7438,8 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
      .End()        
    
    // Bottom Row: Fixed structural placeholder node for normal mode controls
-   .Add(fNormalControlsWrapper)
-   .AddGlue();
+   .Add(fNormalControlsWrapper);
+  
 
 
 
@@ -8885,7 +8902,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 						finalWidth = B_SIZE_UNSET;
 						
 				}
-				
+
 
 				// 1. UPDATE SPECTRUM CORE VIEW
 				if (fSpectrum) {
@@ -8957,7 +8974,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 						
 						if (fCompactSpectrumWrapper->IsHidden()) fCompactSpectrumWrapper->Show();
 					} else {
-
 						fCompactSpectrumWrapper->SetExplicitMinSize(BSize(finalWidth, 0));
 						fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 0));
 						fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(finalWidth, 0));
@@ -9006,9 +9022,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					if (fSpectrum->Parent()) fSpectrum->RemoveSelf();
 					
 					fSpectrum->InvalidateLayout(true);
-					fSpectrum->SetExplicitMinSize(BSize(specWidth, specHeight));
-					fSpectrum->SetExplicitMaxSize(BSize(specWidth, specHeight));
-					fSpectrum->SetExplicitPreferredSize(BSize(specWidth, specHeight));
+					fSpectrum->SetExplicitMinSize(BSize(finalWidth, specHeight));
+					fSpectrum->SetExplicitMaxSize(BSize(finalWidth, specHeight));
+					fSpectrum->SetExplicitPreferredSize(BSize(finalWidth, specHeight));
 					
 					fCompactSpectrumWrapper->GroupLayout()->AddView(fSpectrum);
 				}
@@ -9025,9 +9041,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 
 				// --- LOCK COMPACT SPECTRUM WRAPPER BOUNDS ---
 				if (fCompactSpectrumWrapper) {
-					fCompactSpectrumWrapper->SetExplicitMinSize(BSize(specWidth, B_SIZE_UNSET));
-					fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(specWidth, B_SIZE_UNSET));
-					fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(specWidth, B_SIZE_UNSET));
+					fCompactSpectrumWrapper->SetExplicitMinSize(BSize(finalWidth, B_SIZE_UNSET));
+					fCompactSpectrumWrapper->SetExplicitMaxSize(BSize(finalWidth, B_SIZE_UNSET));
+					fCompactSpectrumWrapper->SetExplicitPreferredSize(BSize(finalWidth, B_SIZE_UNSET));
 				}
 
 				// ====================================================================
@@ -9054,9 +9070,16 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 			} else { // --- 3. NORMAL MODE GEOMETRY BRANCH ---
 			
 			
-				//float expandedWidth = 375.0f * scale; 
-				//float specWidth = expandedWidth;
-				//float specHeight = 125.0f * scale; 
+				/*
+				float finalHeight; 		
+				if ((!cfg.showSpectrumVisuals || !cfg.eqEnabled) && (cfg.enableDescriptions || cfg.enableTitles))  {
+						finalHeight = 125.0f * scale;
+					} else {
+						finalHeight = B_SIZE_UNSET;
+						
+				}
+				*/
+				
 				if (cfg.debugEnable) printf("[DEBUG] Entering Normal Mode Geometry Branch.\n");
 
 				BSize unlimited(B_SIZE_UNLIMITED, B_SIZE_UNLIMITED);
@@ -9313,9 +9336,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				fSpectrum->InvalidateLayout(true);
 				
 				// Enforce regular mode bounding preferences back onto the core object
-				fSpectrum->SetExplicitMinSize(BSize(400.0f * scale, 125.0f * scale));
-				fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 125.0f * scale));
-				fSpectrum->SetExplicitPreferredSize(BSize(400.0f * scale, 125.0f * scale));
+				fSpectrum->SetExplicitMinSize(BSize(375.0f * scale, 125.0f * scale));
+				fSpectrum->SetExplicitMaxSize(BSize(375.0f * scale, 125.0f * scale));
+				fSpectrum->SetExplicitPreferredSize(BSize(375.0f * scale, 125.0f * scale));
 			}
 
 			// Lock down the parent container stack to protect the vertical footprint
@@ -9326,7 +9349,10 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				fMetaAndSpectrumStack->SetExplicitPreferredSize(BSize(B_SIZE_UNSET, 125.0f * scale));
 			}
 			
-		} // --- END OF NORMAL MODE GEOMETRY BRANCH ---
+		} 
+		
+		
+		// --- END OF NORMAL MODE GEOMETRY BRANCH ---
 
 
 
