@@ -81,9 +81,9 @@
 #include <fstream>
 #include <iostream>
 #include <map>
-#include <mutex>
+// #include <mutex>
 #include <random>
-#include <sstream>
+// #include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -98,7 +98,7 @@
 
 
 
-namespace fs = std::filesystem;
+//namespace fs = std::filesystem;
 
 const std::string BASE_URL = "https://somafm.com/";
 
@@ -3658,7 +3658,7 @@ virtual void Draw(BRect updateRect) override {
         
         
         
-        else if (fVisualizerMode == MODE_LONG_WAVE) {
+    else if (fVisualizerMode == MODE_LONG_WAVE) {
             SetDrawingMode(B_OP_ALPHA);
             float midY = height / 2.0f;
             const int numNodes = 10; 
@@ -3903,7 +3903,7 @@ virtual void Draw(BRect updateRect) override {
     }
 
 
- else if (fVisualizerMode == MODE_PONG_BALLS) {
+    else if (fVisualizerMode == MODE_PONG_BALLS) {
         SetDrawingMode(B_OP_ALPHA);
         
         // --- 1. DETECT IF WINDOW IS IN FULLSCREEN MODE INSIDE DRAW ---
@@ -4218,7 +4218,7 @@ virtual void Draw(BRect updateRect) override {
 
 
 
- else if (fVisualizerMode == MODE_RAINDROPS) {
+    else if (fVisualizerMode == MODE_RAINDROPS) {
         // Mode 5: Audio-Reactive Falling Particle Rain Drops
         SetDrawingMode(B_OP_ALPHA);
         
@@ -4290,7 +4290,7 @@ virtual void Draw(BRect updateRect) override {
     
     
 		//@replicadraw @ACID_MELT
-		else if (fVisualizerMode == MODE_REPLICA || fVisualizerMode == MODE_ACID_MELT) {
+    else if (fVisualizerMode == MODE_REPLICA || fVisualizerMode == MODE_ACID_MELT) {
             // ================================================================
             // --- THEME-AWARE BASE REPLICANT CLEARING ENGINE ---
             // ================================================================
@@ -4313,7 +4313,7 @@ virtual void Draw(BRect updateRect) override {
 
     
     // @neon
-else if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
+    else if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
         SetDrawingMode(B_OP_ALPHA);
 
         float centerWindowX = startX + (artworkWidth / 2.0f);
@@ -4528,7 +4528,7 @@ else if (fVisualizerMode == MODE_WERE_OPEN_NEON_SIGN) {
     
     
     
- else if (fVisualizerMode == MODE_MOTO_RIDER) {			
+    else if (fVisualizerMode == MODE_MOTO_RIDER) {			
         // Mode 6: Endless Motorcycle Runner with Parallax & Scoreboard Display
         SetDrawingMode(B_OP_ALPHA);
         float baselineY = height - 2.0f; 
@@ -7099,7 +7099,7 @@ public:
         Invalidate();
     }
 
-	void Draw(BRect updateRect) {
+	void Draw(BRect updateRect) override {
     	PushState();
     	rgb_color bgColor = ViewColor();
     	SetLowColor(bgColor);
@@ -10469,7 +10469,7 @@ int32 mpv_loop_thread(void* data) {
 			}
 
 
-            else if (propName == "media-title") {
+			else if (propName == "media-title") {
                 char* title_ptr = *(char **)prop->data;
                 if (title_ptr) {
                     std::string newTitle = title_ptr;
@@ -10479,7 +10479,7 @@ int32 mpv_loop_thread(void* data) {
                     }
                 }
             }
-            else if (propName == "audio-bitrate") {
+			else if (propName == "audio-bitrate") {
                 double bps = *(double*)prop->data;
                 int32 kbps = (int32)(bps / 1000);
                 if (kbps > 0 && kbps != lastBitrate && win) {
@@ -10489,12 +10489,12 @@ int32 mpv_loop_thread(void* data) {
                     win->PostMessage(&msg);
                 }
             }
-            else if (propName == "audio-params") {
+			else if (propName == "audio-params") {
                 if (prop->format == MPV_FORMAT_NODE && win) {
                     win->PostMessage(MSG_AUDIO_READY);
                 }
             }
-			else if (propName == "af-metadata/bouncy") {
+		 else if (propName == "af-metadata/bouncy") {
                 if (prop->format == MPV_FORMAT_NODE) {
                     mpv_node* node = (mpv_node*)prop->data;
                     
