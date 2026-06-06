@@ -3,11 +3,11 @@ resource app_signature "application/x-vnd.HaikuSuperMusicThingy";
 
 resource app_version {
     major  = 0,
-    minor  = 1,
+    minor  = 2,
     middle = 0,
-    variety = 0,
+    variety = B_APPV_DEVELOPMENT, 
     internal = 0,
-    short_info = "SomaFM Music Player",
+    short_info = "SomaFM Music 0.0.2",
     long_info = "HaikuSuperMusicThingy is a free streaming media client for SomaFM. Fast, light, and fun!"
 };
 

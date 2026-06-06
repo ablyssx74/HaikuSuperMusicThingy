@@ -8644,8 +8644,6 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		case MSG_COMPACTM_CHANGED: {
 			if (cfg.debugEnable) printf("[DEBUG] MSG_COMPACTM_CHANGED received!\n");
 			
-
-
 			void* source = nullptr;
 			message->FindPointer("source", &source);    
 			bool newState = cfg.compactMode;		
@@ -8664,7 +8662,20 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				if (cfg.compactMode != forcedState) isRealModeTransition = true;
 				cfg.compactMode = forcedState;
 				newState = forcedState;
-				if (cfg.debugEnable) printf("[DEBUG] Forced state payload applied. New compact state: %d\n", newState);
+				
+				save_config(); 
+				
+				if (cfg.debugEnable) printf("[DEBUG] Forced state payload applied & saved. New compact state: %d\n", newState);
+
+				// FIXED: Explicitly force-synchronize the UI control values immediately 
+				// within the transition block to lock down the checkbox state parameters!
+				if (fCompactModeRadio) {
+					fCompactModeRadio->SetValue(cfg.compactMode ? B_CONTROL_ON : B_CONTROL_OFF);
+				}
+				if (fCompactModeConfig) {
+					fCompactModeConfig->SetValue(cfg.compactMode ? B_CONTROL_ON : B_CONTROL_OFF);
+				}
+
 			} else {
 				if (source == fCompactModeConfig || source == fCompactModeRadio) {
 					newState = (source == fCompactModeConfig) ? (fCompactModeConfig->Value() == B_CONTROL_ON) 
@@ -8825,9 +8836,11 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 					this->PostMessage(compactMsg);
 					break; 
 				}
-				*/				
-								
+				*/			
 				
+					
+								
+				/*
 				// New soft pump logic
 				// Updated robust soft pump execution block
 				static bool sInitialSyncDone = false;
@@ -8847,7 +8860,29 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     			    this->PostMessage(initMsg);
     			    break; 
 				}
+				*/
 
+			// ====================================================================
+			// CLEANED SYNCHRONOUS COLD-BOOT INITIALIZATION (No Thread Races)
+			// Stabilized the Initial Boot and Asynchronous "Soft Pump" Loop
+			// ====================================================================
+			static bool sInitialSyncDone = false;
+			bool forceRebuildPass = false;
+			
+			if (message) {
+				message->FindBool("initial_boot_pass", &forceRebuildPass);
+			}
+
+			// If this is the very first boot run, force the transition layout rules 
+			// to execute immediately without halting the message loop pipeline!
+			if (!sInitialSyncDone || forceRebuildPass) {
+				sInitialSyncDone = true;
+				isRealModeTransition = true; // Force the tree rebuilding code down below to run synchronously
+				
+				if (cfg.debugEnable) {
+					printf("[DEBUG] Cold boot pass confirmed. Synchronizing structural layouts natively.\n");
+				}
+			}
 
 				
 
@@ -8927,6 +8962,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 						fSpectrum->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 0));
 						fSpectrum->SetExplicitPreferredSize(BSize(0, 0));
 					}
+
+					// Evaluate visibility change and bubble invalidation up the tree
+
 
 					// Evaluate visibility change and bubble invalidation up the tree
 					if (wasLocallyHidden != targetHiddenState) {
@@ -9016,6 +9054,11 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 						.End()
 						.AddGlue() 
 					.End();
+					
+					
+
+					
+					
 
 					fCompactControlsWrapper->GroupLayout()->AddView(fControlStack, B_ALIGN_VERTICAL_CENTER);
 				}
@@ -9097,6 +9140,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				
 			// --- ROBUST STRUCTURAL UPDATE FOR SpectrumVisuals VIEW ---
 			if (fSpectrum) {
+				
+				
 				// Query local structural visibility state instead of inherited window state
 				bool wasLocallyHidden = fSpectrum->IsHidden(fSpectrum);
 				
@@ -9851,56 +9896,75 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 		}  
 		
 		case MSG_PLAY: { 
-    		int is_paused = 0;
-    		mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &is_paused);
-    		
-    		// Use proper Haiku FindString API pattern to avoid null assignment
-    		const char* song = nullptr;
-    		if (message->FindString("song", &song) != B_OK || song == nullptr) {
-        		song = "Unknown";
-    		}
+			if (!mpv) {
+				if (cfg.debugEnable) printf("[DEBUG] Fatal: mpv handle is null.\n");
+				break;
+			}
 
-    		if (is_paused) {
-       		 	mpv_command_string(mpv, "set pause no");        
-            	char* current_title = mpv_get_property_string(mpv, "media-title");
-            	if (current_title) {
-                	song = current_title; 
-                	// DO NOT clear song pointer yet; use a temporary swap if freeing immediately
-                	fSongView->SetText(song);
-                	mpv_free(current_title);
-            	} else {
-                	fSongView->SetText(song);
-            	}
-    		} 
-    		else if (fStationList->CurrentSelection() < 0) {
-                if (cfg.compactMode) {
-                    cfg.compactMode = false; 
-                    BMessage compactMsg(MSG_COMPACTM_CHANGED);
-                    compactMsg.AddString("deferred_select", "stations"); 
-                    this->PostMessage(&compactMsg);
-                } else {
-                    if (fTabView) fTabView->Select(1); 
-                }
-    		} 
-    		else {
-        		int32 index = fStationList->CurrentSelection();
-        		StationItem* item = (StationItem*)fStationList->ItemAt(index);
-        		if (item) {
-            		this->PlayStation(item->GetChannel());   
-                    
-                    if (cfg.compactMode) {
-                        //cfg.compactMode = false; 
-                        BMessage compactMsg(MSG_COMPACTM_CHANGED);
-                        compactMsg.AddString("deferred_select", "radio"); 
-                        this->PostMessage(&compactMsg);
-                    }
+			int is_paused = 0;
+			mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &is_paused);
+			
+			// 1. If paused, resume the stream directly 
+			if (is_paused) {
+				mpv_command_string(mpv, "set pause no");        
+				char* current_title = mpv_get_property_string(mpv, "media-title");
+				if (current_title != nullptr) {
+					BString safeStringContainer(current_title);
+					if (fSongView) fSongView->SetText(safeStringContainer.String());
+					mpv_free(current_title);
+				}
+				break;
+			}
 
-            		this->UpdateUI();
-        		}
-    		}
+			// 2. Identify the active selection index safely
+			int32 currentSel = -1;
+			if (fStationList) {
+				currentSel = fStationList->CurrentSelection();
+			}
 
-    		break;
+			// 3. Fallback: If no station is active or selected
+			if (currentSel < 0) {
+				if (cfg.compactMode) {
+					if (cfg.debugEnable) printf("[DEBUG] Compact Mode active with no station. Restoring Normal Mode to show tabs.\n");
+					
+					// FIXED: DO NOT alter cfg.compactMode here!
+					// Let the layout message bundle handle state adjustments safely.
+					BMessage* asyncLayoutMsg = new BMessage(MSG_COMPACTM_CHANGED);
+					asyncLayoutMsg->AddString("deferred_select", "stations");
+					asyncLayoutMsg->AddBool("force_compact_state", false); // Request an explicit switch to Normal Mode
+					
+					this->PostMessage(asyncLayoutMsg);
+					
+				} else {
+					if (fTabView) {
+						int32 targetTabIndex = -1;
+						for (int32 i = 0; i < fTabView->CountTabs(); i++) {
+							BTab* tab = fTabView->TabAt(i);
+							if (tab && tab->Label() != nullptr && strcmp(tab->Label(), "Stations") == 0) {
+								targetTabIndex = i;
+								break;
+							}
+						}
+						if (targetTabIndex >= 0) fTabView->Select(targetTabIndex);
+						else if (fTabView->CountTabs() > 1) fTabView->Select(1);
+					}
+				}
+				break; 
+			}
+
+
+			// 4. Normal Execution: A station selection is active, re-initiate stream playback
+			if (fStationList) {
+				StationItem* item = (StationItem*)fStationList->ItemAt(currentSel);
+				if (item) {
+					this->PlayStation(item->GetChannel());   
+					this->UpdateUI();
+				}
+			}
+
+			break;
 		}
+
 
             
     		
