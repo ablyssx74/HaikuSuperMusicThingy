@@ -98,7 +98,10 @@
 
 
 
-//namespace fs = std::filesystem;
+namespace AppInfo {
+    static const char* const VERSION_STRING = "Version v.1.0.3 (Haiku OS)";
+}
+
 
 const std::string BASE_URL = "https://somafm.com/";
 
@@ -7872,7 +7875,10 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     titleApp->SetFont(&titleFont);
     titleApp->SetAlignment(B_ALIGN_CENTER);
 
-    BStringView* txtVer = new BStringView("abt_ver", "Version 1.0.0 (Haiku)");
+   	BString dynamicVersionText;
+    dynamicVersionText << AppInfo::VERSION_STRING;
+
+    BStringView* txtVer = new BStringView("abt_ver", dynamicVersionText.String());
     txtVer->SetAlignment(B_ALIGN_CENTER);
     
     ClickableURL* txturl = new ClickableURL("abt_url", "Source Available Online", 
