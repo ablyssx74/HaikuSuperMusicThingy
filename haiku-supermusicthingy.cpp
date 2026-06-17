@@ -99,8 +99,12 @@
 
 
 namespace AppInfo {
-    static const char* const VERSION_STRING = "Version v.1.0.3 (Haiku OS)";
+    static const char* const VERSION_STRING = "Version v1.0.4 (Haiku OS)";
 }
+
+// Forward declaration signature for update worker thread
+static int32 BackgroundUpdateChecker(void* data);
+
 
 
 const std::string BASE_URL = "https://somafm.com/";
@@ -189,6 +193,7 @@ const float kPresetFlat[] = {
 
 //@Config
 struct Config {
+	bool showUpdateNotifications = true; 
 	float currentVolume = 75.0f;   
     bool showNotifications = false;
     bool debugEnable = false;
@@ -222,6 +227,7 @@ int selectedConfig = 0;
 
 void save_config() {
     json j;
+    j["show_update_notifications"] = cfg.showUpdateNotifications;
     j["currentVolume"] = cfg.currentVolume;
     j["quality"] = cfg.quality;
     j["debugEnable"] = cfg.debugEnable;
@@ -272,6 +278,7 @@ void load_config() {
     cfg.compactMode = false;
     cfg.enableTitles = true;
     cfg.enableDescriptions = true;
+    cfg.showUpdateNotifications = true;
     cfg.uTheme = "Dark";
     cfg.showNotifications = false;
     cfg.autoShuffle = false;
@@ -314,6 +321,7 @@ void load_config() {
                 cfg.enableDescriptions = j.value("enableDescriptions", true);
                 cfg.enableTitles = j.value("enableTitles", true);
                 cfg.uTheme = j.value("uTheme", "Dark");
+                cfg.showUpdateNotifications = j.value("show_update_notifications", true);
                 cfg.showNotifications = j.value("showNotifications", false);
                 cfg.autoShuffle = j.value("autoShuffle", false);
                 #ifdef USE_SYSTRAY
@@ -345,6 +353,132 @@ void load_config() {
         }
     }
 }
+
+
+
+
+
+
+
+// =============================================================================
+// NATIVE ASYNCHRONOUS UPDATE ENGINE IMPLEMENTATION (CURL ENGINE PASS)
+// =============================================================================
+static int32 BackgroundUpdateChecker(void* data) {
+    // Wait a brief 5 seconds after application boot to allow UI rendering to finalize completely
+    snooze(5000000); 
+
+    if (cfg.debugEnable) printf("[DEBUG_UPDATE] Asynchronous curl update checker running...\n");
+
+    const char* targetUrl = "https://raw.githubusercontent.com/ablyssx74/HaikuSuperMusicThingy/refs/heads/main/VERSION";
+
+    BString shellCmdString;
+    shellCmdString.SetToFormat("curl -sL \"%s\"", targetUrl);
+
+    BString remoteVersionStr = "";
+    
+    FILE* pipeStream = popen(shellCmdString.String(), "r");
+    if (pipeStream != nullptr) {
+        char buffer[128] = {0};
+        if (fgets(buffer, sizeof(buffer), pipeStream) != nullptr) {
+            remoteVersionStr = buffer;
+        }
+        pclose(pipeStream);
+    }
+
+    remoteVersionStr.Trim(); 
+    if (cfg.debugEnable) printf("[DEBUG_UPDATE] Raw text received from GitHub: '%s'\n", remoteVersionStr.String());
+
+    // Strip visual prefix formatting blocks out of the remote string if they exist
+    remoteVersionStr.ReplaceAll("v.", ""); 
+    remoteVersionStr.ReplaceAll("v", "");  
+    
+    if (remoteVersionStr.Length() > 0) {
+		BString currentVersionStr = AppInfo::VERSION_STRING;
+		if (cfg.debugEnable) printf("[DEBUG_UPDATE] Local AppInfo text before cleaning: '%s'\n", currentVersionStr.String());
+		
+		// 1. Find where the semantic version sequence starts (v1., v0., etc.)
+		int32 vPos = currentVersionStr.IFindFirst("v");
+		// Safely skip the word "Version" if it exists by checking if the 'v' is part of it
+		if (vPos != B_ERROR && currentVersionStr.IFindFirst("Version") == vPos) {
+		    // Find the NEXT 'v' after the word "Version"
+		    vPos = currentVersionStr.IFindFirst("v", vPos + 7);
+		}
+		
+		if (vPos != B_ERROR) {
+		    // Drop everything before the real version prefix
+		    currentVersionStr.Remove(0, vPos);
+		}
+		
+		// 2. Safely strip the 'v.' or 'v' prefix now that the string starts with it
+		currentVersionStr.ReplaceAll("v.", ""); 
+		currentVersionStr.ReplaceAll("v", "");  
+		
+		// 3. Drop trailing metadata like "(Haiku OS)"
+		int32 spacePos = currentVersionStr.FindFirst(" ");
+		if (spacePos != B_ERROR) {
+		    currentVersionStr.Truncate(spacePos); 
+		}
+		
+		currentVersionStr.Trim();
+		if (cfg.debugEnable) printf("[DEBUG_UPDATE] Cleaned local target string: '%s'\n", currentVersionStr.String());
+
+
+        // Parse semantic versions down into flat integers for safe math checks
+        int32 curMajor = 0, curMinor = 0, curRevision = 0;
+        int32 remMajor = 0, remMinor = 0, remRevision = 0;
+
+        sscanf(currentVersionStr.String(), "%d.%d.%d", &curMajor, &curMinor, &curRevision);
+        sscanf(remoteVersionStr.String(), "%d.%d.%d", &remMajor, &remMinor, &remRevision);
+
+        int32 currentFlattened = (curMajor * 10000) + (curMinor * 100) + curRevision;
+        int32 remoteFlattened  = (remMajor * 10000) + (remMinor * 100) + remRevision;
+
+        if (cfg.debugEnable) {
+            printf("[DEBUG_UPDATE] Calculated values for math match -> Local: %d | Remote: %d\n", 
+                   (int)currentFlattened, (int)remoteFlattened);
+        }
+
+        if (remoteFlattened > currentFlattened) {
+            if (cfg.debugEnable) printf("[DEBUG_UPDATE] Update matched! Checking alert preference flags...\n");
+            
+            // =========================================================================
+            // CHANNELS AUTO-HIDE PREFERENCE INTERCEPT
+            // =========================================================================
+            if (!cfg.showUpdateNotifications) {
+                if (cfg.debugEnable) printf("[DEBUG_UPDATE] Suppressing desktop alert toast\n");
+                return B_OK; // Break out cleanly and silently without throwing the alert box!
+            }
+            // =========================================================================
+
+            // Native Haiku desktop notification banner toast window dispatch engine
+            BNotification updateAlert(B_INFORMATION_NOTIFICATION);
+            updateAlert.SetGroup("Cricket IRC");
+            updateAlert.SetTitle("Update Available");
+            
+            BString alertContent;
+            alertContent << "A newer version of HaikuSuperMusicThingy is available! (v" << remoteVersionStr 
+                         << ")";
+            updateAlert.SetContent(alertContent.String());
+            
+            updateAlert.Send();
+            if (cfg.debugEnable) printf("[DEBUG_UPDATE] Toast notification sent successfully.\n");
+        } else {
+            if (cfg.debugEnable) printf("[DEBUG_UPDATE] Math complete: Client binary is already completely up to date.\n");
+        }
+    } else {
+        if (cfg.debugEnable) printf("[DEBUG_UPDATE] CRITICAL ERR: Raw text data read from pipe buffer was empty!\n");
+    }
+    
+    return B_OK;
+}
+
+
+
+
+
+
+
+
 
 
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
@@ -7621,6 +7755,10 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     
     fChkTheme = new BCheckBox("chk_theme", "Dark Theme", new BMessage(MSG_CFG_THEME));
     fChkTheme->SetValue(cfg.uTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);    
+   
+    fShowUpdateCheck = new BCheckBox("chk_ShowUpdateCheck", "Enable Updates Available Desktop Alerts", new BMessage(MSG_TOGGLE_SHOW_UPDATES));
+    fShowUpdateCheck->SetValue(cfg.showUpdateNotifications ? B_CONTROL_ON : B_CONTROL_OFF);
+
     
     fChkDebug = new BCheckBox("chk_debug", "Debug Mode [?]", new BMessage(MSG_CFG_DEBUG));
     fChkDebug->SetValue(cfg.debugEnable ? B_CONTROL_ON : B_CONTROL_OFF); 
@@ -7800,6 +7938,7 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     .Add(fChkSong)
     .Add(fChkTitle)
     .Add(fChkTheme)
+    .Add(fShowUpdateCheck)
     .Add(fChkDebug)  
     .Add(fChkSysTray)
    	.Add(fEQToggle)
@@ -8221,7 +8360,13 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     			break;
 			}
 			
-			
+	    case MSG_TOGGLE_SHOW_UPDATES: {
+            if (fShowUpdateCheck != nullptr) {
+                cfg.showUpdateNotifications = (fShowUpdateCheck->Value() == B_CONTROL_ON);
+                save_config(); // Flush parameter change straight to disk instantly
+            }
+            break;
+        }		
 	
     	
     	case MSG_TOGGLE_LADSPA: {
@@ -10384,6 +10529,16 @@ public:
 	virtual void MessageReceived(BMessage* message);
 	virtual void ReadyToRun() {
     	load_config();
+    	
+    	// =========================================================================
+        // AUTOMATED BACKGROUND UPDATE CHECKER THREAD INITIALIZATION
+        // =========================================================================
+        thread_id updateThread = spawn_thread(BackgroundUpdateChecker, "UpdateCheckerThread", B_NORMAL_PRIORITY, this);
+        if (updateThread >= 0) {
+            resume_thread(updateThread);
+        }
+        // =========================================================================
+    	
     	fetch_channels();
     	init_mpv();
 

@@ -57,6 +57,7 @@ class IconButton;
 class IconView;
 
 enum {
+	MSG_TOGGLE_SHOW_UPDATES = 'tshu',
 	MSG_DEBUG   = 'debg',
     MSG_SHUFFLE = 'shuf',
     MSG_STOP    = 'stop',
@@ -215,6 +216,7 @@ private:
     BCheckBox* fEnableSpectrum;
     BCheckBox* fChkSysTray;
     BCheckBox* fChkTheme;
+    BCheckBox* fShowUpdateCheck;
     BCheckBox* fChkSong;
     BCheckBox* fChkTitle;
     BCheckBox* fChkPresetTimer;
