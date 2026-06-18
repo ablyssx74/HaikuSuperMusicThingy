@@ -5,11 +5,11 @@ resource app_signature "application/x-vnd.HaikuSuperMusicThingy";
 resource app_version {
     major  = 1,   
     minor  = 0,   
-    middle = 5,   
+    middle = 6,   
     variety = B_APPV_DEVELOPMENT, 
     internal = 0,
-    short_info = "HaikuSuperMusicThingy Music Client v1.0.5",
-    long_info = "HaikuSuperMusicThingy Music Client v1.0.5 A free streaming media client for SomaFM. Fast, light, and fun!"
+    short_info = "HaikuSuperMusicThingy Music Client v1.0.6",
+    long_info = "HaikuSuperMusicThingy Music Client v1.0.6 A free streaming media client for SomaFM. Fast, light, and fun!"
 };
 
 resource vector_icon {

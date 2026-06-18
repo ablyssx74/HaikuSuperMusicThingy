@@ -99,7 +99,7 @@
 
 
 namespace AppInfo {
-    static const char* const VERSION_STRING = "Version v1.0.5 (Haiku OS)";
+    static const char* const VERSION_STRING = "Version v1.0.6 (Haiku OS)";
 }
 
 // Forward declaration signature for update worker thread
@@ -388,48 +388,34 @@ static int32 BackgroundUpdateChecker(void* data) {
     remoteVersionStr.Trim(); 
     if (cfg.debugEnable) printf("[DEBUG_UPDATE] Raw text received from GitHub: '%s'\n", remoteVersionStr.String());
 
-    // Strip visual prefix formatting blocks out of the remote string if they exist
-    remoteVersionStr.ReplaceAll("v.", ""); 
-    remoteVersionStr.ReplaceAll("v", "");  
+    remoteVersionStr.Trim(); 
+    if (cfg.debugEnable) printf("[DEBUG_UPDATE] Raw text received from GitHub: '%s'\n", remoteVersionStr.String());
     
     if (remoteVersionStr.Length() > 0) {
-		BString currentVersionStr = AppInfo::VERSION_STRING;
-		if (cfg.debugEnable) printf("[DEBUG_UPDATE] Local AppInfo text before cleaning: '%s'\n", currentVersionStr.String());
-		
-		// 1. Find where the semantic version sequence starts (v1., v0., etc.)
-		int32 vPos = currentVersionStr.IFindFirst("v");
-		// Safely skip the word "Version" if it exists by checking if the 'v' is part of it
-		if (vPos != B_ERROR && currentVersionStr.IFindFirst("Version") == vPos) {
-		    // Find the NEXT 'v' after the word "Version"
-		    vPos = currentVersionStr.IFindFirst("v", vPos + 7);
-		}
-		
-		if (vPos != B_ERROR) {
-		    // Drop everything before the real version prefix
-		    currentVersionStr.Remove(0, vPos);
-		}
-		
-		// 2. Safely strip the 'v.' or 'v' prefix now that the string starts with it
-		currentVersionStr.ReplaceAll("v.", ""); 
-		currentVersionStr.ReplaceAll("v", "");  
-		
-		// 3. Drop trailing metadata like "(Haiku OS)"
-		int32 spacePos = currentVersionStr.FindFirst(" ");
-		if (spacePos != B_ERROR) {
-		    currentVersionStr.Truncate(spacePos); 
-		}
-		
-		currentVersionStr.Trim();
-		if (cfg.debugEnable) printf("[DEBUG_UPDATE] Cleaned local target string: '%s'\n", currentVersionStr.String());
+        BString currentVersionStr = AppInfo::VERSION_STRING;
+        if (cfg.debugEnable) printf("[DEBUG_UPDATE] Local AppInfo text before cleaning: '%s'\n", currentVersionStr.String());
 
-
-        // Parse semantic versions down into flat integers for safe math checks
         int32 curMajor = 0, curMinor = 0, curRevision = 0;
         int32 remMajor = 0, remMinor = 0, remRevision = 0;
 
-        sscanf(currentVersionStr.String(), "%d.%d.%d", &curMajor, &curMinor, &curRevision);
-        sscanf(remoteVersionStr.String(), "%d.%d.%d", &remMajor, &remMinor, &remRevision);
+        // --- Bulletproof sscanf Pattern Matching ---
+        // Looks for a 'v' immediately followed by a number, bypassing words like "HaikuDVR" or "Version"
+        if (sscanf(currentVersionStr.String(), "%*[^v]v%d.%d.%d", &curMajor, &curMinor, &curRevision) != 3) {
+            // Fallback: search for raw dot-separated numbers anywhere if 'v' isn't found
+            sscanf(currentVersionStr.String(), "%*[^0-9]%d.%d.%d", &curMajor, &curMinor, &curRevision);
+        }
 
+        // Parse the remote string from GitHub using the same pattern rules
+        if (sscanf(remoteVersionStr.String(), "%*[^v]v%d.%d.%d", &remMajor, &remMinor, &remRevision) != 3) {
+            sscanf(remoteVersionStr.String(), "%*[^0-9]%d.%d.%d", &remMajor, &remMinor, &remRevision);
+        }
+
+        // Log the cleaned string results visually just for your debug logs
+        if (cfg.debugEnable) {
+            printf("[DEBUG_UPDATE] Cleaned local target string: '%d.%d.%d'\n", curMajor, curMinor, curRevision);
+        }
+
+        // Flatten values down into integers for math checks
         int32 currentFlattened = (curMajor * 10000) + (curMinor * 100) + curRevision;
         int32 remoteFlattened  = (remMajor * 10000) + (remMinor * 100) + remRevision;
 
@@ -437,6 +423,7 @@ static int32 BackgroundUpdateChecker(void* data) {
             printf("[DEBUG_UPDATE] Calculated values for math match -> Local: %d | Remote: %d\n", 
                    (int)currentFlattened, (int)remoteFlattened);
         }
+
 
         if (remoteFlattened > currentFlattened) {
             if (cfg.debugEnable) printf("[DEBUG_UPDATE] Update matched! Checking alert preference flags...\n");
