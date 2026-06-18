@@ -99,7 +99,7 @@
 
 
 namespace AppInfo {
-    static const char* const VERSION_STRING = "Version v1.0.4 (Haiku OS)";
+    static const char* const VERSION_STRING = "Version v1.0.5 (Haiku OS)";
 }
 
 // Forward declaration signature for update worker thread
@@ -452,7 +452,7 @@ static int32 BackgroundUpdateChecker(void* data) {
 
             // Native Haiku desktop notification banner toast window dispatch engine
             BNotification updateAlert(B_INFORMATION_NOTIFICATION);
-            updateAlert.SetGroup("Cricket IRC");
+            updateAlert.SetGroup("HaikuSuperMusicThingy");
             updateAlert.SetTitle("Update Available");
             
             BString alertContent;

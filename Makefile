@@ -1,7 +1,7 @@
 # Optimized Haiku Build Script
 SHELL := /bin/bash
 NAME = HaikuSuperMusicThingy
-VERSION = 1.0.4
+VERSION = 1.0.5
 PACKAGE_DIR := build/package
 DUMMY_PC_PATH := $(shell pwd)/build/pkgconfig
 ENABLE_PROJECTM := ON
