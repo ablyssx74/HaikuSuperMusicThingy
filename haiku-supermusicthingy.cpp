@@ -99,7 +99,7 @@
 
 
 namespace AppInfo {
-    static const char* const VERSION_STRING = "Version v1.0.6 (Haiku OS)";
+    static const char* const VERSION_STRING = "Version v1.0.7 (Haiku OS)";
 }
 
 // Forward declaration signature for update worker thread
@@ -443,7 +443,7 @@ static int32 BackgroundUpdateChecker(void* data) {
             updateAlert.SetTitle("Update Available");
             
             BString alertContent;
-            alertContent << "A newer version of HaikuSuperMusicThingy is available! (v" << remoteVersionStr 
+            alertContent << "A newer version of HaikuSuperMusicThingy is available! (" << remoteVersionStr 
                          << ")";
             updateAlert.SetContent(alertContent.String());
             
