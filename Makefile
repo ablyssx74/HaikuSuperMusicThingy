@@ -14,7 +14,7 @@ endif
 
 # --- 2. Architecture & Paths ---
 UNAME_M := $(shell uname -p)
-ifeq ($(UNAME_M), x86)
+ifeq ($(UNAME_M), BePC)
     CXX = g++-x86
     ARCH = x86_gcc2
     LIB_ARCH_DIR = /x86
@@ -95,20 +95,19 @@ package: all
 ifeq ($(ENABLE_PROJECTM), ON)
 	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/milkdrops/presets_stock
 	cp -r presets_stock/. $(PACKAGE_DIR)/data/$(NAME)/milkdrops/presets_stock/
- ifeq ($(UNAME_M), x86_64)
-	mkdir -p $(PACKAGE_DIR)/lib
-	cp lib/lib* $(PACKAGE_DIR)/lib
- else
+ifeq ($(UNAME_M), BePC)
 	mkdir -p $(PACKAGE_DIR)/lib/x86
 	cp x86/lib/lib* $(PACKAGE_DIR)/lib/x86
+ else
+	mkdir -p $(PACKAGE_DIR)/lib
+	cp lib/lib* $(PACKAGE_DIR)/lib
  endif
 endif
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
-ifeq ($(UNAME_M), x86_64)
+ifeq ($(UNAME_M), BePC)
+	rc -o $(NAME).rsrc x86/$(NAME)_x86.rdef	
+ else
 	rc -o $(NAME).rsrc $(NAME).rdef
-endif
-ifeq ($(UNAME_M), x86)	
-	rc -o $(NAME).rsrc x86/$(NAME)_x86.rdef
 endif  
 	xres -o $(NAME) $(NAME).rsrc
 	mimeset -f $(NAME)
