@@ -13,7 +13,7 @@ ifeq ($(ENABLE_PROJECTM), ON)
 endif
 
 # --- 2. Architecture & Paths ---
-UNAME_M := $(shell uname -p)
+UNAME_M := $(shell uname -m)
 ifeq ($(UNAME_M), BePC)
     CXX = g++-x86
     ARCH = x86_gcc2
