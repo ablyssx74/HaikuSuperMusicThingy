@@ -97,7 +97,7 @@ ifeq ($(ENABLE_PROJECTM), ON)
 	cp -r presets_stock/. $(PACKAGE_DIR)/data/$(NAME)/milkdrops/presets_stock/
 ifeq ($(UNAME_M), BePC)
 	mkdir -p $(PACKAGE_DIR)/lib/x86
-	cp x86/lib/lib* $(PACKAGE_DIR)/lib/x86
+	#cp x86/lib/lib* $(PACKAGE_DIR)/lib/x86
  else
 	mkdir -p $(PACKAGE_DIR)/lib
 	cp lib/lib* $(PACKAGE_DIR)/lib
