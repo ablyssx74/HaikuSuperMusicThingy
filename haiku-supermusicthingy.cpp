@@ -99,7 +99,7 @@
 
 
 namespace AppInfo {
-    static const char* const VERSION_STRING = "Version v1.0.7 (Haiku OS)";
+    static const char* const VERSION_STRING = "Version v1.0.8 (Haiku OS)";
 }
 
 // Forward declaration signature for update worker thread
@@ -372,7 +372,11 @@ static int32 BackgroundUpdateChecker(void* data) {
     const char* targetUrl = "https://raw.githubusercontent.com/ablyssx74/HaikuSuperMusicThingy/refs/heads/main/VERSION";
 
     BString shellCmdString;
-    shellCmdString.SetToFormat("curl -sL \"%s\"", targetUrl);
+    #if defined(__x86_64__)
+        shellCmdString.SetToFormat("curl -sL \"%s\"", targetUrl);
+    #else
+        shellCmdString.SetToFormat("curl-x86 -sL \"%s\"", targetUrl);
+    #endif
 
     BString remoteVersionStr = "";
     
