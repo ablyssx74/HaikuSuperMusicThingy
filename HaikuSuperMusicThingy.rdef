@@ -1,16 +1,15 @@
 //resource app_flags B_SINGLE_LAUNCH;
 resource app_flags B_SINGLE_LAUNCH | B_BACKGROUND_APP;
-//resource app_flags B_SINGLE_LAUNCH;
 resource app_signature "application/x-vnd.HaikuSuperMusicThingy";
 
 resource app_version {
     major  = 1,   
     minor  = 0,   
-    middle = 8,   
+    middle = 9,   
     variety = B_APPV_DEVELOPMENT, 
     internal = 0,
-    short_info = "HaikuSuperMusicThingy Music Client v1.0.8",
-    long_info = "HaikuSuperMusicThingy Music Client v1.0.8 A free streaming media client for SomaFM. Fast, light, and fun!"
+    short_info = "HaikuSuperMusicThingy Music Client v1.0.9",
+    long_info = "HaikuSuperMusicThingy Music Client v1.0.9 A free streaming media client for SomaFM. Fast, light, and fun!"
 };
 
 resource vector_icon {

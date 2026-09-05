@@ -81,9 +81,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
-// #include <mutex>
 #include <random>
-// #include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -99,11 +97,11 @@
 
 
 namespace AppInfo {
-    static const char* const VERSION_STRING = "Version v1.0.8 (Haiku OS)";
+    static const char* const VERSION_STRING = "Version v1.0.9 (Haiku OS)";
 }
 
 // Forward declaration signature for update worker thread
-static int32 BackgroundUpdateChecker(void* data);
+//static int32 BackgroundUpdateChecker(void* data);
 
 
 
@@ -7742,7 +7740,7 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     
     fChkSysTray = new BCheckBox("chk_sysTray", "System Tray", new BMessage(MSG_CFG_SYS_TRAY));
     fChkSysTray->SetValue(cfg.sysTray ? B_CONTROL_ON : B_CONTROL_OFF);
-    fChkSysTray->SetEnabled(false);    
+    fChkSysTray->SetEnabled(true);    
     
     fChkTheme = new BCheckBox("chk_theme", "Dark Theme", new BMessage(MSG_CFG_THEME));
     fChkTheme->SetValue(cfg.uTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);    

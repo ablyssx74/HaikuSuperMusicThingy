@@ -1,0 +1,11 @@
+//resource app_flags B_SINGLE_LAUNCH;
+resource app_flags B_SINGLE_LAUNCH | B_BACKGROUND_APP;
+resource app_signature "application/x-vnd.SuperMusicTrayIconLibrary";
+
+resource app_version {
+    major = 1, minor = 0, middle = 8,
+    variety = B_APPV_DEVELOPMENT, internal = 0,
+    short_info = "SuperMusicThingy Tray Icon Helper (x86 legacy)",
+    long_info = "Deskbar replicant helper for HaikuSuperMusicThingy on x86_gcc2."
+};
+

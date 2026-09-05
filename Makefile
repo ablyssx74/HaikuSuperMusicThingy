@@ -1,10 +1,11 @@
 # Optimized Haiku Build Script
 SHELL := /bin/bash
 NAME = HaikuSuperMusicThingy
-VERSION = 1.0.8
+VERSION = 1.0.9
 PACKAGE_DIR := build/package
 DUMMY_PC_PATH := $(shell pwd)/build/pkgconfig
 ENABLE_PROJECTM := ON
+REVISION = 1
 
 # Forced dependencies
 ifeq ($(ENABLE_PROJECTM), ON)
@@ -16,12 +17,18 @@ endif
 UNAME_M := $(shell uname -m)
 ifeq ($(UNAME_M), BePC)
     CXX = g++-x86
+    TRAY_CXX = g++
     ARCH = x86_gcc2
     LIB_ARCH_DIR = /x86
-    DEFINES += -DIS_HAIKU_32BIT
-    TPL_FILE := x86/$(NAME)_x86.tpl
+    is32bit = _x86
+    ENABLE_PROJECTM := OFF
+    ENABLE_SDL2 := OFF
+    ENABLE_GL := OFF
+    DEFINES += -DIS_HAIKU_32BIT -DUSE_SYSTRAY 
+    TPL_FILE := $(NAME).tpl 
 else
     CXX = g++
+    TRAY_CXX = g++
     ARCH = x86_64
     LIB_ARCH_DIR = 
     DEFINES += -DUSE_SYSTRAY 
@@ -85,11 +92,25 @@ build: setup_dummy
 	$(CXX) $(CXXFLAGS) $(DEFINES) $(INCLUDES) haiku-supermusicthingy.cpp icons.cpp -o $(NAME) \
 		$(LIB_PATH) $(EXTRA_LIBS) $(HAIKU_LIBS)
 
+TRAY_LIB_NAME = SuperMusicTrayIconLibrary
+TRAY_LIB_SRC  = x86/deskbar-tray-x86.cpp
+TRAY_LIB_RDEF = x86/$(TRAY_LIB_NAME)_x86.rdef
+
+build_tray_lib:
+	@echo "--------- Building legacy gcc2 Deskbar tray helper ---------"
+	$(TRAY_CXX) -O2 -Wall -Wno-multichar $(TRAY_LIB_SRC) -o $(TRAY_LIB_NAME) \
+		-I/boot/system/develop/headers \
+		-L/boot/system/lib -lbe -lroot
+	rc -o $(TRAY_LIB_NAME).rsrc $(TRAY_LIB_RDEF)
+	xres -o $(TRAY_LIB_NAME) $(TRAY_LIB_NAME).rsrc
+	mimeset -f $(TRAY_LIB_NAME)
+
+
 package: all
 	@[ -n "$(PACKAGE_DIR)" ] || { echo "PACKAGE_DIR is undefined"; exit 1; }
 	rm -rf "./$(PACKAGE_DIR)"
 	mkdir -p $(PACKAGE_DIR)
-	sed -e 's/$$(NAME)/$(NAME)/g' -e 's/$$(VERSION)/$(VERSION)/g' -e 's/$$(ARCH)/$(ARCH)/' -e 's/$$(YEAR)/$(shell date +%Y)/' $(TPL_FILE) > $(PACKAGE_DIR)/.PackageInfo
+	sed -e 's/$$(NAME)/$(NAME)/g' -e 's/$$(VERSION)/$(VERSION)/g' -e 's/$$(REVISION)/$(REVISION)/g' -e 's/$$(is32bit)/$(is32bit)/g'  -e 's/$$(ARCH)/$(ARCH)/' -e 's/$$(YEAR)/$(shell date +%Y)/' $(TPL_FILE) > $(PACKAGE_DIR)/.PackageInfo
 	mkdir -p $(PACKAGE_DIR)/apps
 	mkdir -p $(PACKAGE_DIR)/bin
 ifeq ($(ENABLE_PROJECTM), ON)
@@ -104,17 +125,18 @@ ifeq ($(UNAME_M), BePC)
  endif
 endif
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
+	rc -o $(NAME).rsrc $(NAME).rdef  
 ifeq ($(UNAME_M), BePC)
-	rc -o $(NAME).rsrc x86/$(NAME)_x86.rdef	
- else
-	rc -o $(NAME).rsrc $(NAME).rdef
-endif  
+	$(MAKE) build_tray_lib
+	mkdir -p $(PACKAGE_DIR)/apps
+	cp $(TRAY_LIB_NAME) $(PACKAGE_DIR)/apps/
+endif
 	xres -o $(NAME) $(NAME).rsrc
 	mimeset -f $(NAME)
 	cp $(NAME) $(PACKAGE_DIR)/apps/
 	ln -s /system/apps/$(NAME) $(PACKAGE_DIR)/bin/$(NAME)
 	ln -s /system/apps/$(NAME) $(PACKAGE_DIR)/data/deskbar/menu/Applications/$(NAME)
-	package create -C $(PACKAGE_DIR) $(NAME)-$(VERSION)-1-$(ARCH).hpkg
+	package create -C $(PACKAGE_DIR) $(NAME)-$(VERSION)-$(REVISION)-$(ARCH).hpkg
 
 clean:
 	rm -f $(NAME) *.rsrc *.hpkg

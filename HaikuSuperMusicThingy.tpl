@@ -1,5 +1,5 @@
 name			$(NAME)
-version			$(VERSION)-1
+version			$(VERSION)-$(REVISION)
 architecture	$(ARCH)
 summary 		"SomaFM Music Player"
 description 	"HaikuSuperMusicThingy is a free streaming media client for SomaFM. Fast, light, and fun!"
@@ -12,17 +12,17 @@ copyrights {
 	"$(YEAR) ablyss"
 }
 provides {
-	$(NAME) = $(VERSION)-1
+	$(NAME) = $(VERSION)-$(REVISION)
 	lib:libprojectM = 4.1.0-1
 }
 requires {
 	haiku
 	haiku_datatranslators
 	nlohmann_json
-	mpv
-	openal
-	curl
-	libsdl2
+	mpv$(is32bit)
+	openal$(is32bit)
+	curl$(is32bit)
+	libsdl2$(is32bit)
 	
 }	
 urls {
