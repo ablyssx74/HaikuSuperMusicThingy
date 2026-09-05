@@ -10980,29 +10980,23 @@ private:
         }
     }
 
-    void _LoadIcon() {
-        delete fIcon;
-        fIcon = NULL;
-
-        // Base sizing using modern look metrics matching the deskbar configuration
-        float size = be_control_look->ComposeIconSize(B_MINI_ICON).Width();
-        
-        // Ensure bounds scale safely if target tray frame is smaller
-        if (Bounds().Width() > 0 && Bounds().Width() < size) {
-            size = Bounds().Width();
-        }
-
-        fIcon = new BBitmap(BRect(0, 0, size - 1, size - 1), B_RGBA32);
-
-        entry_ref ref;
-        if (be_roster->FindApp("application/x-vnd.HaikuSuperMusicThingy", &ref) == B_OK) {
-            // Attempt HVIF vector extraction first for perfect auto-scaling
-            if (BNodeInfo::GetTrackerIcon(&ref, fIcon, (icon_size)size) != B_OK) {
-                BMimeType type("application/x-vnd.HaikuSuperMusicThingy");
-                type.GetIcon(fIcon, (icon_size)size);
-            }
-        }
-    }
+	void _LoadIcon() {
+	    delete fIcon;
+	    fIcon = NULL;
+	
+	    BRect bounds = Bounds();
+	    float size = bounds.IsValid() ? bounds.Width() + 1.0f : 20.0f;
+	
+	    fIcon = new BBitmap(BRect(0, 0, size - 1, size - 1), B_RGBA32);
+	
+	    entry_ref ref;
+	    if (be_roster->FindApp("application/x-vnd.HaikuSuperMusicThingy", &ref) == B_OK) {
+	        if (BNodeInfo::GetTrackerIcon(&ref, fIcon, (icon_size)size) != B_OK) {
+	            BMimeType type("application/x-vnd.HaikuSuperMusicThingy");
+	            type.GetIcon(fIcon, (icon_size)size);
+	        }
+	    }
+	}
     BBitmap* fIcon;
 };
 
@@ -11016,11 +11010,10 @@ _EXPORT BArchivable* MyIcon::Instantiate(BMessage* data) {
 
 
 extern "C" _EXPORT BView* instantiate_deskbar_item() {
-    // Dynamically retrieve optimal system mini icon bounds (handles scale/HiDPI)
     float size = be_control_look->ComposeIconSize(B_MINI_ICON).Width();
+    if (size < 20.0f) size = 20.0f;   // floor it — B_MINI_ICON is too small on many themes
     return new MyIcon(BRect(0, 0, size - 1, size - 1));
 }
-
 
 extern "C" _EXPORT BArchivable* instantiate_tray_icon(BMessage* data) {
     return MyIcon::Instantiate(data);
