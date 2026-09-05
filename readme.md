@@ -21,6 +21,7 @@
 
 
 ### Build Latest ( With projectm. Requires 3rd party projectm headers )
+### Haiku 32bit is configured to build without projectm by default since Nebula is not available for 32bit
 ```shell
 #Download the source
 git clone https://github.com/ablyssx74/HaikuSuperMusicThingy
