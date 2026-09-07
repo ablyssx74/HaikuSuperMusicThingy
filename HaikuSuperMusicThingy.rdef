@@ -1,5 +1,17 @@
-//resource app_flags B_SINGLE_LAUNCH;
-resource app_flags B_SINGLE_LAUNCH | B_BACKGROUND_APP;
+// NOTE: Deliberately NOT B_BACKGROUND_APP. That flag is baked into the
+// executable's resources at package time and Haiku's registrar reads it
+// once, at team registration -- there is no supported way for a running
+// app to flip it later, and on a packagefs install (/system/apps/...) the
+// binary is mounted read-only so we can't even rewrite it on the fly.
+// Since the "System Tray" checkbox is a runtime user preference, baking
+// B_BACKGROUND_APP in here would either always hide the app from the
+// Deskbar (zombie window when Tray is off and the window gets minimized/
+// sent behind others) or never hide it. Instead we stay a normal
+// foreground app always, and toggle B_SKIP_WINDOW_LIST on just the main
+// BWindow at runtime (see SuperMusicWindow::UpdateTrayState) so the
+// window disappears from the Deskbar's window list while the tray icon
+// is doing that job, and reappears there the moment Tray is switched off.
+resource app_flags B_SINGLE_LAUNCH;
 resource app_signature "application/x-vnd.HaikuSuperMusicThingy";
 
 resource app_version {
