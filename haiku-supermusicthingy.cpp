@@ -85,7 +85,9 @@
 #include <map>
 #include <random>
 #include <string>
+#include <sys/stat.h>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 
 
@@ -355,39 +357,151 @@ void load_config() {
 }
 
 
-// Haiku registers a team's Deskbar visibility (B_BACKGROUND_APP or not) exactly
-// once, from the executable's own app_flags, at the moment BApplication's
-// constructor registers with the registrar -- there is no API to change it for
-// an already-running team, and BRoster::Private confirms no such call exists.
-// So "System Tray" being a runtime preference can't flip Deskbar visibility for
-// the *current* run; the best we can do is make sure the flag baked into our
-// own executable matches the last-saved preference before we register, so the
-// *next* launch comes up right. This is a best-effort write: it succeeds for a
-// normal writable build (e.g. a binary sitting in /boot/home while developing)
-// and silently no-ops on a packaged install, where the executable lives on the
-// read-only packagefs mount -- in that case the .rdef's compiled-in default
-// (B_BACKGROUND_APP, matching cfg.sysTray's default of true) is what sticks.
-void sync_app_flags_with_config() {
-    image_info info;
-    int32 cookie = 0;
-    bool found = false;
-    while (get_next_image_info(0, &cookie, &info) == B_OK) {
-        if (info.type == B_APP_IMAGE) {
-            found = true;
-            break;
-        }
-    }
-    if (!found) return;
+// ====================================================================
+// Deskbar-visibility flag sync -- see also HaikuSuperMusicThingy.rdef
+// ====================================================================
+// Haiku registers a team's Deskbar visibility (B_BACKGROUND_APP or not)
+// exactly once, from the executable's own app_flags, at the moment
+// BApplication's constructor registers with the registrar (confirmed against
+// Haiku's own src/kits/app/Application.cpp: it opens its own executable
+// B_READ_ONLY, reads flags via BAppFileInfo::GetAppFlags(), then passes that
+// straight to BRoster::Private::AddApplication()). There is no API to change
+// an already-running team's flags afterwards -- headers/private/app/
+// RosterPrivate.h has nothing of the sort. So "System Tray" being a runtime
+// preference can never flip Deskbar visibility for the *current* run; the
+// best any app-side code can do is make sure whatever executable is about to
+// register carries the flags matching the last-saved preference.
+//
+// That's straightforward for a normal writable build (e.g. compiled and run
+// straight out of /boot/home). It is NOT possible in place for an installed
+// copy, because /boot/system/apps/... is the read-only packagefs mount --
+// confirmed: even a brand-new process launched directly from that path can
+// never pick up a flag change no matter what we write to cfg, because there
+// is no writable copy of *that* file to patch. The only way around it is to
+// stop running that file directly: keep a private, writable shadow copy of
+// ourselves next to the config, keep its app_flags in sync, and have main()
+// re-exec into it before BApplication ever constructs. From then on, the
+// team that actually registers with the Deskbar is reading flags off a file
+// we can always rewrite.
 
-    BFile file(info.name, B_READ_WRITE);
-    if (file.InitCheck() != B_OK) return; // read-only (packaged) install -- leave the compiled default
+// Best-effort: rewrites app_flags on the executable at `path` to match
+// `flags`. False means the file couldn't be opened for writing (e.g. it's
+// the real install sitting on the read-only packagefs mount).
+static bool try_patch_app_flags(const char* path, uint32 flags) {
+    BFile file(path, B_READ_WRITE);
+    if (file.InitCheck() != B_OK) return false;
 
     BAppFileInfo appFileInfo(&file);
-    if (appFileInfo.InitCheck() != B_OK) return;
+    if (appFileInfo.InitCheck() != B_OK) return false;
+
+    return appFileInfo.SetAppFlags(flags) == B_OK;
+}
+
+// Finds our own running executable's path -- the same lookup BApplication
+// itself performs internally to locate its own resources at registration.
+static bool get_own_image_path(BString& outPath) {
+    image_info info;
+    int32 cookie = 0;
+    while (get_next_image_info(0, &cookie, &info) == B_OK) {
+        if (info.type == B_APP_IMAGE) {
+            outPath = info.name;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Path to a private, always-writable copy of ourselves kept next to the
+// config file, used only when the real executable turns out to be read-only.
+static bool get_shadow_copy_path(BPath& outPath) {
+    if (find_directory(B_USER_SETTINGS_DIRECTORY, &outPath) != B_OK) return false;
+    outPath.Append("SuperMusicThingy/HaikuSuperMusicThingy");
+    return true;
+}
+
+// Makes sure the shadow copy exists and matches the real executable (by size
+// and modification time), (re)copying it if not so app updates get picked up.
+static bool refresh_shadow_copy(const char* sourcePath, const char* shadowPath) {
+    struct stat sourceStat;
+    if (stat(sourcePath, &sourceStat) != 0) return false;
+
+    struct stat shadowStat;
+    bool shadowCurrent = (stat(shadowPath, &shadowStat) == 0)
+        && shadowStat.st_size == sourceStat.st_size
+        && shadowStat.st_mtime >= sourceStat.st_mtime;
+    if (shadowCurrent) return true;
+
+    BPath shadowDir;
+    shadowDir.SetTo(shadowPath);
+    BPath parentDir;
+    shadowDir.GetParent(&parentDir);
+    create_directory(parentDir.Path(), 0755);
+
+    std::ifstream src(sourcePath, std::ios::binary);
+    std::ofstream dst(shadowPath, std::ios::binary | std::ios::trunc);
+    if (!src.is_open() || !dst.is_open()) return false;
+    dst << src.rdbuf();
+    bool ok = dst.good();
+    src.close();
+    dst.close();
+    if (ok) chmod(shadowPath, 0755);
+    return ok;
+}
+
+// Called at startup (before BApplication registers) and again whenever the
+// System Tray checkbox changes. Keeps whatever writable copy of ourselves we
+// can find -- in place if possible, otherwise the shadow copy -- carrying
+// app_flags that match cfg.sysTray, ready for the *next* registration.
+void sync_app_flags_with_config() {
+    BString ownPath;
+    if (!get_own_image_path(ownPath)) return;
 
     uint32 flags = B_SINGLE_LAUNCH;
     if (cfg.sysTray) flags |= B_BACKGROUND_APP;
-    appFileInfo.SetAppFlags(flags);
+
+    // Fast path: our own executable is directly writable (a normal build
+    // under /boot/home while developing, or we're already the shadow copy).
+    if (try_patch_app_flags(ownPath.String(), flags)) return;
+
+    // Slow path: read-only install. Keep the shadow copy current instead;
+    // main() decides whether to actually relaunch into it.
+    BPath shadowPath;
+    if (!get_shadow_copy_path(shadowPath)) return;
+    if (ownPath == shadowPath.Path()) return; // already the shadow; nothing more we can do
+
+    if (refresh_shadow_copy(ownPath.String(), shadowPath.Path()))
+        try_patch_app_flags(shadowPath.Path(), flags);
+}
+
+// Called once from main(), before BApplication is constructed. If our own
+// executable is read-only, re-exec into the writable shadow copy (already
+// freshened by sync_app_flags_with_config() above) so the team that actually
+// registers with the Deskbar reads flags from a file we can keep current.
+// No-ops (falls through to running as-is) if the real executable was already
+// writable, or if anything about the relocation isn't ready -- worst case we
+// just keep the compiled-in default for this run.
+void relaunch_from_writable_copy_if_needed(int argc, char** argv) {
+    BString ownPath;
+    if (!get_own_image_path(ownPath)) return;
+
+    BFile probe(ownPath.String(), B_READ_WRITE);
+    if (probe.InitCheck() == B_OK) return; // already writable -- nothing to relocate
+
+    BPath shadowPath;
+    if (!get_shadow_copy_path(shadowPath)) return;
+    if (ownPath == shadowPath.Path()) return; // already running the shadow; give up quietly
+
+    BFile shadowProbe(shadowPath.Path(), B_READ_ONLY);
+    if (shadowProbe.InitCheck() != B_OK) return; // shadow isn't ready; nothing to relaunch into
+
+    std::vector<char*> newArgv;
+    newArgv.push_back(const_cast<char*>(shadowPath.Path()));
+    for (int i = 1; i < argc; i++) newArgv.push_back(argv[i]);
+    newArgv.push_back(nullptr);
+
+    execv(shadowPath.Path(), newArgv.data());
+    // Only reachable if execv() itself failed to start; fall through and run
+    // as-is with whatever flags the real (read-only) executable was built with.
 }
 
 
@@ -11101,16 +11215,20 @@ void SuperMusicWindow::Show() {
 
 
 
-int main() {
+int main(int argc, char** argv) {
 	std::srand(std::time(nullptr));
 	ensure_config_dir();
 
-	// Load the saved System Tray preference and, best-effort, sync it into our
-	// own executable's app_flags *before* BApplication registers below -- that
-	// registration is the one moment Haiku reads app_flags, so this is the only
-	// way the Deskbar's visibility of us can ever track the user's setting.
+	// Load the saved System Tray preference and, best-effort, sync it into a
+	// writable copy of ourselves *before* BApplication registers below --
+	// that registration is the one moment Haiku reads app_flags, so this is
+	// the only way the Deskbar's visibility of us can ever track the user's
+	// setting. On a packaged (read-only) install, that writable copy isn't
+	// the file we were launched from, so relaunch_from_writable_copy_if_needed
+	// re-execs into it first; see the long comment above sync_app_flags_with_config().
 	load_config();
 	sync_app_flags_with_config();
+	relaunch_from_writable_copy_if_needed(argc, argv);
 
     SuperMusicApp app;
     app.Run();
