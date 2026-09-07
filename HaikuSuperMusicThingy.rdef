@@ -1,17 +1,17 @@
-// NOTE: Deliberately NOT B_BACKGROUND_APP. That flag is baked into the
-// executable's resources at package time and Haiku's registrar reads it
-// once, at team registration -- there is no supported way for a running
-// app to flip it later, and on a packagefs install (/system/apps/...) the
-// binary is mounted read-only so we can't even rewrite it on the fly.
-// Since the "System Tray" checkbox is a runtime user preference, baking
-// B_BACKGROUND_APP in here would either always hide the app from the
-// Deskbar (zombie window when Tray is off and the window gets minimized/
-// sent behind others) or never hide it. Instead we stay a normal
-// foreground app always, and toggle B_SKIP_WINDOW_LIST on just the main
-// BWindow at runtime (see SuperMusicWindow::UpdateTrayState) so the
-// window disappears from the Deskbar's window list while the tray icon
-// is doing that job, and reappears there the moment Tray is switched off.
-resource app_flags B_SINGLE_LAUNCH;
+// This B_BACKGROUND_APP is only the *compiled-in default* (matching the
+// default "System Tray" = on). Haiku's registrar reads app_flags once, at
+// team registration, from the executable's own resources -- there is no
+// supported way for a running app to change it afterwards. Since the
+// "System Tray" checkbox is a runtime preference, main() calls
+// sync_app_flags_with_config() at startup (before BApplication registers)
+// to best-effort rewrite this resource on our own executable to match the
+// last-saved cfg.sysTray, so the *next* launch tracks the setting: no
+// B_BACKGROUND_APP -> visible in the Deskbar when Tray is off. That write
+// only succeeds on a writable copy of the binary (e.g. while developing out
+// of /boot/home); on a packaged install the executable lives on the
+// read-only packagefs mount, the write silently no-ops, and this compiled
+// default is what actually ships.
+resource app_flags B_SINGLE_LAUNCH | B_BACKGROUND_APP;
 resource app_signature "application/x-vnd.HaikuSuperMusicThingy";
 
 resource app_version {
