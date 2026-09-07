@@ -1,20 +1,4 @@
-// This B_BACKGROUND_APP is only the *compiled-in default* (matching the
-// default "System Tray" = on). Haiku's registrar reads app_flags once, at
-// team registration, from the executable's own resources -- there is no
-// supported way for a running app to change it afterwards. Since the
-// "System Tray" checkbox is a runtime preference, main() calls
-// sync_app_flags_with_config() at startup (before BApplication registers)
-// to rewrite app_flags to match the last-saved cfg.sysTray, so the *next*
-// launch tracks the setting: no B_BACKGROUND_APP -> visible in the Deskbar
-// when Tray is off. On a normal writable build that patches this executable
-// directly. On a packaged install this executable sits on the read-only
-// packagefs mount (/boot/system/apps/...), so that write can't land here --
-// instead sync_app_flags_with_config() maintains a writable shadow copy next
-// to the settings file, and relaunch_from_writable_copy_if_needed() (called
-// from main() right after) re-execs into that shadow before BApplication
-// ever constructs, so the team that actually registers reads flags from a
-// file we can always keep current. This compiled-in default only ever
-// matters for the very first launch, before any config/shadow exists yet.
+//resource app_flags B_SINGLE_LAUNCH;
 resource app_flags B_SINGLE_LAUNCH | B_BACKGROUND_APP;
 resource app_signature "application/x-vnd.HaikuSuperMusicThingy";
 
