@@ -7352,12 +7352,12 @@ void SuperMusicWindow::UpdateTrayState(bool enabled, bool hideWindow) {
     const char* trayItemName = "SuperMusicTrayIcon";
 
     // The app itself is never a B_BACKGROUND_APP (see HaikuSuperMusicThingy.rdef),
-    // so it always has a Deskbar presence. When the tray icon is doing the job of
-    // getting back to the window, keep the window out of the Deskbar's window list
-    // to avoid showing two ways to reach the same window; when the tray is off,
-    // make sure the window list can find us again so a minimized/hidden window is
-    // never a dead end ("zombie app") with no tray icon to click either.
-    SetFlags(enabled ? (Flags() | B_SKIP_WINDOW_LIST) : (Flags() & ~B_SKIP_WINDOW_LIST));
+    // so it always has a Deskbar presence -- no separate flag to manage here.
+    // Deskbar's per-team window submenu only lists windows with
+    // show_hide_level <= 0 (see src/apps/deskbar/WindowMenu.cpp), and Hide()
+    // below already raises that level, so a window we've tucked away behind
+    // the tray icon drops out of the window list on its own; the moment the
+    // tray is switched off and the window is Show()n again, it's back.
 
     if (enabled) {
         if (!deskbar.HasItem(trayItemName)) {
