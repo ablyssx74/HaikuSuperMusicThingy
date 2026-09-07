@@ -40,8 +40,10 @@
 
 
 // Storage & Support Kits
+#include <AppFileInfo.h>
 #include <Directory.h>
 #include <Entry.h>
+#include <File.h>
 #include <FindDirectory.h>
 #include <NodeInfo.h>
 #include <Path.h>
@@ -347,9 +349,45 @@ void load_config() {
             }
         } else {
 
-            save_config(); 
+            save_config();
         }
     }
+}
+
+
+// Haiku registers a team's Deskbar visibility (B_BACKGROUND_APP or not) exactly
+// once, from the executable's own app_flags, at the moment BApplication's
+// constructor registers with the registrar -- there is no API to change it for
+// an already-running team, and BRoster::Private confirms no such call exists.
+// So "System Tray" being a runtime preference can't flip Deskbar visibility for
+// the *current* run; the best we can do is make sure the flag baked into our
+// own executable matches the last-saved preference before we register, so the
+// *next* launch comes up right. This is a best-effort write: it succeeds for a
+// normal writable build (e.g. a binary sitting in /boot/home while developing)
+// and silently no-ops on a packaged install, where the executable lives on the
+// read-only packagefs mount -- in that case the .rdef's compiled-in default
+// (B_BACKGROUND_APP, matching cfg.sysTray's default of true) is what sticks.
+void sync_app_flags_with_config() {
+    image_info info;
+    int32 cookie = 0;
+    bool found = false;
+    while (get_next_image_info(0, &cookie, &info) == B_OK) {
+        if (info.type == B_APP_IMAGE) {
+            found = true;
+            break;
+        }
+    }
+    if (!found) return;
+
+    BFile file(info.name, B_READ_WRITE);
+    if (file.InitCheck() != B_OK) return; // read-only (packaged) install -- leave the compiled default
+
+    BAppFileInfo appFileInfo(&file);
+    if (appFileInfo.InitCheck() != B_OK) return;
+
+    uint32 flags = B_SINGLE_LAUNCH;
+    if (cfg.sysTray) flags |= B_BACKGROUND_APP;
+    appFileInfo.SetAppFlags(flags);
 }
 
 
@@ -7351,13 +7389,15 @@ void SuperMusicWindow::UpdateTrayState(bool enabled, bool hideWindow) {
     BDeskbar deskbar;
     const char* trayItemName = "SuperMusicTrayIcon";
 
-    // The app itself is never a B_BACKGROUND_APP (see HaikuSuperMusicThingy.rdef),
-    // so it always has a Deskbar presence -- no separate flag to manage here.
+    // Whether this team itself has a Deskbar presence is decided once, at
+    // registration in main() (see sync_app_flags_with_config() and
+    // HaikuSuperMusicThingy.rdef), from the *last-saved* cfg.sysTray -- it
+    // can't be changed for the current run. What this function still fully
+    // controls live is the window: Hide() raises its show_hide_level, and
     // Deskbar's per-team window submenu only lists windows with
-    // show_hide_level <= 0 (see src/apps/deskbar/WindowMenu.cpp), and Hide()
-    // below already raises that level, so a window we've tucked away behind
-    // the tray icon drops out of the window list on its own; the moment the
-    // tray is switched off and the window is Show()n again, it's back.
+    // show_hide_level <= 0 (see src/apps/deskbar/WindowMenu.cpp), so a
+    // window tucked away behind the tray icon drops out of the window list
+    // on its own, and reappears the moment it's Show()n again below.
 
     if (enabled) {
         if (!deskbar.HasItem(trayItemName)) {
@@ -10367,8 +10407,11 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     
     		if (chk) {
         		cfg.sysTray = (chk->Value() == B_CONTROL_ON);
-        
-        		save_config(); 
+
+        		save_config();
+        		// Keep the on-disk app_flags in step for next launch; this run's own
+        		// Deskbar registration is already fixed and can't change mid-session.
+        		sync_app_flags_with_config();
         		UpdateTrayState(cfg.sysTray);
     		}
 
@@ -11059,9 +11102,17 @@ void SuperMusicWindow::Show() {
 
 
 int main() {
-	std::srand(std::time(nullptr)); 
+	std::srand(std::time(nullptr));
 	ensure_config_dir();
-    SuperMusicApp app;   
-    app.Run();    
+
+	// Load the saved System Tray preference and, best-effort, sync it into our
+	// own executable's app_flags *before* BApplication registers below -- that
+	// registration is the one moment Haiku reads app_flags, so this is the only
+	// way the Deskbar's visibility of us can ever track the user's setting.
+	load_config();
+	sync_app_flags_with_config();
+
+    SuperMusicApp app;
+    app.Run();
     return 0;
 }
