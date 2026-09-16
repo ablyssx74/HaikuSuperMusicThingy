@@ -84,7 +84,6 @@
 #include <random>
 #include <string>
 #include <thread>
-#include <unistd.h>
 #include <vector>
 
 
@@ -348,80 +347,12 @@ void load_config() {
             }
         } else {
 
-            save_config();
+            save_config(); 
         }
     }
 }
 
 
-// ====================================================================
-// Deskbar-visibility variant switch -- see also HaikuSuperMusicThingy.rdef
-// and HaikuSuperMusicThingy-windowed.rdef
-// ====================================================================
-// Haiku decides whether a team shows up in the Deskbar's team list exactly
-// once, from the executable's own compiled-in app_flags, at the moment
-// BApplication's constructor registers with the registrar -- there is no
-// API to change it for an already-running team afterwards, and Deskbar's
-// own AddTeam() (src/apps/deskbar/BarApp.cpp) excludes any B_BACKGROUND_APP
-// team unconditionally, regardless of window visibility. So a single binary
-// can never correctly track a runtime "System Tray" preference for both
-// states.
-//
-// Instead we ship two pre-built copies of this same executable side by
-// side (see the Makefile's package target): the default, HaikuSuperMusic-
-// Thingy, compiled with B_BACKGROUND_APP (so it never shows a redundant
-// Deskbar entry alongside the tray icon), and HaikuSuperMusicThingy-windowed,
-// compiled without it (so it behaves like a normal, Deskbar-visible app).
-// Both are real build artifacts with correct icons/attributes from the
-// normal rc+xres+mimeset pipeline -- nothing here ever writes to a binary.
-// At startup, before BApplication ever constructs, we check which one we
-// actually are against the saved cfg.sysTray and, if they don't match,
-// re-exec into the sibling file so the team that actually registers is
-// always the correct variant.
-static const char* const kWindowedSuffix = "-windowed";
-
-static bool get_own_image_path(BPath& outPath) {
-    image_info info;
-    int32 cookie = 0;
-    while (get_next_image_info(0, &cookie, &info) == B_OK) {
-        if (info.type == B_APP_IMAGE) {
-            outPath.SetTo(info.name);
-            return true;
-        }
-    }
-    return false;
-}
-
-void relaunch_into_correct_variant_if_needed(int argc, char** argv) {
-    BPath ownPath;
-    if (!get_own_image_path(ownPath)) return;
-
-    const char* path = ownPath.Path();
-    size_t pathLen = strlen(path);
-    size_t suffixLen = strlen(kWindowedSuffix);
-    bool isWindowed = pathLen > suffixLen
-        && strcmp(path + (pathLen - suffixLen), kWindowedSuffix) == 0;
-    bool wantWindowed = !cfg.sysTray;
-    if (isWindowed == wantWindowed) return; // already the correct variant
-
-    std::string siblingPath(path);
-    if (isWindowed)
-        siblingPath.resize(pathLen - suffixLen); // "...-windowed" -> "..."
-    else
-        siblingPath += kWindowedSuffix; // "..." -> "...-windowed"
-
-    BEntry siblingEntry(siblingPath.c_str());
-    if (!siblingEntry.Exists()) return; // sibling not installed (e.g. a dev build) -- run as-is
-
-    std::vector<char*> newArgv;
-    newArgv.push_back(const_cast<char*>(siblingPath.c_str()));
-    for (int i = 1; i < argc; i++) newArgv.push_back(argv[i]);
-    newArgv.push_back(nullptr);
-
-    execv(siblingPath.c_str(), newArgv.data());
-    // Only reachable if execv() itself failed to start; fall through and
-    // keep running as whichever variant we actually are.
-}
 
 
 
@@ -10425,24 +10356,12 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
        
 		case MSG_CFG_SYS_TRAY: {
     		BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_sysTray"));
-
+    
     		if (chk) {
         		cfg.sysTray = (chk->Value() == B_CONTROL_ON);
-
-        		save_config();
+        
+        		save_config(); 
         		UpdateTrayState(cfg.sysTray);
-
-        		// Whether this team itself is Deskbar-visible is fixed for its
-        		// whole life at registration (see relaunch_into_correct_variant_
-        		// if_needed() in main()) -- toggling the checkbox can't change
-        		// that for the app that's already running, only the next launch.
-        		BNotification restartHint(B_INFORMATION_NOTIFICATION);
-        		restartHint.SetGroup("HaikuSuperMusicThingy");
-        		restartHint.SetTitle("Restart to Apply");
-        		restartHint.SetContent(cfg.sysTray
-        			? "System Tray is on. Quit and relaunch HaikuSuperMusicThingy to remove it from the Deskbar."
-        			: "System Tray is off. Quit and relaunch HaikuSuperMusicThingy to show it in the Deskbar.");
-        		restartHint.Send();
     		}
 
     		break;
@@ -11131,18 +11050,10 @@ void SuperMusicWindow::Show() {
 
 
 
-int main(int argc, char** argv) {
-	std::srand(std::time(nullptr));
+int main() {
+	std::srand(std::time(nullptr)); 
 	ensure_config_dir();
-
-	// Load the saved System Tray preference and make sure we're actually
-	// running the matching pre-built variant *before* BApplication ever
-	// constructs and registers below -- see the long comment above
-	// relaunch_into_correct_variant_if_needed().
-	load_config();
-	relaunch_into_correct_variant_if_needed(argc, argv);
-
-    SuperMusicApp app;
-    app.Run();
+    SuperMusicApp app;   
+    app.Run();    
     return 0;
 }

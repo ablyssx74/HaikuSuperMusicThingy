@@ -125,26 +125,21 @@ ifeq ($(UNAME_M), BePC)
  endif
 endif
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
-	cp $(NAME) $(NAME)-windowed
-	rc -o $(NAME).rsrc $(NAME).rdef
-	rc -o $(NAME)-windowed.rsrc $(NAME)-windowed.rdef
+	rc -o $(NAME).rsrc $(NAME).rdef  
 ifeq ($(UNAME_M), BePC)
 	$(MAKE) build_tray_lib
 	mkdir -p $(PACKAGE_DIR)/apps
 	cp $(TRAY_LIB_NAME) $(PACKAGE_DIR)/apps/
 endif
 	xres -o $(NAME) $(NAME).rsrc
-	xres -o $(NAME)-windowed $(NAME)-windowed.rsrc
 	mimeset -f $(NAME)
-	mimeset -f $(NAME)-windowed
 	cp $(NAME) $(PACKAGE_DIR)/apps/
-	cp $(NAME)-windowed $(PACKAGE_DIR)/apps/
 	ln -s /system/apps/$(NAME) $(PACKAGE_DIR)/bin/$(NAME)
 	ln -s /system/apps/$(NAME) $(PACKAGE_DIR)/data/deskbar/menu/Applications/$(NAME)
 	package create -C $(PACKAGE_DIR) $(NAME)-$(VERSION)-$(REVISION)-$(ARCH).hpkg
 
 clean:
-	rm -f $(NAME) $(NAME)-windowed *.rsrc *.hpkg
+	rm -f $(NAME) *.rsrc *.hpkg
 	rm -rf build
 	
 #----------------------------------------------------------	
