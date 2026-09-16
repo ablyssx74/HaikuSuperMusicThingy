@@ -1,11 +1,4 @@
-// This is the "System Tray on" variant: it never shows a redundant entry in
-// the Deskbar's team list alongside the tray icon. Its sibling build,
-// HaikuSuperMusicThingy-windowed (see HaikuSuperMusicThingy-windowed.rdef
-// and the Makefile's `package` target), is identical except for this one
-// flag -- Haiku fixes Deskbar visibility per team at registration with no
-// way to change it afterwards, so main()'s relaunch_into_correct_variant_
-// if_needed() re-execs into whichever of the two matches the saved "System
-// Tray" preference before BApplication ever constructs.
+//resource app_flags B_SINGLE_LAUNCH;
 resource app_flags B_SINGLE_LAUNCH | B_BACKGROUND_APP;
 resource app_signature "application/x-vnd.HaikuSuperMusicThingy";
 
