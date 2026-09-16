@@ -97,11 +97,12 @@
 
 
 namespace AppInfo {
-    static const char* const VERSION_STRING = "Version v1.0.9 (Haiku OS)";
+    static const char* const VERSION_STRING = "Version v1.0.10 (Haiku OS)";
 }
 
 // Forward declaration signature for update worker thread
 //static int32 BackgroundUpdateChecker(void* data);
+static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp);
 
 
 
@@ -369,25 +370,26 @@ static int32 BackgroundUpdateChecker(void* data) {
 
     const char* targetUrl = "https://raw.githubusercontent.com/ablyssx74/HaikuSuperMusicThingy/refs/heads/main/VERSION";
 
-    BString shellCmdString;
-    #if defined(__x86_64__)
-        shellCmdString.SetToFormat("curl -sL \"%s\"", targetUrl);
-    #else
-        shellCmdString.SetToFormat("curl-x86 -sL \"%s\"", targetUrl);
-    #endif
+    std::string curlBuffer;
+    CURL* curl = curl_easy_init();
+    if (curl != nullptr) {
+        curl_easy_setopt(curl, CURLOPT_URL, targetUrl);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &curlBuffer);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "SuperMusicThingy/1.0");
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 
-    BString remoteVersionStr = "";
-    
-    FILE* pipeStream = popen(shellCmdString.String(), "r");
-    if (pipeStream != nullptr) {
-        char buffer[128] = {0};
-        if (fgets(buffer, sizeof(buffer), pipeStream) != nullptr) {
-            remoteVersionStr = buffer;
-        }
-        pclose(pipeStream);
+        curl_easy_perform(curl);
+        // NOTE: curl_easy_cleanup() reproducibly hangs/crashes on the current Haiku
+        // libcurl build. This runs once per launch, so intentionally leaking the
+        // single CURL handle (reclaimed at process exit) is a fine tradeoff versus
+        // losing the update check entirely. Revisit if a Haiku curl update fixes it.
+        // curl_easy_cleanup(curl);
     }
 
-    remoteVersionStr.Trim(); 
+    BString remoteVersionStr = curlBuffer.c_str();
+    remoteVersionStr.Trim();
     if (cfg.debugEnable) printf("[DEBUG_UPDATE] Raw text received from GitHub: '%s'\n", remoteVersionStr.String());
 
     remoteVersionStr.Trim(); 
@@ -11051,9 +11053,16 @@ void SuperMusicWindow::Show() {
 
 
 int main() {
-	std::srand(std::time(nullptr)); 
+	// libcurl's global init is NOT thread-safe against other concurrently running
+	// threads in the process. Doing it once here, from the main thread, before any
+	// background thread ever calls curl_easy_init(), avoids the implicit lazy
+	// global init racing with the app's other background threads later.
+	curl_global_init(CURL_GLOBAL_DEFAULT);
+
+	std::srand(std::time(nullptr));
 	ensure_config_dir();
-    SuperMusicApp app;   
-    app.Run();    
+    SuperMusicApp app;
+    app.Run();
+    curl_global_cleanup();
     return 0;
 }
