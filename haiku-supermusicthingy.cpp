@@ -97,7 +97,7 @@
 
 
 namespace AppInfo {
-    static const char* const VERSION_STRING = "Version v1.0.10 (Haiku OS)";
+    static const char* const VERSION_STRING = "Version v1.0.11 (Haiku OS)";
 }
 
 // Forward declaration signature for update worker thread
@@ -381,11 +381,7 @@ static int32 BackgroundUpdateChecker(void* data) {
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 
         curl_easy_perform(curl);
-        // NOTE: curl_easy_cleanup() reproducibly hangs/crashes on the current Haiku
-        // libcurl build. This runs once per launch, so intentionally leaking the
-        // single CURL handle (reclaimed at process exit) is a fine tradeoff versus
-        // losing the update check entirely. Revisit if a Haiku curl update fixes it.
-        // curl_easy_cleanup(curl);
+        curl_easy_cleanup(curl);
     }
 
     BString remoteVersionStr = curlBuffer.c_str();
