@@ -10981,7 +10981,7 @@ private:
 	    fIcon = NULL;
 	
 	    BRect bounds = Bounds();
-	    float size = bounds.IsValid() ? bounds.Width() + 1.0f : 20.0f;
+	    float size = bounds.IsValid() ? bounds.Width() + 1.0f : 32.0f;
 	
 	    fIcon = new BBitmap(BRect(0, 0, size - 1, size - 1), B_RGBA32);
 	
@@ -11006,8 +11006,8 @@ _EXPORT BArchivable* MyIcon::Instantiate(BMessage* data) {
 
 
 extern "C" _EXPORT BView* instantiate_deskbar_item() {
-    float size = be_control_look->ComposeIconSize(B_MINI_ICON).Width();
-    if (size < 20.0f) size = 20.0f;   // floor it — B_MINI_ICON is too small on many themes
+    float size = be_control_look->ComposeIconSize(B_LARGE_ICON).Width();
+    if (size < 32.0f) size = 32.0f;
     return new MyIcon(BRect(0, 0, size - 1, size - 1));
 }
 
