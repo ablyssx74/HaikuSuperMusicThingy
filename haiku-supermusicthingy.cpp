@@ -74,7 +74,6 @@
 // ====================================================================
 #include <algorithm>
 #include <cmath>
-#include <cstdarg>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -7352,12 +7351,7 @@ private:
 
 void SuperMusicWindow::UpdateTrayState(bool enabled, bool hideWindow) {
     BDeskbar deskbar;
-    const char* trayItemName = "SuperMusicTrayIcon";
-
-    if (cfg.debugEnable) {
-        printf("[DEBUG_TRAY] UpdateTrayState(enabled=%d, hideWindow=%d) -- deskbar.HasItem(\"%s\")=%d\n",
-            enabled, hideWindow, trayItemName, deskbar.HasItem(trayItemName));
-    }
+    const char* trayItemName = "SuperMusicTrayIcon"; 
 
     if (enabled) {
         if (!deskbar.HasItem(trayItemName)) {
@@ -7366,34 +7360,20 @@ void SuperMusicWindow::UpdateTrayState(bool enabled, bool hideWindow) {
 			#ifndef IS_HAIKU_32BIT
             // 64-bit Native: Keep using the fast internal executable allocation reference
             app_info info;
-            status_t infoErr = be_app->GetAppInfo(&info);
-            if (cfg.debugEnable) {
-                printf("[DEBUG_TRAY] GetAppInfo() -> %s (%s), ref name='%s' dir=%" B_PRId32 ":%" B_PRId64 "\n",
-                    strerror(infoErr), infoErr == B_OK ? "ok" : "FAILED",
-                    info.ref.name, (int32)info.ref.device, (int64)info.ref.directory);
-            }
+            be_app->GetAppInfo(&info);             
             err = deskbar.AddItem(&info.ref);
 			#else
             // 32-bit Hybrid: Dynamically look up the signature of the GCC 2 shared add-on library
             entry_ref addonRef;
-            status_t findErr = be_roster->FindApp("application/x-vnd.SuperMusicTrayIconLibrary", &addonRef);
-            if (cfg.debugEnable) {
-                printf("[DEBUG_TRAY] FindApp(SuperMusicTrayIconLibrary) -> %s\n", strerror(findErr));
-            }
-            if (findErr == B_OK) {
+            if (be_roster->FindApp("application/x-vnd.SuperMusicTrayIconLibrary", &addonRef) == B_OK) {
                 err = deskbar.AddItem(&addonRef);
             }
 			#endif
-
-            if (cfg.debugEnable) {
-                printf("[DEBUG_TRAY] deskbar.AddItem() -> %s (0x%08" B_PRIx32 ")\n", strerror(err), (uint32)err);
-            }
-
+            
             if (err == B_OK && hideWindow) {
                 Hide();
             }
         } else if (hideWindow) {
-            if (cfg.debugEnable) printf("[DEBUG_TRAY] Tray item already present -- skipping AddItem, just hiding window.\n");
             Hide();
         }
     } else {
@@ -7720,34 +7700,6 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     fSleepField = new BMenuField("sleep_field", NULL, fSleepMenu);
 //-----------------------------
 
-//-----------------------------
-    // --- Shuffle Stations Setup (BMenuField) ---
-    fShuffleStationsMenu = new BPopUpMenu("Disabled");
-    fShuffleStationsMenu->SetExplicitAlignment(BAlignment(B_ALIGN_LEFT, B_ALIGN_TOP));
-    BMessage* msgShuffleStations0  = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations0->AddInt32("minutes", 0);
-    BMessage* msgShuffleStations1  = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations1->AddInt32("minutes", 1);
-    BMessage* msgShuffleStations5  = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations5->AddInt32("minutes", 5);
-    BMessage* msgShuffleStations15 = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations15->AddInt32("minutes", 15);
-    BMessage* msgShuffleStations30 = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations30->AddInt32("minutes", 30);
-    BMessage* msgShuffleStations1h = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations1h->AddInt32("minutes", 60);
-    BMessage* msgShuffleStations3h = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations3h->AddInt32("minutes", 180);
-
-    fShuffleStationsMenu->AddItem(new BMenuItem("Disabled", msgShuffleStations0));
-    fShuffleStationsMenu->AddItem(new BMenuItem("1 Minute", msgShuffleStations1));
-    fShuffleStationsMenu->AddItem(new BMenuItem("5 Minutes", msgShuffleStations5));
-    fShuffleStationsMenu->AddItem(new BMenuItem("15 Minutes", msgShuffleStations15));
-    fShuffleStationsMenu->AddItem(new BMenuItem("30 Minutes", msgShuffleStations30));
-    fShuffleStationsMenu->AddItem(new BMenuItem("1 Hour", msgShuffleStations1h));
-    fShuffleStationsMenu->AddItem(new BMenuItem("3 Hours", msgShuffleStations3h));
-
-    // Default target initialization
-    fShuffleStationsMenu->ItemAt(0)->SetMarked(true);
-    fShuffleStationsRunner = NULL;
-
-    fShuffleStationsLabel = new BStringView("lbl_shuffle_stations", "Shuffle Stations:");
-    fShuffleStationsField = new BMenuField("shuffle_stations_field", NULL, fShuffleStationsMenu);
-//-----------------------------
-
     
 
   
@@ -7961,9 +7913,6 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
             .AddStrut(5)
             .Add(fSleepLabel)
             .Add(fSleepField)
-            .AddStrut(5)
-            .Add(fShuffleStationsLabel)
-            .Add(fShuffleStationsField)
             .AddStrut(5)
         .End()
  
@@ -9765,38 +9714,7 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		break;
 		}
 
-		case MSG_SHUFFLE_STATIONS_CHANGED: {
-    		delete fShuffleStationsRunner;
-    		fShuffleStationsRunner = NULL;
-
-    		int32 minutes = 0;
-    		if (message->FindInt32("minutes", &minutes) == B_OK) {
-        		if (minutes > 0) {
-            		// Convert target configuration back into microsecond delay units
-            		bigtime_t delay = (bigtime_t)minutes * 60 * 1000000;
-
-            		BMessage tickMessage(MSG_SHUFFLE_STATIONS_TICK);
-            		// count = -1: keep shuffling stations every interval until disabled
-            		fShuffleStationsRunner = new BMessageRunner(BMessenger(this), &tickMessage, delay, -1);
-        		}
-   			}
-    		break;
-		}
-
-		case MSG_SHUFFLE_STATIONS_TICK: {
-    		// Only jump to a new station if something is actually playing right now
-    		int is_paused = 1;
-    		if (mpv) {
-        		mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &is_paused);
-    		}
-
-    		if (mpv && !is_paused && !currentStationID.empty()) {
-        		PostMessage(MSG_SHUFFLE);
-    		}
-    		break;
-		}
-
-
+		
 		case MSG_SHUFFLE_FAVS_CHANGED: {
     		cfg.shuffleFavsOnly = (fShuffleFavsCheckbox->Value() == B_CONTROL_ON);
     		save_config(); 
@@ -10588,8 +10506,7 @@ SuperMusicWindow::~SuperMusicWindow()
     }
     fArtCache.clear();
     delete fSleepRunner;
-    delete fShuffleStationsRunner;
-    fAlbumArt = nullptr;
+    fAlbumArt = nullptr; 
     
 	ReallyStopVisuals();
 
@@ -10603,72 +10520,49 @@ public:
 	virtual void MessageReceived(BMessage* message);
 	virtual void ReadyToRun() {
     	load_config();
-
-    	if (cfg.debugEnable) {
-        	printf("[DEBUG_TRAY] ReadyToRun: cfg.sysTray=%d immediately after load_config()\n", cfg.sysTray);
-    	}
-
-    	fetch_channels();
-    	init_mpv();
-
-    	// --- COLD BOOT TRAY CLEANUP ENGINE ---
-    	// Deskbar only forgets a replicant when the owning app calls RemoveItem()
-    	// itself on a clean quit (see QuitRequested()); an app that exits
-    	// abnormally (crash, force-kill) leaves the old replicant registered in
-    	// Deskbar's own process forever. Unconditionally clearing it here -- the
-    	// same thing toggling the System Tray checkbox off and back on already
-    	// does by hand -- guarantees UpdateTrayState() below always sees a clean
-    	// slate and actually (re)adds a fresh item instead of silently no-op'ing
-    	// on its "!HasItem()" guard because a stale entry from a previous run
-    	// is still sitting there.
-    	BDeskbar deskbar;
-    	bool staleItemPresent = deskbar.HasItem("SuperMusicTrayIcon");
-    	if (cfg.debugEnable) {
-        	printf("[DEBUG_TRAY] Cold boot cleanup: deskbar already has \"SuperMusicTrayIcon\"=%d (leftover from a prior run/crash if true)\n", staleItemPresent);
-    	}
-    	if (staleItemPresent) {
-        	deskbar.RemoveItem("SuperMusicTrayIcon");
-    	}
-    	// -------------------------------------
-
-    	gGuiWindow = new SuperMusicWindow();
-    	gGuiWindow->Show();
-
-    	// Clean re-binding loop if sysTray option is checked
-    	if (cfg.sysTray) {
-        	if (gGuiWindow->Lock()) {
-            	gGuiWindow->UpdateTrayState(true, false);
-            	gGuiWindow->Unlock();
-        	} else if (cfg.debugEnable) {
-            	printf("[DEBUG_TRAY] ReadyToRun: gGuiWindow->Lock() FAILED -- UpdateTrayState was skipped entirely!\n");
-        	}
-    	}
-
-    	if (cfg.compactMode) {
-        	gGuiWindow->PostMessage(MSG_COMPACTM_CHANGED);
-    	}
-
-    	thread_id mpvThread = spawn_thread(mpv_loop_thread, "mpv_event_loop",
-        	B_NORMAL_PRIORITY, gGuiWindow);
-    	resume_thread(mpvThread);
-
-    	if (cfg.autoShuffle) {
-        	gGuiWindow->PostMessage(MSG_SHUFFLE);
-    	}
-
+    	
     	// =========================================================================
         // AUTOMATED BACKGROUND UPDATE CHECKER THREAD INITIALIZATION
         // =========================================================================
-        // Spawned last, once the window/tray are already up and fetch_channels()'s
-        // own curl_easy_perform() on this thread is done -- libcurl on this Haiku
-        // build has known instability under concurrent use across threads (see the
-        // cleanup workaround above), so this avoids racing that main-thread curl
-        // usage during startup.
         thread_id updateThread = spawn_thread(BackgroundUpdateChecker, "UpdateCheckerThread", B_NORMAL_PRIORITY, this);
         if (updateThread >= 0) {
             resume_thread(updateThread);
         }
         // =========================================================================
+    	
+    	fetch_channels();
+    	init_mpv();
+
+    	// --- COLD BOOT TRAY CLEANUP ENGINE ---
+    	BDeskbar deskbar;
+    	if (deskbar.HasItem("SuperMusicTrayIcon")) {
+        	if (!cfg.sysTray) {
+            	// Remove the zombie icon immediately if the user turned this option off
+            	deskbar.RemoveItem("SuperMusicTrayIcon");
+        	}
+    	}
+    	// -------------------------------------
+
+    	gGuiWindow = new SuperMusicWindow();      
+    	gGuiWindow->Show();
+    
+    	// Clean re-binding loop if sysTray option is checked
+    	if (cfg.sysTray && gGuiWindow->Lock()) {
+        	gGuiWindow->UpdateTrayState(true, false); 
+        	gGuiWindow->Unlock();
+    	}
+    
+    	if (cfg.compactMode) {			
+        	gGuiWindow->PostMessage(MSG_COMPACTM_CHANGED);
+    	}
+
+    	thread_id mpvThread = spawn_thread(mpv_loop_thread, "mpv_event_loop", 
+        	B_NORMAL_PRIORITY, gGuiWindow);
+    	resume_thread(mpvThread);
+    
+    	if (cfg.autoShuffle) {
+        	gGuiWindow->PostMessage(MSG_SHUFFLE);
+    	}
 }
 
  
@@ -10901,69 +10795,29 @@ void SuperMusicWindow::ApplyPreset(const float* values) {
     for (int i = 0; i < 15; i++) {
         fEQSliders[i]->SetValue((int32)values[i]);
     }
-
+  
     UpdateMPVFilters();
-}
-
-// Deskbar loads this same executable as an add-on and calls
-// instantiate_deskbar_item()/MyIcon's methods directly, entirely inside
-// Deskbar's own team -- never through our main()/ReadyToRun(), so cfg is
-// never populated there (cfg.debugEnable is always false) and printf()
-// goes to Deskbar's own stdout, invisible from our app's terminal. Log to
-// a file instead so this side of the replicant's lifecycle is traceable.
-static void TrayDebugLog(const char* fmt, ...) {
-    BPath path;
-    if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) != B_OK) return;
-    path.Append("SuperMusicThingy/tray_debug.log");
-
-    FILE* f = fopen(path.Path(), "a");
-    if (!f) return;
-
-    time_t now = time(nullptr);
-    char timeBuf[32];
-    strftime(timeBuf, sizeof(timeBuf), "%H:%M:%S", localtime(&now));
-    fprintf(f, "[%s] [tid %" B_PRId32 "] ", timeBuf, (int32)find_thread(NULL));
-
-    va_list args;
-    va_start(args, fmt);
-    vfprintf(f, fmt, args);
-    va_end(args);
-
-    fprintf(f, "\n");
-    fclose(f);
 }
 
 class MyIcon : public BView {
 public:
-    MyIcon(BRect frame)
+    MyIcon(BRect frame) 
         : BView(frame, "SuperMusicTrayIcon", B_FOLLOW_NONE, B_WILL_DRAW | B_FRAME_EVENTS | B_FULL_UPDATE_ON_RESIZE) {
-        TrayDebugLog("MyIcon(frame) constructor -- frame=(%.1f,%.1f,%.1f,%.1f)",
-            frame.left, frame.top, frame.right, frame.bottom);
         fIcon = NULL;
         _LoadIcon();
     }
 
     MyIcon(BMessage* archive) : BView(archive) {
-        TrayDebugLog("MyIcon(archive) constructor (restored from a saved replicant archive)");
         fIcon = NULL;
         _LoadIcon();
     }
 
-    virtual ~MyIcon() {
-        TrayDebugLog("~MyIcon destructor -- this replicant is being torn down");
-        delete fIcon;
-    }
+    virtual ~MyIcon() { delete fIcon; }
     static _EXPORT BArchivable* Instantiate(BMessage* archive);
 
     virtual void AttachedToWindow() {
-        TrayDebugLog("AttachedToWindow -- Window()=%p Parent()=%p", (void*)Window(), (void*)Parent());
         BView::AttachedToWindow();
         _UpdateBackgroundColor();
-    }
-
-    virtual void DetachedFromWindow() {
-        TrayDebugLog("DetachedFromWindow");
-        BView::DetachedFromWindow();
     }
 
 
@@ -10974,12 +10828,8 @@ public:
     }
 
 		virtual status_t Archive(BMessage* archive, bool deep = true) const {
-    		TrayDebugLog("Archive(deep=%d) called", deep);
     		status_t err = BView::Archive(archive, deep);
-    		if (err != B_OK) {
-        		TrayDebugLog("Archive: BView::Archive() FAILED -> %s", strerror(err));
-        		return err;
-    		}
+    		if (err != B_OK) return err;
     
     		// Explicitly target the layout class identification
     		archive->AddString("class", "MyIcon");
@@ -11003,7 +10853,6 @@ public:
             		Invalidate();
             		break;
         		case B_QUIT_REQUESTED: {
-            		TrayDebugLog("MessageReceived: B_QUIT_REQUESTED -- removing self from Deskbar");
             		// Let the Replicant drop itself directly out of the Deskbar container shelf
             		BDeskbar deskbar;
             		if (deskbar.HasItem("SuperMusicTrayIcon")) {
@@ -11134,25 +10983,17 @@ private:
 	void _LoadIcon() {
 	    delete fIcon;
 	    fIcon = NULL;
-
+	
 	    BRect bounds = Bounds();
-	    float size = bounds.IsValid() ? bounds.Width() + 1.0f : 32.0f;
-	    TrayDebugLog("_LoadIcon: bounds.IsValid()=%d bounds=(%.1f,%.1f,%.1f,%.1f) -> size=%.1f",
-	        bounds.IsValid(), bounds.left, bounds.top, bounds.right, bounds.bottom, size);
-
+	    float size = bounds.IsValid() ? bounds.Width() + 1.0f : 20.0f;
+	
 	    fIcon = new BBitmap(BRect(0, 0, size - 1, size - 1), B_RGBA32);
-	    TrayDebugLog("_LoadIcon: fIcon allocated, IsValid()=%d", fIcon->IsValid());
-
+	
 	    entry_ref ref;
-	    status_t findErr = be_roster->FindApp("application/x-vnd.HaikuSuperMusicThingy", &ref);
-	    TrayDebugLog("_LoadIcon: FindApp() -> %s", strerror(findErr));
-	    if (findErr == B_OK) {
-	        status_t trackerErr = BNodeInfo::GetTrackerIcon(&ref, fIcon, (icon_size)size);
-	        TrayDebugLog("_LoadIcon: GetTrackerIcon(ref, fIcon, (icon_size)%.1f) -> %s", size, strerror(trackerErr));
-	        if (trackerErr != B_OK) {
+	    if (be_roster->FindApp("application/x-vnd.HaikuSuperMusicThingy", &ref) == B_OK) {
+	        if (BNodeInfo::GetTrackerIcon(&ref, fIcon, (icon_size)size) != B_OK) {
 	            BMimeType type("application/x-vnd.HaikuSuperMusicThingy");
-	            status_t mimeErr = type.GetIcon(fIcon, (icon_size)size);
-	            TrayDebugLog("_LoadIcon: fallback BMimeType::GetIcon() -> %s", strerror(mimeErr));
+	            type.GetIcon(fIcon, (icon_size)size);
 	        }
 	    }
 	}
@@ -11169,25 +11010,11 @@ _EXPORT BArchivable* MyIcon::Instantiate(BMessage* data) {
 
 
 extern "C" _EXPORT BView* instantiate_deskbar_item() {
-    TrayDebugLog("instantiate_deskbar_item() called by Deskbar -- be_control_look=%p", (void*)be_control_look);
-    float size = be_control_look->ComposeIconSize(B_LARGE_ICON).Width();
-    if (size < 32.0f) size = 32.0f;
-    TrayDebugLog("instantiate_deskbar_item(): ComposeIconSize(B_LARGE_ICON).Width()-derived size=%.1f", size);
-    MyIcon* view = new MyIcon(BRect(0, 0, size - 1, size - 1));
-    TrayDebugLog("instantiate_deskbar_item(): returning view=%p", (void*)view);
-    return view;
+    float size = be_control_look->ComposeIconSize(B_MINI_ICON).Width();
+    if (size < 20.0f) size = 20.0f;   // floor it — B_MINI_ICON is too small on many themes
+    return new MyIcon(BRect(0, 0, size - 1, size - 1));
 }
 
-// NOTE: "instantiate_object" is NOT a name we get to pick -- it's already
-// declared with C++ (not C) linkage by libbe itself in <Archivable.h>, so
-// exporting our own extern "C" symbol with that exact name is a hard
-// compile error ("conflicting declaration ... with 'C' linkage"). Haiku's
-// real archiving protocol calls each class's own static Instantiate(BMessage*)
-// through its *mangled* C++ symbol name (derived from the "class" field of
-// the archive), not through a fixed custom C symbol -- see MyIcon::Instantiate
-// below, which is already marked _EXPORT for exactly that reason. Kept this
-// wrapper under its prior name in case anything still references it; it is
-// not what Deskbar's own reconstruction path actually calls.
 extern "C" _EXPORT BArchivable* instantiate_tray_icon(BMessage* data) {
     return MyIcon::Instantiate(data);
 }

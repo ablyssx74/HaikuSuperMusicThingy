@@ -179,8 +179,8 @@ private:
         delete fIcon;
         fIcon = NULL;
 
-        float size = be_control_look->ComposeIconSize(B_LARGE_ICON).Width();
-        if (size < 32.0f) size = 32.0f;
+        float size = be_control_look->ComposeIconSize(B_MINI_ICON).Width();
+        if (size < 16.0f) size = 16.0f;
 
         fIcon = new BBitmap(BRect(0, 0, size - 1, size - 1), B_RGBA32);
 
@@ -207,21 +207,12 @@ _EXPORT BArchivable* MyIcon::Instantiate(BMessage* data) {
 extern "C" {
 
 _EXPORT BView* instantiate_deskbar_item(void) {
-    float size = be_control_look->ComposeIconSize(B_LARGE_ICON).Width();
-    if (size < 32.0f) size = 32.0f;
+    float size = be_control_look->ComposeIconSize(B_MINI_ICON).Width();
+    if (size < 16.0f) size = 16.0f;
     return new MyIcon(BRect(0, 0, size - 1, size - 1));
 }
 
 } // extern "C"
-
-// NOTE: "instantiate_object" is NOT a name an add-on gets to export -- it's
-// already declared with C++ linkage by libbe itself in <Archivable.h>, so an
-// extern "C" symbol under that exact name is a hard compile error. Haiku's
-// real archiving protocol calls each class's own static Instantiate(BMessage*)
-// through its *mangled* C++ symbol name (derived from the "class" field of
-// the archive), not through a fixed custom C symbol -- MyIcon::Instantiate
-// below is already marked _EXPORT for exactly that reason, so no extra
-// wrapper is needed here.
 
 class TrayLibApp : public BApplication {
 public:

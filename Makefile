@@ -39,18 +39,7 @@ endif
 export PKG_CONFIG_PATH := $(DUMMY_PC_PATH):/boot/home/config/non-packaged/lib/pkgconfig:/boot/home/config/non-packaged/lib$(LIB_ARCH_DIR)/pkgconfig:/boot/system/develop/lib$(LIB_ARCH_DIR)/pkgconfig
 
 # --- 3. Compiler & Linker Flags ---
-# -rdynamic: this executable also gets loaded by Deskbar itself as a Deskbar
-# tray add-on (see BDeskbar::AddItem(entry_ref*) in UpdateTrayState()) --
-# Deskbar's own TReplicantTray::LoadAddOn() looks up instantiate_deskbar_item
-# by name AND, when reconstructing the saved replicant afterward, looks up
-# MyIcon::Instantiate's *mangled* symbol via instantiate_object(). Without
-# -rdynamic, a plain executable's own symbols -- even ones marked _EXPORT --
-# are not guaranteed to land in the dynamic symbol table that another
-# process's get_image_symbol()/dlsym()-equivalent lookup can find; that
-# silently breaks the second lookup even though the first, simpler one can
-# still succeed, which is exactly what left the tray icon being added and
-# immediately discarded by Deskbar with no error anywhere.
-CXXFLAGS = -std=c++17 -O3 -Wall -rdynamic
+CXXFLAGS = -std=c++17 -O3 -Wall 
 DEFINES := $(DEFINES)
 INCLUDES = -I/boot/home/config/non-packaged/include -I/boot/system/develop/headers
 LIB_PATH = -L/boot/system/lib$(LIB_ARCH_DIR) -L/boot/system/develop/lib$(LIB_ARCH_DIR) -L/boot/home/config/non-packaged/lib$(LIB_ARCH_DIR)
@@ -109,7 +98,7 @@ TRAY_LIB_RDEF = x86/$(TRAY_LIB_NAME)_x86.rdef
 
 build_tray_lib:
 	@echo "--------- Building legacy gcc2 Deskbar tray helper ---------"
-	$(TRAY_CXX) -O2 -Wall -Wno-multichar -rdynamic $(TRAY_LIB_SRC) -o $(TRAY_LIB_NAME) \
+	$(TRAY_CXX) -O2 -Wall -Wno-multichar $(TRAY_LIB_SRC) -o $(TRAY_LIB_NAME) \
 		-I/boot/system/develop/headers \
 		-L/boot/system/lib -lbe -lroot
 	rc -o $(TRAY_LIB_NAME).rsrc $(TRAY_LIB_RDEF)
