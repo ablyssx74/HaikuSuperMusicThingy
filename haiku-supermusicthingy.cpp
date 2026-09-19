@@ -10611,18 +10611,22 @@ public:
     	init_mpv();
 
     	// --- COLD BOOT TRAY CLEANUP ENGINE ---
+    	// Deskbar only forgets a replicant when the owning app calls RemoveItem()
+    	// itself on a clean quit (see QuitRequested()); an app that exits
+    	// abnormally (crash, force-kill) leaves the old replicant registered in
+    	// Deskbar's own process forever. Unconditionally clearing it here -- the
+    	// same thing toggling the System Tray checkbox off and back on already
+    	// does by hand -- guarantees UpdateTrayState() below always sees a clean
+    	// slate and actually (re)adds a fresh item instead of silently no-op'ing
+    	// on its "!HasItem()" guard because a stale entry from a previous run
+    	// is still sitting there.
     	BDeskbar deskbar;
     	bool staleItemPresent = deskbar.HasItem("SuperMusicTrayIcon");
     	if (cfg.debugEnable) {
         	printf("[DEBUG_TRAY] Cold boot cleanup: deskbar already has \"SuperMusicTrayIcon\"=%d (leftover from a prior run/crash if true)\n", staleItemPresent);
     	}
     	if (staleItemPresent) {
-        	if (!cfg.sysTray) {
-            	// Remove the zombie icon immediately if the user turned this option off
-            	deskbar.RemoveItem("SuperMusicTrayIcon");
-        	} else if (cfg.debugEnable) {
-            	printf("[DEBUG_TRAY] Cold boot cleanup: sysTray is on and an item already exists -- the startup UpdateTrayState call below will treat it as already added and do nothing further.\n");
-        	}
+        	deskbar.RemoveItem("SuperMusicTrayIcon");
     	}
     	// -------------------------------------
 
