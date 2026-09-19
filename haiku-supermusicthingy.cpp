@@ -381,7 +381,11 @@ static int32 BackgroundUpdateChecker(void* data) {
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 
         curl_easy_perform(curl);
-        curl_easy_cleanup(curl);
+        // NOTE: curl_easy_cleanup() reproducibly hangs/crashes on the current Haiku
+        // libcurl build. This runs once per launch, so intentionally leaking the
+        // single CURL handle (reclaimed at process exit) is a fine tradeoff versus
+        // losing the update check entirely. Revisit if a Haiku curl update fixes it.
+        // curl_easy_cleanup(curl);
     }
 
     BString remoteVersionStr = curlBuffer.c_str();
@@ -10579,16 +10583,7 @@ public:
 	virtual void MessageReceived(BMessage* message);
 	virtual void ReadyToRun() {
     	load_config();
-    	
-    	// =========================================================================
-        // AUTOMATED BACKGROUND UPDATE CHECKER THREAD INITIALIZATION
-        // =========================================================================
-        thread_id updateThread = spawn_thread(BackgroundUpdateChecker, "UpdateCheckerThread", B_NORMAL_PRIORITY, this);
-        if (updateThread >= 0) {
-            resume_thread(updateThread);
-        }
-        // =========================================================================
-    	
+
     	fetch_channels();
     	init_mpv();
 
@@ -10602,26 +10597,40 @@ public:
     	}
     	// -------------------------------------
 
-    	gGuiWindow = new SuperMusicWindow();      
+    	gGuiWindow = new SuperMusicWindow();
     	gGuiWindow->Show();
-    
+
     	// Clean re-binding loop if sysTray option is checked
     	if (cfg.sysTray && gGuiWindow->Lock()) {
-        	gGuiWindow->UpdateTrayState(true, false); 
+        	gGuiWindow->UpdateTrayState(true, false);
         	gGuiWindow->Unlock();
     	}
-    
-    	if (cfg.compactMode) {			
+
+    	if (cfg.compactMode) {
         	gGuiWindow->PostMessage(MSG_COMPACTM_CHANGED);
     	}
 
-    	thread_id mpvThread = spawn_thread(mpv_loop_thread, "mpv_event_loop", 
+    	thread_id mpvThread = spawn_thread(mpv_loop_thread, "mpv_event_loop",
         	B_NORMAL_PRIORITY, gGuiWindow);
     	resume_thread(mpvThread);
-    
+
     	if (cfg.autoShuffle) {
         	gGuiWindow->PostMessage(MSG_SHUFFLE);
     	}
+
+    	// =========================================================================
+        // AUTOMATED BACKGROUND UPDATE CHECKER THREAD INITIALIZATION
+        // =========================================================================
+        // Spawned last, once the window/tray are already up and fetch_channels()'s
+        // own curl_easy_perform() on this thread is done -- libcurl on this Haiku
+        // build has known instability under concurrent use across threads (see the
+        // cleanup workaround above), so this avoids racing that main-thread curl
+        // usage during startup.
+        thread_id updateThread = spawn_thread(BackgroundUpdateChecker, "UpdateCheckerThread", B_NORMAL_PRIORITY, this);
+        if (updateThread >= 0) {
+            resume_thread(updateThread);
+        }
+        // =========================================================================
 }
 
  
