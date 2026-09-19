@@ -179,8 +179,8 @@ private:
         delete fIcon;
         fIcon = NULL;
 
-        float size = be_control_look->ComposeIconSize(B_LARGE_ICON).Width();
-        if (size < 32.0f) size = 32.0f;
+        float size = be_control_look->ComposeIconSize(B_MINI_ICON).Width();
+        if (size < 16.0f) size = 16.0f;
 
         fIcon = new BBitmap(BRect(0, 0, size - 1, size - 1), B_RGBA32);
 
@@ -207,8 +207,8 @@ _EXPORT BArchivable* MyIcon::Instantiate(BMessage* data) {
 extern "C" {
 
 _EXPORT BView* instantiate_deskbar_item(void) {
-    float size = be_control_look->ComposeIconSize(B_LARGE_ICON).Width();
-    if (size < 32.0f) size = 32.0f;
+    float size = be_control_look->ComposeIconSize(B_MINI_ICON).Width();
+    if (size < 16.0f) size = 16.0f;
     return new MyIcon(BRect(0, 0, size - 1, size - 1));
 }
 
