@@ -11046,14 +11046,46 @@ private:
 	void _LoadIcon() {
 	    delete fIcon;
 	    fIcon = NULL;
-	
+
+	    // NOTE: this view's own frame/bounds (set in instantiate_deskbar_item())
+	    // deliberately stays at the small, B_MINI_ICON-derived size Deskbar's
+	    // tray shelf has always accepted here -- growing it to a B_LARGE_ICON
+	    // footprint was tried and confirmed to make Deskbar silently discard
+	    // the replicant right after adding it. So `size` below is unchanged;
+	    // only the *quality* of what gets drawn into that same small footprint
+	    // is improved.
 	    BRect bounds = Bounds();
 	    float size = bounds.IsValid() ? bounds.Width() + 1.0f : 20.0f;
-	
+
 	    fIcon = new BBitmap(BRect(0, 0, size - 1, size - 1), B_RGBA32);
-	
+
 	    entry_ref ref;
-	    if (be_roster->FindApp("application/x-vnd.HaikuSuperMusicThingy", &ref) == B_OK) {
+	    if (be_roster->FindApp("application/x-vnd.HaikuSuperMusicThingy", &ref) != B_OK)
+	        return;
+
+	    // Prefer rasterizing the app's own vector icon (the "BEOS:ICON" HVIF
+	    // attribute every modern Haiku app carries) directly at our exact
+	    // small target size. Unlike the legacy icon_size-based raster icon
+	    // APIs below -- which only really have a crisp 16px or 32px source to
+	    // draw from -- vector data has no native resolution to up/downscale
+	    // from, so this renders sharp at whatever size the current UI scale
+	    // (be_plain_font) computes, without changing the view's footprint.
+	    bool loadedVector = false;
+	    BNode node(&ref);
+	    if (node.InitCheck() == B_OK) {
+	        attr_info info;
+	        if (node.GetAttrInfo("BEOS:ICON", &info) == B_OK && info.size > 0) {
+	            uint8* buffer = new uint8[info.size];
+	            if (node.ReadAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, buffer, info.size)
+	                    == (ssize_t)info.size) {
+	                loadedVector = (BIconUtils::GetVectorIcon(buffer, info.size, fIcon) == B_OK);
+	            }
+	            delete[] buffer;
+	        }
+	    }
+
+	    if (!loadedVector) {
+	        // Fallback: original legacy fixed-size raster icon path, unchanged.
 	        if (BNodeInfo::GetTrackerIcon(&ref, fIcon, (icon_size)size) != B_OK) {
 	            BMimeType type("application/x-vnd.HaikuSuperMusicThingy");
 	            type.GetIcon(fIcon, (icon_size)size);

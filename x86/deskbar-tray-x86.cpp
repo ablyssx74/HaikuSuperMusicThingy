@@ -8,11 +8,14 @@
 #include <Deskbar.h>
 #include <interface/Bitmap.h>
 #include <interface/ControlLook.h>
+#include <interface/IconUtils.h>
 #include <interface/MenuItem.h>
 #include <interface/PopUpMenu.h>
 #include <interface/View.h>
 #include <interface/Window.h>
 #include <storage/MimeType.h>
+#include <storage/Mime.h>
+#include <storage/Node.h>
 #include <storage/NodeInfo.h>
 #include <support/Archivable.h>
 #include <Message.h>
@@ -179,13 +182,38 @@ private:
         delete fIcon;
         fIcon = NULL;
 
+        // View footprint stays B_MINI_ICON-derived -- see the matching note
+        // in the main binary's _LoadIcon(): a B_LARGE_ICON-sized frame was
+        // confirmed to make Deskbar discard this replicant right after
+        // adding it. Only the drawn icon's quality improves below.
         float size = be_control_look->ComposeIconSize(B_MINI_ICON).Width();
         if (size < 16.0f) size = 16.0f;
 
         fIcon = new BBitmap(BRect(0, 0, size - 1, size - 1), B_RGBA32);
 
         entry_ref ref;
-        if (be_roster->FindApp(kMainAppSignature, &ref) == B_OK) {
+        if (be_roster->FindApp(kMainAppSignature, &ref) != B_OK)
+            return;
+
+        // Prefer rasterizing the app's own vector ("BEOS:ICON" HVIF) icon
+        // directly at our exact small target size -- sharper at any UI
+        // scale than the legacy fixed-size raster icon path, since vector
+        // data has no native resolution to up/downscale from.
+        bool loadedVector = false;
+        BNode node(&ref);
+        if (node.InitCheck() == B_OK) {
+            attr_info info;
+            if (node.GetAttrInfo("BEOS:ICON", &info) == B_OK && info.size > 0) {
+                uint8* buffer = new uint8[info.size];
+                if (node.ReadAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, buffer, info.size)
+                        == (ssize_t)info.size) {
+                    loadedVector = (BIconUtils::GetVectorIcon(buffer, info.size, fIcon) == B_OK);
+                }
+                delete[] buffer;
+            }
+        }
+
+        if (!loadedVector) {
             if (BNodeInfo::GetTrackerIcon(&ref, fIcon, (icon_size)size) != B_OK) {
                 BMimeType type(kMainAppSignature);
                 type.GetIcon(fIcon, (icon_size)size);
