@@ -7700,6 +7700,34 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     fSleepField = new BMenuField("sleep_field", NULL, fSleepMenu);
 //-----------------------------
 
+//-----------------------------
+    // --- Shuffle Stations Setup (BMenuField) ---
+    fShuffleStationsMenu = new BPopUpMenu("Disabled");
+    fShuffleStationsMenu->SetExplicitAlignment(BAlignment(B_ALIGN_LEFT, B_ALIGN_TOP));
+    BMessage* msgShuffleStations0  = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations0->AddInt32("minutes", 0);
+    BMessage* msgShuffleStations1  = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations1->AddInt32("minutes", 1);
+    BMessage* msgShuffleStations5  = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations5->AddInt32("minutes", 5);
+    BMessage* msgShuffleStations15 = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations15->AddInt32("minutes", 15);
+    BMessage* msgShuffleStations30 = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations30->AddInt32("minutes", 30);
+    BMessage* msgShuffleStations1h = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations1h->AddInt32("minutes", 60);
+    BMessage* msgShuffleStations3h = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations3h->AddInt32("minutes", 180);
+
+    fShuffleStationsMenu->AddItem(new BMenuItem("Disabled", msgShuffleStations0));
+    fShuffleStationsMenu->AddItem(new BMenuItem("1 Minute", msgShuffleStations1));
+    fShuffleStationsMenu->AddItem(new BMenuItem("5 Minutes", msgShuffleStations5));
+    fShuffleStationsMenu->AddItem(new BMenuItem("15 Minutes", msgShuffleStations15));
+    fShuffleStationsMenu->AddItem(new BMenuItem("30 Minutes", msgShuffleStations30));
+    fShuffleStationsMenu->AddItem(new BMenuItem("1 Hour", msgShuffleStations1h));
+    fShuffleStationsMenu->AddItem(new BMenuItem("3 Hours", msgShuffleStations3h));
+
+    // Default target initialization
+    fShuffleStationsMenu->ItemAt(0)->SetMarked(true);
+    fShuffleStationsRunner = NULL;
+
+    fShuffleStationsLabel = new BStringView("lbl_shuffle_stations", "Shuffle Stations:");
+    fShuffleStationsField = new BMenuField("shuffle_stations_field", NULL, fShuffleStationsMenu);
+//-----------------------------
+
     
 
   
@@ -7913,6 +7941,9 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
             .AddStrut(5)
             .Add(fSleepLabel)
             .Add(fSleepField)
+            .AddStrut(5)
+            .Add(fShuffleStationsLabel)
+            .Add(fShuffleStationsField)
             .AddStrut(5)
         .End()
  
@@ -9714,7 +9745,38 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		break;
 		}
 
-		
+		case MSG_SHUFFLE_STATIONS_CHANGED: {
+    		delete fShuffleStationsRunner;
+    		fShuffleStationsRunner = NULL;
+
+    		int32 minutes = 0;
+    		if (message->FindInt32("minutes", &minutes) == B_OK) {
+        		if (minutes > 0) {
+            		// Convert target configuration back into microsecond delay units
+            		bigtime_t delay = (bigtime_t)minutes * 60 * 1000000;
+
+            		BMessage tickMessage(MSG_SHUFFLE_STATIONS_TICK);
+            		// count = -1: keep shuffling stations every interval until disabled
+            		fShuffleStationsRunner = new BMessageRunner(BMessenger(this), &tickMessage, delay, -1);
+        		}
+   			}
+    		break;
+		}
+
+		case MSG_SHUFFLE_STATIONS_TICK: {
+    		// Only jump to a new station if something is actually playing right now
+    		int is_paused = 1;
+    		if (mpv) {
+        		mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &is_paused);
+    		}
+
+    		if (mpv && !is_paused && !currentStationID.empty()) {
+        		PostMessage(MSG_SHUFFLE);
+    		}
+    		break;
+		}
+
+
 		case MSG_SHUFFLE_FAVS_CHANGED: {
     		cfg.shuffleFavsOnly = (fShuffleFavsCheckbox->Value() == B_CONTROL_ON);
     		save_config(); 
@@ -10506,7 +10568,8 @@ SuperMusicWindow::~SuperMusicWindow()
     }
     fArtCache.clear();
     delete fSleepRunner;
-    fAlbumArt = nullptr; 
+    delete fShuffleStationsRunner;
+    fAlbumArt = nullptr;
     
 	ReallyStopVisuals();
 
@@ -10983,14 +11046,46 @@ private:
 	void _LoadIcon() {
 	    delete fIcon;
 	    fIcon = NULL;
-	
+
+	    // NOTE: this view's own frame/bounds (set in instantiate_deskbar_item())
+	    // deliberately stays at the small, B_MINI_ICON-derived size Deskbar's
+	    // tray shelf has always accepted here -- growing it to a B_LARGE_ICON
+	    // footprint was tried and confirmed to make Deskbar silently discard
+	    // the replicant right after adding it. So `size` below is unchanged;
+	    // only the *quality* of what gets drawn into that same small footprint
+	    // is improved.
 	    BRect bounds = Bounds();
 	    float size = bounds.IsValid() ? bounds.Width() + 1.0f : 20.0f;
-	
+
 	    fIcon = new BBitmap(BRect(0, 0, size - 1, size - 1), B_RGBA32);
-	
+
 	    entry_ref ref;
-	    if (be_roster->FindApp("application/x-vnd.HaikuSuperMusicThingy", &ref) == B_OK) {
+	    if (be_roster->FindApp("application/x-vnd.HaikuSuperMusicThingy", &ref) != B_OK)
+	        return;
+
+	    // Prefer rasterizing the app's own vector icon (the "BEOS:ICON" HVIF
+	    // attribute every modern Haiku app carries) directly at our exact
+	    // small target size. Unlike the legacy icon_size-based raster icon
+	    // APIs below -- which only really have a crisp 16px or 32px source to
+	    // draw from -- vector data has no native resolution to up/downscale
+	    // from, so this renders sharp at whatever size the current UI scale
+	    // (be_plain_font) computes, without changing the view's footprint.
+	    bool loadedVector = false;
+	    BNode node(&ref);
+	    if (node.InitCheck() == B_OK) {
+	        attr_info info;
+	        if (node.GetAttrInfo("BEOS:ICON", &info) == B_OK && info.size > 0) {
+	            uint8* buffer = new uint8[info.size];
+	            if (node.ReadAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, buffer, info.size)
+	                    == (ssize_t)info.size) {
+	                loadedVector = (BIconUtils::GetVectorIcon(buffer, info.size, fIcon) == B_OK);
+	            }
+	            delete[] buffer;
+	        }
+	    }
+
+	    if (!loadedVector) {
+	        // Fallback: original legacy fixed-size raster icon path, unchanged.
 	        if (BNodeInfo::GetTrackerIcon(&ref, fIcon, (icon_size)size) != B_OK) {
 	            BMimeType type("application/x-vnd.HaikuSuperMusicThingy");
 	            type.GetIcon(fIcon, (icon_size)size);
