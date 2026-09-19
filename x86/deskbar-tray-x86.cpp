@@ -212,6 +212,17 @@ _EXPORT BView* instantiate_deskbar_item(void) {
     return new MyIcon(BRect(0, 0, size - 1, size - 1));
 }
 
+// Haiku's archiving system (instantiate_object() in <Archivable.h>) looks up
+// an add-on-exported symbol with this *exact* name to reconstruct a
+// BArchivable from a saved BMessage archive. Deskbar uses it right after
+// AddItem(entry_ref*) succeeds to validate that the replicant it just added
+// can actually be restored on its own next launch (archiving the view and
+// round-tripping it through this symbol); without it, Deskbar silently
+// discards the freshly-added replicant. This file never exported it at all.
+_EXPORT BArchivable* instantiate_object(BMessage* data) {
+    return MyIcon::Instantiate(data);
+}
+
 } // extern "C"
 
 class TrayLibApp : public BApplication {
