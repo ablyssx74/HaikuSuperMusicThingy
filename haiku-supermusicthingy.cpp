@@ -7351,7 +7351,12 @@ private:
 
 void SuperMusicWindow::UpdateTrayState(bool enabled, bool hideWindow) {
     BDeskbar deskbar;
-    const char* trayItemName = "SuperMusicTrayIcon"; 
+    const char* trayItemName = "SuperMusicTrayIcon";
+
+    if (cfg.debugEnable) {
+        printf("[DEBUG_TRAY] UpdateTrayState(enabled=%d, hideWindow=%d) -- deskbar.HasItem(\"%s\")=%d\n",
+            enabled, hideWindow, trayItemName, deskbar.HasItem(trayItemName));
+    }
 
     if (enabled) {
         if (!deskbar.HasItem(trayItemName)) {
@@ -7360,20 +7365,34 @@ void SuperMusicWindow::UpdateTrayState(bool enabled, bool hideWindow) {
 			#ifndef IS_HAIKU_32BIT
             // 64-bit Native: Keep using the fast internal executable allocation reference
             app_info info;
-            be_app->GetAppInfo(&info);             
+            status_t infoErr = be_app->GetAppInfo(&info);
+            if (cfg.debugEnable) {
+                printf("[DEBUG_TRAY] GetAppInfo() -> %s (%s), ref name='%s' dir=%" B_PRId32 ":%" B_PRId64 "\n",
+                    strerror(infoErr), infoErr == B_OK ? "ok" : "FAILED",
+                    info.ref.name, (int32)info.ref.device, (int64)info.ref.directory);
+            }
             err = deskbar.AddItem(&info.ref);
 			#else
             // 32-bit Hybrid: Dynamically look up the signature of the GCC 2 shared add-on library
             entry_ref addonRef;
-            if (be_roster->FindApp("application/x-vnd.SuperMusicTrayIconLibrary", &addonRef) == B_OK) {
+            status_t findErr = be_roster->FindApp("application/x-vnd.SuperMusicTrayIconLibrary", &addonRef);
+            if (cfg.debugEnable) {
+                printf("[DEBUG_TRAY] FindApp(SuperMusicTrayIconLibrary) -> %s\n", strerror(findErr));
+            }
+            if (findErr == B_OK) {
                 err = deskbar.AddItem(&addonRef);
             }
 			#endif
-            
+
+            if (cfg.debugEnable) {
+                printf("[DEBUG_TRAY] deskbar.AddItem() -> %s (0x%08" B_PRIx32 ")\n", strerror(err), (uint32)err);
+            }
+
             if (err == B_OK && hideWindow) {
                 Hide();
             }
         } else if (hideWindow) {
+            if (cfg.debugEnable) printf("[DEBUG_TRAY] Tray item already present -- skipping AddItem, just hiding window.\n");
             Hide();
         }
     } else {
@@ -10584,15 +10603,25 @@ public:
 	virtual void ReadyToRun() {
     	load_config();
 
+    	if (cfg.debugEnable) {
+        	printf("[DEBUG_TRAY] ReadyToRun: cfg.sysTray=%d immediately after load_config()\n", cfg.sysTray);
+    	}
+
     	fetch_channels();
     	init_mpv();
 
     	// --- COLD BOOT TRAY CLEANUP ENGINE ---
     	BDeskbar deskbar;
-    	if (deskbar.HasItem("SuperMusicTrayIcon")) {
+    	bool staleItemPresent = deskbar.HasItem("SuperMusicTrayIcon");
+    	if (cfg.debugEnable) {
+        	printf("[DEBUG_TRAY] Cold boot cleanup: deskbar already has \"SuperMusicTrayIcon\"=%d (leftover from a prior run/crash if true)\n", staleItemPresent);
+    	}
+    	if (staleItemPresent) {
         	if (!cfg.sysTray) {
             	// Remove the zombie icon immediately if the user turned this option off
             	deskbar.RemoveItem("SuperMusicTrayIcon");
+        	} else if (cfg.debugEnable) {
+            	printf("[DEBUG_TRAY] Cold boot cleanup: sysTray is on and an item already exists -- the startup UpdateTrayState call below will treat it as already added and do nothing further.\n");
         	}
     	}
     	// -------------------------------------
@@ -10601,9 +10630,13 @@ public:
     	gGuiWindow->Show();
 
     	// Clean re-binding loop if sysTray option is checked
-    	if (cfg.sysTray && gGuiWindow->Lock()) {
-        	gGuiWindow->UpdateTrayState(true, false);
-        	gGuiWindow->Unlock();
+    	if (cfg.sysTray) {
+        	if (gGuiWindow->Lock()) {
+            	gGuiWindow->UpdateTrayState(true, false);
+            	gGuiWindow->Unlock();
+        	} else if (cfg.debugEnable) {
+            	printf("[DEBUG_TRAY] ReadyToRun: gGuiWindow->Lock() FAILED -- UpdateTrayState was skipped entirely!\n");
+        	}
     	}
 
     	if (cfg.compactMode) {
