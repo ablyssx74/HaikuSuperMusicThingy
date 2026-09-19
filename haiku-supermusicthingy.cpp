@@ -74,6 +74,7 @@
 // ====================================================================
 #include <algorithm>
 #include <cmath>
+#include <cstdarg>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -10900,29 +10901,69 @@ void SuperMusicWindow::ApplyPreset(const float* values) {
     for (int i = 0; i < 15; i++) {
         fEQSliders[i]->SetValue((int32)values[i]);
     }
-  
+
     UpdateMPVFilters();
+}
+
+// Deskbar loads this same executable as an add-on and calls
+// instantiate_deskbar_item()/MyIcon's methods directly, entirely inside
+// Deskbar's own team -- never through our main()/ReadyToRun(), so cfg is
+// never populated there (cfg.debugEnable is always false) and printf()
+// goes to Deskbar's own stdout, invisible from our app's terminal. Log to
+// a file instead so this side of the replicant's lifecycle is traceable.
+static void TrayDebugLog(const char* fmt, ...) {
+    BPath path;
+    if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) != B_OK) return;
+    path.Append("SuperMusicThingy/tray_debug.log");
+
+    FILE* f = fopen(path.Path(), "a");
+    if (!f) return;
+
+    time_t now = time(nullptr);
+    char timeBuf[32];
+    strftime(timeBuf, sizeof(timeBuf), "%H:%M:%S", localtime(&now));
+    fprintf(f, "[%s] [tid %" B_PRId32 "] ", timeBuf, (int32)find_thread(NULL));
+
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(f, fmt, args);
+    va_end(args);
+
+    fprintf(f, "\n");
+    fclose(f);
 }
 
 class MyIcon : public BView {
 public:
-    MyIcon(BRect frame) 
+    MyIcon(BRect frame)
         : BView(frame, "SuperMusicTrayIcon", B_FOLLOW_NONE, B_WILL_DRAW | B_FRAME_EVENTS | B_FULL_UPDATE_ON_RESIZE) {
+        TrayDebugLog("MyIcon(frame) constructor -- frame=(%.1f,%.1f,%.1f,%.1f)",
+            frame.left, frame.top, frame.right, frame.bottom);
         fIcon = NULL;
         _LoadIcon();
     }
 
     MyIcon(BMessage* archive) : BView(archive) {
+        TrayDebugLog("MyIcon(archive) constructor (restored from a saved replicant archive)");
         fIcon = NULL;
         _LoadIcon();
     }
 
-    virtual ~MyIcon() { delete fIcon; }
+    virtual ~MyIcon() {
+        TrayDebugLog("~MyIcon destructor -- this replicant is being torn down");
+        delete fIcon;
+    }
     static _EXPORT BArchivable* Instantiate(BMessage* archive);
 
     virtual void AttachedToWindow() {
+        TrayDebugLog("AttachedToWindow -- Window()=%p Parent()=%p", (void*)Window(), (void*)Parent());
         BView::AttachedToWindow();
         _UpdateBackgroundColor();
+    }
+
+    virtual void DetachedFromWindow() {
+        TrayDebugLog("DetachedFromWindow");
+        BView::DetachedFromWindow();
     }
 
 
@@ -10933,8 +10974,12 @@ public:
     }
 
 		virtual status_t Archive(BMessage* archive, bool deep = true) const {
+    		TrayDebugLog("Archive(deep=%d) called", deep);
     		status_t err = BView::Archive(archive, deep);
-    		if (err != B_OK) return err;
+    		if (err != B_OK) {
+        		TrayDebugLog("Archive: BView::Archive() FAILED -> %s", strerror(err));
+        		return err;
+    		}
     
     		// Explicitly target the layout class identification
     		archive->AddString("class", "MyIcon");
@@ -10958,6 +11003,7 @@ public:
             		Invalidate();
             		break;
         		case B_QUIT_REQUESTED: {
+            		TrayDebugLog("MessageReceived: B_QUIT_REQUESTED -- removing self from Deskbar");
             		// Let the Replicant drop itself directly out of the Deskbar container shelf
             		BDeskbar deskbar;
             		if (deskbar.HasItem("SuperMusicTrayIcon")) {
@@ -11088,17 +11134,25 @@ private:
 	void _LoadIcon() {
 	    delete fIcon;
 	    fIcon = NULL;
-	
+
 	    BRect bounds = Bounds();
 	    float size = bounds.IsValid() ? bounds.Width() + 1.0f : 32.0f;
-	
+	    TrayDebugLog("_LoadIcon: bounds.IsValid()=%d bounds=(%.1f,%.1f,%.1f,%.1f) -> size=%.1f",
+	        bounds.IsValid(), bounds.left, bounds.top, bounds.right, bounds.bottom, size);
+
 	    fIcon = new BBitmap(BRect(0, 0, size - 1, size - 1), B_RGBA32);
-	
+	    TrayDebugLog("_LoadIcon: fIcon allocated, IsValid()=%d", fIcon->IsValid());
+
 	    entry_ref ref;
-	    if (be_roster->FindApp("application/x-vnd.HaikuSuperMusicThingy", &ref) == B_OK) {
-	        if (BNodeInfo::GetTrackerIcon(&ref, fIcon, (icon_size)size) != B_OK) {
+	    status_t findErr = be_roster->FindApp("application/x-vnd.HaikuSuperMusicThingy", &ref);
+	    TrayDebugLog("_LoadIcon: FindApp() -> %s", strerror(findErr));
+	    if (findErr == B_OK) {
+	        status_t trackerErr = BNodeInfo::GetTrackerIcon(&ref, fIcon, (icon_size)size);
+	        TrayDebugLog("_LoadIcon: GetTrackerIcon(ref, fIcon, (icon_size)%.1f) -> %s", size, strerror(trackerErr));
+	        if (trackerErr != B_OK) {
 	            BMimeType type("application/x-vnd.HaikuSuperMusicThingy");
-	            type.GetIcon(fIcon, (icon_size)size);
+	            status_t mimeErr = type.GetIcon(fIcon, (icon_size)size);
+	            TrayDebugLog("_LoadIcon: fallback BMimeType::GetIcon() -> %s", strerror(mimeErr));
 	        }
 	    }
 	}
@@ -11115,9 +11169,13 @@ _EXPORT BArchivable* MyIcon::Instantiate(BMessage* data) {
 
 
 extern "C" _EXPORT BView* instantiate_deskbar_item() {
+    TrayDebugLog("instantiate_deskbar_item() called by Deskbar -- be_control_look=%p", (void*)be_control_look);
     float size = be_control_look->ComposeIconSize(B_LARGE_ICON).Width();
     if (size < 32.0f) size = 32.0f;
-    return new MyIcon(BRect(0, 0, size - 1, size - 1));
+    TrayDebugLog("instantiate_deskbar_item(): ComposeIconSize(B_LARGE_ICON).Width()-derived size=%.1f", size);
+    MyIcon* view = new MyIcon(BRect(0, 0, size - 1, size - 1));
+    TrayDebugLog("instantiate_deskbar_item(): returning view=%p", (void*)view);
+    return view;
 }
 
 extern "C" _EXPORT BArchivable* instantiate_tray_icon(BMessage* data) {
