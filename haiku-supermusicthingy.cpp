@@ -7700,6 +7700,34 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     fSleepField = new BMenuField("sleep_field", NULL, fSleepMenu);
 //-----------------------------
 
+//-----------------------------
+    // --- Shuffle Stations Setup (BMenuField) ---
+    fShuffleStationsMenu = new BPopUpMenu("Disabled");
+    fShuffleStationsMenu->SetExplicitAlignment(BAlignment(B_ALIGN_LEFT, B_ALIGN_TOP));
+    BMessage* msgShuffleStations0  = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations0->AddInt32("minutes", 0);
+    BMessage* msgShuffleStations1  = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations1->AddInt32("minutes", 1);
+    BMessage* msgShuffleStations5  = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations5->AddInt32("minutes", 5);
+    BMessage* msgShuffleStations15 = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations15->AddInt32("minutes", 15);
+    BMessage* msgShuffleStations30 = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations30->AddInt32("minutes", 30);
+    BMessage* msgShuffleStations1h = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations1h->AddInt32("minutes", 60);
+    BMessage* msgShuffleStations3h = new BMessage(MSG_SHUFFLE_STATIONS_CHANGED); msgShuffleStations3h->AddInt32("minutes", 180);
+
+    fShuffleStationsMenu->AddItem(new BMenuItem("Disabled", msgShuffleStations0));
+    fShuffleStationsMenu->AddItem(new BMenuItem("1 Minute", msgShuffleStations1));
+    fShuffleStationsMenu->AddItem(new BMenuItem("5 Minutes", msgShuffleStations5));
+    fShuffleStationsMenu->AddItem(new BMenuItem("15 Minutes", msgShuffleStations15));
+    fShuffleStationsMenu->AddItem(new BMenuItem("30 Minutes", msgShuffleStations30));
+    fShuffleStationsMenu->AddItem(new BMenuItem("1 Hour", msgShuffleStations1h));
+    fShuffleStationsMenu->AddItem(new BMenuItem("3 Hours", msgShuffleStations3h));
+
+    // Default target initialization
+    fShuffleStationsMenu->ItemAt(0)->SetMarked(true);
+    fShuffleStationsRunner = NULL;
+
+    fShuffleStationsLabel = new BStringView("lbl_shuffle_stations", "Shuffle Stations:");
+    fShuffleStationsField = new BMenuField("shuffle_stations_field", NULL, fShuffleStationsMenu);
+//-----------------------------
+
     
 
   
@@ -7913,6 +7941,9 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
             .AddStrut(5)
             .Add(fSleepLabel)
             .Add(fSleepField)
+            .AddStrut(5)
+            .Add(fShuffleStationsLabel)
+            .Add(fShuffleStationsField)
             .AddStrut(5)
         .End()
  
@@ -9714,7 +9745,38 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     		break;
 		}
 
-		
+		case MSG_SHUFFLE_STATIONS_CHANGED: {
+    		delete fShuffleStationsRunner;
+    		fShuffleStationsRunner = NULL;
+
+    		int32 minutes = 0;
+    		if (message->FindInt32("minutes", &minutes) == B_OK) {
+        		if (minutes > 0) {
+            		// Convert target configuration back into microsecond delay units
+            		bigtime_t delay = (bigtime_t)minutes * 60 * 1000000;
+
+            		BMessage tickMessage(MSG_SHUFFLE_STATIONS_TICK);
+            		// count = -1: keep shuffling stations every interval until disabled
+            		fShuffleStationsRunner = new BMessageRunner(BMessenger(this), &tickMessage, delay, -1);
+        		}
+   			}
+    		break;
+		}
+
+		case MSG_SHUFFLE_STATIONS_TICK: {
+    		// Only jump to a new station if something is actually playing right now
+    		int is_paused = 1;
+    		if (mpv) {
+        		mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &is_paused);
+    		}
+
+    		if (mpv && !is_paused && !currentStationID.empty()) {
+        		PostMessage(MSG_SHUFFLE);
+    		}
+    		break;
+		}
+
+
 		case MSG_SHUFFLE_FAVS_CHANGED: {
     		cfg.shuffleFavsOnly = (fShuffleFavsCheckbox->Value() == B_CONTROL_ON);
     		save_config(); 
@@ -10506,7 +10568,8 @@ SuperMusicWindow::~SuperMusicWindow()
     }
     fArtCache.clear();
     delete fSleepRunner;
-    fAlbumArt = nullptr; 
+    delete fShuffleStationsRunner;
+    fAlbumArt = nullptr;
     
 	ReallyStopVisuals();
 

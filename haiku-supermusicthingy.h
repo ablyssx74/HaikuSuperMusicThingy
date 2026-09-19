@@ -102,6 +102,8 @@ enum {
 	MSG_COMPACTM_CHANGED = 'cmod',
 	MSG_SLEEP_TIMER_TICK = 'slpt',
     MSG_SLEEP_CHANGED    = 'slpc',
+    MSG_SHUFFLE_STATIONS_TICK    = 'sstt',
+    MSG_SHUFFLE_STATIONS_CHANGED = 'sstc',
     MSG_TOGGLE_Spectrum  = 'tsmb',
     MSG_SHUFFLE_FAVS_CHANGED = 'sfch',
     MSG_HIDE_VISUALS_REQUEST = 'tvps',
@@ -183,6 +185,11 @@ private:
     BMenuField*     fSleepField;
     BPopUpMenu*     fSleepMenu;
     BMessageRunner* fSleepRunner;
+
+    BStringView*    fShuffleStationsLabel;
+    BMenuField*     fShuffleStationsField;
+    BPopUpMenu*     fShuffleStationsMenu;
+    BMessageRunner* fShuffleStationsRunner;
 
     
     IconButton* fPlayBtn;
