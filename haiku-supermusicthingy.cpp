@@ -11178,20 +11178,17 @@ extern "C" _EXPORT BView* instantiate_deskbar_item() {
     return view;
 }
 
-// Haiku's archiving system (instantiate_object() in <Archivable.h>) looks up
-// an add-on-exported symbol with this *exact* name via get_image_symbol() to
-// reconstruct a BArchivable from a saved BMessage archive. Deskbar relies on
-// this immediately after AddItem(entry_ref*) succeeds: it archives the view
-// instantiate_deskbar_item() just returned (see Archive() above -- that's
-// the "Archive(deep=1) called" we were seeing in the debug log) and tries to
-// round-trip it through this symbol to confirm the replicant can be restored
-// on Deskbar's own next launch. The exported name here used to be the
-// made-up "instantiate_tray_icon", which get_image_symbol() would never
-// find; Deskbar silently discarded the freshly-added, otherwise perfectly
-// working replicant the moment that validation failed -- explaining why
-// AddItem() reported B_OK and yet AttachedToWindow() never ran and the view
-// was destructed right after Archive().
-extern "C" _EXPORT BArchivable* instantiate_object(BMessage* data) {
+// NOTE: "instantiate_object" is NOT a name we get to pick -- it's already
+// declared with C++ (not C) linkage by libbe itself in <Archivable.h>, so
+// exporting our own extern "C" symbol with that exact name is a hard
+// compile error ("conflicting declaration ... with 'C' linkage"). Haiku's
+// real archiving protocol calls each class's own static Instantiate(BMessage*)
+// through its *mangled* C++ symbol name (derived from the "class" field of
+// the archive), not through a fixed custom C symbol -- see MyIcon::Instantiate
+// below, which is already marked _EXPORT for exactly that reason. Kept this
+// wrapper under its prior name in case anything still references it; it is
+// not what Deskbar's own reconstruction path actually calls.
+extern "C" _EXPORT BArchivable* instantiate_tray_icon(BMessage* data) {
     return MyIcon::Instantiate(data);
 }
 
