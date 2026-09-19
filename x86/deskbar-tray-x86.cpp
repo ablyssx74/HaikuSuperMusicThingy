@@ -212,18 +212,16 @@ _EXPORT BView* instantiate_deskbar_item(void) {
     return new MyIcon(BRect(0, 0, size - 1, size - 1));
 }
 
-// Haiku's archiving system (instantiate_object() in <Archivable.h>) looks up
-// an add-on-exported symbol with this *exact* name to reconstruct a
-// BArchivable from a saved BMessage archive. Deskbar uses it right after
-// AddItem(entry_ref*) succeeds to validate that the replicant it just added
-// can actually be restored on its own next launch (archiving the view and
-// round-tripping it through this symbol); without it, Deskbar silently
-// discards the freshly-added replicant. This file never exported it at all.
-_EXPORT BArchivable* instantiate_object(BMessage* data) {
-    return MyIcon::Instantiate(data);
-}
-
 } // extern "C"
+
+// NOTE: "instantiate_object" is NOT a name an add-on gets to export -- it's
+// already declared with C++ linkage by libbe itself in <Archivable.h>, so an
+// extern "C" symbol under that exact name is a hard compile error. Haiku's
+// real archiving protocol calls each class's own static Instantiate(BMessage*)
+// through its *mangled* C++ symbol name (derived from the "class" field of
+// the archive), not through a fixed custom C symbol -- MyIcon::Instantiate
+// below is already marked _EXPORT for exactly that reason, so no extra
+// wrapper is needed here.
 
 class TrayLibApp : public BApplication {
 public:
