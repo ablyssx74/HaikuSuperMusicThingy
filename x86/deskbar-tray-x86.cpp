@@ -13,6 +13,7 @@
 #include <interface/PopUpMenu.h>
 #include <interface/View.h>
 #include <interface/Window.h>
+#include <kernel/fs_attr.h>
 #include <storage/MimeType.h>
 #include <storage/Mime.h>
 #include <storage/Node.h>

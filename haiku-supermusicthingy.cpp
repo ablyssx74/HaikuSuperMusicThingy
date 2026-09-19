@@ -43,6 +43,7 @@
 #include <Directory.h>
 #include <Entry.h>
 #include <FindDirectory.h>
+#include <fs_attr.h>
 #include <Node.h>
 #include <NodeInfo.h>
 #include <Path.h>
