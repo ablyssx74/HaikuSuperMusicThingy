@@ -99,7 +99,7 @@
 
 
 namespace AppInfo {
-    static const char* const VERSION_STRING = "Version v1.0.11 (Haiku OS)";
+    static const char* const VERSION_STRING = "Version v1.0.12 (Haiku OS)";
 }
 
 // Forward declaration signature for update worker thread
