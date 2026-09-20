@@ -11106,10 +11106,22 @@ _EXPORT BArchivable* MyIcon::Instantiate(BMessage* data) {
 }
 
 
-extern "C" _EXPORT BView* instantiate_deskbar_item() {
-    float size = be_control_look->ComposeIconSize(B_MINI_ICON).Width();
-    if (size < 20.0f) size = 20.0f;   // floor it — B_MINI_ICON is too small on many themes
-    return new MyIcon(BRect(0, 0, size - 1, size - 1));
+// Deskbar's own TReplicantTray::LoadAddOn() looks up this exact symbol
+// through a BView* (*)(float maxWidth, float maxHeight) function pointer,
+// passing the max size it's actually willing to give the replicant (see
+// NetworkStatusView::instantiate_deskbar_item() in Haiku's own source for
+// the reference implementation of this same convention). We used to declare
+// this with zero parameters, which is harmless at the ABI level -- the
+// extra float args Deskbar passes just land in unused registers -- but it
+// meant we never looked at what size Deskbar would actually allow, and
+// instead guessed independently via ComposeIconSize(). That guess (a
+// B_LARGE_ICON-sized guess in particular) could exceed what Deskbar was
+// willing to allocate, which is what made it silently discard the
+// replicant right after adding it. Sizing to maxHeight directly, the same
+// way NetworkStatus/ProcessController do, both fixes that and makes the
+// icon track Deskbar's own (already font-scaled) tray height automatically.
+extern "C" _EXPORT BView* instantiate_deskbar_item(float maxWidth, float maxHeight) {
+    return new MyIcon(BRect(0, 0, maxHeight - 1, maxHeight - 1));
 }
 
 extern "C" _EXPORT BArchivable* instantiate_tray_icon(BMessage* data) {
