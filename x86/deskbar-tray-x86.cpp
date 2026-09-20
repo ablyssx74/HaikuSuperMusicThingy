@@ -235,10 +235,15 @@ _EXPORT BArchivable* MyIcon::Instantiate(BMessage* data) {
 
 extern "C" {
 
-_EXPORT BView* instantiate_deskbar_item(void) {
-    float size = be_control_look->ComposeIconSize(B_MINI_ICON).Width();
-    if (size < 16.0f) size = 16.0f;
-    return new MyIcon(BRect(0, 0, size - 1, size - 1));
+// See the matching, longer comment in the main binary: Deskbar calls this
+// symbol through a BView* (*)(float maxWidth, float maxHeight) function
+// pointer (the real, documented convention -- see NetworkStatusView's own
+// instantiate_deskbar_item() in Haiku's source), passing the max size it
+// will actually allow. Sizing to maxHeight directly, instead of guessing
+// independently via ComposeIconSize(), tracks Deskbar's own font-scaled
+// tray height and avoids requesting a size Deskbar might reject.
+_EXPORT BView* instantiate_deskbar_item(float maxWidth, float maxHeight) {
+    return new MyIcon(BRect(0, 0, maxHeight - 1, maxHeight - 1));
 }
 
 } // extern "C"
