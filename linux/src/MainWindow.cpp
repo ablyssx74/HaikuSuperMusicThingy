@@ -14,6 +14,7 @@
 #include <QListWidget>
 #include <QLabel>
 #include <QSlider>
+#include <QDial>
 #include <QToolButton>
 #include <QCheckBox>
 #include <QComboBox>
@@ -28,6 +29,12 @@
 #include <QApplication>
 #include <QRandomGenerator>
 #include <QFont>
+#include <QIcon>
+#include <QSize>
+
+namespace {
+const QSize kStationIconSize(32, 32);
+}
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -154,12 +161,22 @@ QWidget* MainWindow::buildPlayerTab()
     transport->addStretch();
     layout->addLayout(transport);
 
+    auto* volumeColumn = new QVBoxLayout();
+    volumeColumn->addWidget(new QLabel(tr("Volume"), page), 0, Qt::AlignHCenter);
+    m_volumeDial = new QDial(page);
+    m_volumeDial->setRange(0, 100);
+    m_volumeDial->setValue(75);
+    m_volumeDial->setNotchesVisible(true);
+    m_volumeDial->setFixedSize(80, 80);
+    volumeColumn->addWidget(m_volumeDial, 0, Qt::AlignHCenter);
+    m_volumeValueLabel = new QLabel("75%", page);
+    m_volumeValueLabel->setAlignment(Qt::AlignCenter);
+    volumeColumn->addWidget(m_volumeValueLabel);
+
     auto* volumeRow = new QHBoxLayout();
-    volumeRow->addWidget(new QLabel(tr("Volume"), page));
-    m_volumeSlider = new QSlider(Qt::Horizontal, page);
-    m_volumeSlider->setRange(0, 100);
-    m_volumeSlider->setValue(75);
-    volumeRow->addWidget(m_volumeSlider);
+    volumeRow->addStretch();
+    volumeRow->addLayout(volumeColumn);
+    volumeRow->addStretch();
     layout->addLayout(volumeRow);
 
     layout->addStretch();
@@ -168,7 +185,7 @@ QWidget* MainWindow::buildPlayerTab()
     connect(m_pauseButton, &QToolButton::clicked, this, &MainWindow::onPauseClicked);
     connect(m_stopButton, &QToolButton::clicked, this, &MainWindow::onStopClicked);
     connect(m_muteButton, &QToolButton::clicked, this, &MainWindow::onMuteClicked);
-    connect(m_volumeSlider, &QSlider::valueChanged, this, &MainWindow::onVolumeSliderMoved);
+    connect(m_volumeDial, &QDial::valueChanged, this, &MainWindow::onVolumeDialMoved);
 
     return page;
 }
@@ -179,6 +196,7 @@ QWidget* MainWindow::buildStationsTab()
     auto* layout = new QVBoxLayout(page);
 
     m_stationList = new QListWidget(page);
+    m_stationList->setIconSize(kStationIconSize);
     layout->addWidget(m_stationList);
 
     auto* buttonRow = new QHBoxLayout();
@@ -201,6 +219,7 @@ QWidget* MainWindow::buildFavoritesTab()
     auto* layout = new QVBoxLayout(page);
 
     m_favoritesList = new QListWidget(page);
+    m_favoritesList->setIconSize(kStationIconSize);
     layout->addWidget(m_favoritesList);
 
     auto* buttonRow = new QHBoxLayout();
@@ -340,7 +359,8 @@ void MainWindow::applyConfigToUi()
 {
     const AppConfig& cfg = m_configManager.config();
 
-    m_volumeSlider->setValue(static_cast<int>(cfg.currentVolume));
+    m_volumeDial->setValue(static_cast<int>(cfg.currentVolume));
+    m_volumeValueLabel->setText(QString("%1%").arg(static_cast<int>(cfg.currentVolume)));
     m_notifyCheck->setChecked(cfg.showNotifications);
     m_trayCheck->setChecked(cfg.sysTrayEnabled);
     m_qualityCombo->setCurrentIndex(m_qualityCombo->findData(cfg.quality));
@@ -360,7 +380,7 @@ void MainWindow::applyConfigToUi()
 void MainWindow::saveUiToConfig()
 {
     AppConfig& cfg = m_configManager.config();
-    cfg.currentVolume = m_volumeSlider->value();
+    cfg.currentVolume = m_volumeDial->value();
     cfg.showNotifications = m_notifyCheck->isChecked();
     cfg.sysTrayEnabled = m_trayCheck->isChecked();
     cfg.quality = m_qualityCombo->currentData().toString();
@@ -388,6 +408,10 @@ void MainWindow::onChannelsReady(const QVector<Channel>& channels)
         auto* item = new QListWidgetItem(ch.title, m_stationList);
         item->setData(Qt::UserRole, ch.id);
         item->setToolTip(ch.desc);
+        if (m_artCache.contains(ch.image))
+            item->setIcon(QIcon(m_artCache[ch.image]));
+        else
+            requestStationIcon(ch);
     }
 
     refreshFavoritesList();
@@ -401,12 +425,35 @@ void MainWindow::onFetchError(const QString& message)
 void MainWindow::onImageReady(const QString& url, const QPixmap& pixmap)
 {
     m_artCache[url] = pixmap;
-    if (m_currentChannelId.isEmpty())
-        return;
-    const Channel* ch = channelById(m_currentChannelId);
-    if (ch && ch->largeImage == url) {
-        m_albumArtLabel->setPixmap(pixmap.scaled(m_albumArtLabel->size(),
-                                                  Qt::KeepAspectRatio, Qt::SmoothTransformation));
+
+    if (!m_currentChannelId.isEmpty()) {
+        const Channel* current = channelById(m_currentChannelId);
+        if (current && current->largeImage == url) {
+            m_albumArtLabel->setPixmap(pixmap.scaled(m_albumArtLabel->size(),
+                                                      Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        }
+    }
+
+    for (const auto& ch : m_channels) {
+        if (ch.image != url)
+            continue;
+        applyStationIcon(m_stationList, ch.id, pixmap);
+        applyStationIcon(m_favoritesList, ch.id, pixmap);
+    }
+}
+
+void MainWindow::requestStationIcon(const Channel& channel)
+{
+    if (!channel.image.isEmpty())
+        m_stations->fetchImage(channel.image);
+}
+
+void MainWindow::applyStationIcon(QListWidget* list, const QString& channelId, const QPixmap& pixmap)
+{
+    for (int i = 0; i < list->count(); ++i) {
+        QListWidgetItem* item = list->item(i);
+        if (item->data(Qt::UserRole).toString() == channelId)
+            item->setIcon(QIcon(pixmap));
     }
 }
 
@@ -417,6 +464,12 @@ void MainWindow::refreshFavoritesList()
         const Channel* ch = channelById(id);
         auto* item = new QListWidgetItem(ch ? ch->title : id, m_favoritesList);
         item->setData(Qt::UserRole, id);
+        if (ch) {
+            if (m_artCache.contains(ch->image))
+                item->setIcon(QIcon(m_artCache[ch->image]));
+            else
+                requestStationIcon(*ch);
+        }
     }
 }
 
@@ -440,7 +493,7 @@ void MainWindow::playChannel(const Channel& channel)
     m_player->fadeVolumeTo(0, 250);
     QString url = qualityUrlForChannel(channel, m_qualityCombo->currentData().toString());
     m_player->play(url);
-    m_player->fadeVolumeTo(m_volumeSlider->value(), 500);
+    m_player->fadeVolumeTo(m_volumeDial->value(), 500);
 }
 
 void MainWindow::onStationActivated(QListWidgetItem* item)
@@ -513,9 +566,10 @@ void MainWindow::onPlayRandomFavoriteClicked()
         playChannel(*ch);
 }
 
-void MainWindow::onVolumeSliderMoved(int value)
+void MainWindow::onVolumeDialMoved(int value)
 {
     m_player->setVolume(value);
+    m_volumeValueLabel->setText(QString("%1%").arg(value));
 }
 
 void MainWindow::onMediaTitleChanged(const QString& title)

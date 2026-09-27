@@ -20,6 +20,7 @@ class QListWidget;
 class QListWidgetItem;
 class QLabel;
 class QSlider;
+class QDial;
 class QToolButton;
 class QCheckBox;
 class QComboBox;
@@ -60,7 +61,7 @@ private slots:
     void onRemoveFavoriteClicked();
     void onPlayRandomFavoriteClicked();
 
-    void onVolumeSliderMoved(int value);
+    void onVolumeDialMoved(int value);
     void onMediaTitleChanged(const QString& title);
     void onPausedChanged(bool paused);
     void onMutedChanged(bool muted);
@@ -89,6 +90,8 @@ private:
     void showNotification(const QString& title, const QString& body);
     void applyConfigToUi();
     void saveUiToConfig();
+    void requestStationIcon(const Channel& channel);
+    void applyStationIcon(QListWidget* list, const QString& channelId, const QPixmap& pixmap);
 
     MpvPlayer* m_player;
     StationManager* m_stations;
@@ -109,7 +112,8 @@ private:
     QToolButton* m_pauseButton;
     QToolButton* m_stopButton;
     QToolButton* m_muteButton;
-    QSlider* m_volumeSlider;
+    QDial* m_volumeDial;
+    QLabel* m_volumeValueLabel;
 
     // Stations tab
     QListWidget* m_stationList;
