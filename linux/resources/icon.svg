@@ -1,14 +1,35 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#3d5afe"/>
-      <stop offset="1" stop-color="#1a237e"/>
-    </linearGradient>
-  </defs>
-  <rect x="2" y="2" width="60" height="60" rx="12" fill="url(#bg)"/>
-  <circle cx="24" cy="44" r="7" fill="#ffffff"/>
-  <circle cx="44" cy="40" r="7" fill="#ffffff"/>
-  <rect x="30" y="14" width="3" height="27" fill="#ffffff"/>
-  <rect x="50" y="10" width="3" height="31" fill="#ffffff"/>
-  <path d="M30 14 L53 10 L53 17 L30 21 Z" fill="#ffffff"/>
+<svg width="64" height="64" viewBox="0 0 6528 6528" xmlns="http://www.w3.org/2000/svg">
+<path id="shape_0" d="M 3264 1020 C 3264 1020 3060 1020 2448 1020 C 1836 1020 1836 3264 1224 3264 C 612 3264 408 3264 408 3264 " transform="matrix(1.333328 0.000000 0.000000 1.333328 544.00 544.00)" style="fill:none;stroke:#000000;stroke-width:816;stroke-linejoin:round;stroke-linecap:round" stroke-opacity="0.4" />
+<path id="shape_1" d="M 3264 3264 C 3264 3264 3060 3264 2448 3264 C 1836 3264 1836 1020 1224 1020 C 612 1020 408 1020 408 1020 " transform="matrix(1.333328 0.000000 0.000000 1.333328 544.00 544.00)" style="fill:none;stroke:#000000;stroke-width:816;stroke-linejoin:round;stroke-linecap:round" stroke-opacity="0.4" />
+<path id="shape_2" d="M 3264 204 C 3264 204 3264 1836 3264 1836 C 3264 1836 4080 1020 4080 1020 C 4080 1020 3264 204 3264 204 Z M 3264 2448 C 3264 2448 3264 4080 3264 4080 C 3264 4080 4080 3264 4080 3264 C 4080 3264 3264 2448 3264 2448 Z " transform="matrix(1.333328 0.000000 0.000000 1.333328 544.00 544.00)" style="fill:none;stroke:#000000;stroke-width:408;stroke-linejoin:round;stroke-linecap:butt" stroke-opacity="0.4" />
+<path id="shape_3" d="M 3264 204 C 3264 204 3264 1836 3264 1836 C 3264 1836 4080 1020 4080 1020 C 4080 1020 3264 204 3264 204 Z M 3264 2448 C 3264 2448 3264 4080 3264 4080 C 3264 4080 4080 3264 4080 3264 C 4080 3264 3264 2448 3264 2448 Z " transform="matrix(1.333328 0.000000 0.000000 1.333328 272.00 272.00)" style="fill:none;stroke:#000000;stroke-width:408;stroke-linejoin:round;stroke-linecap:butt" />
+<path id="shape_4" d="M 3264 3264 C 3264 3264 3060 3264 2448 3264 C 1836 3264 1836 1020 1224 1020 C 612 1020 408 1020 408 1020 " transform="matrix(1.333328 0.000000 0.000000 1.333328 272.00 272.00)" style="fill:none;stroke:#000000;stroke-width:816;stroke-linejoin:round;stroke-linecap:round" />
+<g>
+<defs>
+<linearGradient id="grad1" gradientUnits="userSpaceOnUse" gradientTransform="matrix(0.000000 0.296875 -1.000000 0.000000 6528.00 2142.00)" x1="-6528" x2="6528" y1="-6528" y2="-6528">
+<stop offset="0.00%" stop-color="#808080" />
+<stop offset="100.00%" stop-color="#282828" />
+</linearGradient>
+</defs>
+<path id="shape_5" d="M 3264 3264 C 3264 3264 3060 3264 2448 3264 C 1836 3264 1836 1020 1224 1020 C 612 1020 408 1020 408 1020 " transform="matrix(1.333328 0.000000 0.000000 1.333328 272.00 272.00)" style="fill:none;stroke:url(#grad1);stroke-width:408;stroke-linejoin:round;stroke-linecap:round" />
+</g>
+<path id="shape_6" d="M 3264 1020 C 3264 1020 3060 1020 2448 1020 C 1836 1020 1836 3264 1224 3264 C 612 3264 408 3264 408 3264 " transform="matrix(1.333328 0.000000 0.000000 1.333328 272.00 272.00)" style="fill:none;stroke:#000000;stroke-width:816;stroke-linejoin:round;stroke-linecap:round" />
+<g>
+<defs>
+<linearGradient id="grad2" gradientUnits="userSpaceOnUse" gradientTransform="matrix(0.000000 0.296875 -1.000000 0.000000 6528.00 2142.00)" x1="-6528" x2="6528" y1="-6528" y2="-6528">
+<stop offset="0.00%" stop-color="#808080" />
+<stop offset="100.00%" stop-color="#282828" />
+</linearGradient>
+</defs>
+<path id="shape_7" d="M 3264 1020 C 3264 1020 3060 1020 2448 1020 C 1836 1020 1836 3264 1224 3264 C 612 3264 408 3264 408 3264 " transform="matrix(1.333328 0.000000 0.000000 1.333328 272.00 272.00)" style="fill:none;stroke:url(#grad2);stroke-width:408;stroke-linejoin:round;stroke-linecap:round" />
+</g>
+<g>
+<defs>
+<linearGradient id="grad3" gradientUnits="userSpaceOnUse" gradientTransform="matrix(0.000000 0.296875 -1.000000 0.000000 6528.00 2142.00)" x1="-6528" x2="6528" y1="-6528" y2="-6528">
+<stop offset="0.00%" stop-color="#808080" />
+<stop offset="100.00%" stop-color="#282828" />
+</linearGradient>
+</defs>
+<path id="shape_8" d="M 3264 204 C 3264 204 3264 1836 3264 1836 C 3264 1836 4080 1020 4080 1020 C 4080 1020 3264 204 3264 204 Z M 3264 2448 C 3264 2448 3264 4080 3264 4080 C 3264 4080 4080 3264 4080 3264 C 4080 3264 3264 2448 3264 2448 Z " transform="matrix(1.333328 0.000000 0.000000 1.333328 272.00 272.00)" style="fill:url(#grad3);stroke:none" />
+</g>
 </svg>
