@@ -10,10 +10,18 @@
 #include <QByteArray>
 #include <cmath>
 #include <cstdlib>
+#include <clocale>
 
 MpvPlayer::MpvPlayer(QObject* parent)
     : QObject(parent)
 {
+    // QApplication calls setlocale(LC_ALL, "") on startup to match the
+    // system locale (for input methods, number formatting, etc.), which on
+    // any non-English locale leaves LC_NUMERIC using a decimal separator
+    // other than '.'. mpv parses/formats floats assuming the C locale and
+    // refuses to initialize otherwise, so it must be forced back here.
+    setlocale(LC_NUMERIC, "C");
+
     m_mpv = mpv_create();
     if (!m_mpv) {
         qFatal("Failed to create mpv instance");
