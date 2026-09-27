@@ -89,6 +89,8 @@ private:
     void showNotification(const QString& title, const QString& body);
     void applyConfigToUi();
     void saveUiToConfig();
+    void requestStationIcon(const Channel& channel);
+    void applyStationIcon(QListWidget* list, const QString& channelId, const QPixmap& pixmap);
 
     MpvPlayer* m_player;
     StationManager* m_stations;
