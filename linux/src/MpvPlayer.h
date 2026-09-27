@@ -40,6 +40,7 @@ signals:
     void pausedChanged(bool paused);
     void mutedChanged(bool muted);
     void volumeChanged(double volume);
+    void bitrateChanged(double kbps);
     void playbackStarted();
     void playbackStopped();
     void bounceLevel(double level); // 0..1 amplitude, for simple UI meters
