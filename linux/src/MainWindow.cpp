@@ -14,6 +14,7 @@
 #include <QListWidget>
 #include <QLabel>
 #include <QSlider>
+#include <QDial>
 #include <QToolButton>
 #include <QCheckBox>
 #include <QComboBox>
@@ -160,12 +161,22 @@ QWidget* MainWindow::buildPlayerTab()
     transport->addStretch();
     layout->addLayout(transport);
 
+    auto* volumeColumn = new QVBoxLayout();
+    volumeColumn->addWidget(new QLabel(tr("Volume"), page), 0, Qt::AlignHCenter);
+    m_volumeDial = new QDial(page);
+    m_volumeDial->setRange(0, 100);
+    m_volumeDial->setValue(75);
+    m_volumeDial->setNotchesVisible(true);
+    m_volumeDial->setFixedSize(80, 80);
+    volumeColumn->addWidget(m_volumeDial, 0, Qt::AlignHCenter);
+    m_volumeValueLabel = new QLabel("75%", page);
+    m_volumeValueLabel->setAlignment(Qt::AlignCenter);
+    volumeColumn->addWidget(m_volumeValueLabel);
+
     auto* volumeRow = new QHBoxLayout();
-    volumeRow->addWidget(new QLabel(tr("Volume"), page));
-    m_volumeSlider = new QSlider(Qt::Horizontal, page);
-    m_volumeSlider->setRange(0, 100);
-    m_volumeSlider->setValue(75);
-    volumeRow->addWidget(m_volumeSlider);
+    volumeRow->addStretch();
+    volumeRow->addLayout(volumeColumn);
+    volumeRow->addStretch();
     layout->addLayout(volumeRow);
 
     layout->addStretch();
@@ -174,7 +185,7 @@ QWidget* MainWindow::buildPlayerTab()
     connect(m_pauseButton, &QToolButton::clicked, this, &MainWindow::onPauseClicked);
     connect(m_stopButton, &QToolButton::clicked, this, &MainWindow::onStopClicked);
     connect(m_muteButton, &QToolButton::clicked, this, &MainWindow::onMuteClicked);
-    connect(m_volumeSlider, &QSlider::valueChanged, this, &MainWindow::onVolumeSliderMoved);
+    connect(m_volumeDial, &QDial::valueChanged, this, &MainWindow::onVolumeDialMoved);
 
     return page;
 }
@@ -348,7 +359,8 @@ void MainWindow::applyConfigToUi()
 {
     const AppConfig& cfg = m_configManager.config();
 
-    m_volumeSlider->setValue(static_cast<int>(cfg.currentVolume));
+    m_volumeDial->setValue(static_cast<int>(cfg.currentVolume));
+    m_volumeValueLabel->setText(QString("%1%").arg(static_cast<int>(cfg.currentVolume)));
     m_notifyCheck->setChecked(cfg.showNotifications);
     m_trayCheck->setChecked(cfg.sysTrayEnabled);
     m_qualityCombo->setCurrentIndex(m_qualityCombo->findData(cfg.quality));
@@ -368,7 +380,7 @@ void MainWindow::applyConfigToUi()
 void MainWindow::saveUiToConfig()
 {
     AppConfig& cfg = m_configManager.config();
-    cfg.currentVolume = m_volumeSlider->value();
+    cfg.currentVolume = m_volumeDial->value();
     cfg.showNotifications = m_notifyCheck->isChecked();
     cfg.sysTrayEnabled = m_trayCheck->isChecked();
     cfg.quality = m_qualityCombo->currentData().toString();
@@ -481,7 +493,7 @@ void MainWindow::playChannel(const Channel& channel)
     m_player->fadeVolumeTo(0, 250);
     QString url = qualityUrlForChannel(channel, m_qualityCombo->currentData().toString());
     m_player->play(url);
-    m_player->fadeVolumeTo(m_volumeSlider->value(), 500);
+    m_player->fadeVolumeTo(m_volumeDial->value(), 500);
 }
 
 void MainWindow::onStationActivated(QListWidgetItem* item)
@@ -554,9 +566,10 @@ void MainWindow::onPlayRandomFavoriteClicked()
         playChannel(*ch);
 }
 
-void MainWindow::onVolumeSliderMoved(int value)
+void MainWindow::onVolumeDialMoved(int value)
 {
     m_player->setVolume(value);
+    m_volumeValueLabel->setText(QString("%1%").arg(value));
 }
 
 void MainWindow::onMediaTitleChanged(const QString& title)
