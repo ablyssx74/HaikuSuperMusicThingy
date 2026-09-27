@@ -1,5 +1,5 @@
 /*
- * Copyright 2026, Kris Beazley supermusicthingy@epluribusunix.net
+ * Copyright 2026, ablyss supermusicthingy@epluribusunix.net
  * All rights reserved. Distributed under the terms of the MIT license.
  */
 #include "MainWindow.h"
@@ -307,7 +307,7 @@ QWidget* MainWindow::buildAboutTab()
         "<p>Playback: libmpv &middot; Networking: Qt Network &middot; UI: Qt Widgets</p>"
         "<p><a href=\"https://github.com/ablyssx74/HaikuSuperMusicThingy\">"
         "github.com/ablyssx74/HaikuSuperMusicThingy</a></p>"
-        "<p>Copyright 2026, Kris Beazley. Distributed under the MIT license.</p>"));
+        "<p>Copyright 2026, ablyss. Distributed under the MIT license.</p>"));
 
     layout->addStretch();
     layout->addWidget(label);
