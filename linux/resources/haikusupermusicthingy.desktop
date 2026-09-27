@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=HaikuSuperMusicThingy
+Comment=Streaming media client for SomaFM
+Exec=haikusupermusicthingy
+Icon=haikusupermusicthingy
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+StartupWMClass=haikusupermusicthingy

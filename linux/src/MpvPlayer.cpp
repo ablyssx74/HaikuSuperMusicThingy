@@ -1,0 +1,187 @@
+/*
+ * Copyright 2026, Kris Beazley supermusicthingy@epluribusunix.net
+ * All rights reserved. Distributed under the terms of the MIT license.
+ */
+#include "MpvPlayer.h"
+
+#include <mpv/client.h>
+
+#include <QMetaObject>
+#include <QByteArray>
+#include <cmath>
+#include <cstdlib>
+
+MpvPlayer::MpvPlayer(QObject* parent)
+    : QObject(parent)
+{
+    m_mpv = mpv_create();
+    if (!m_mpv) {
+        qFatal("Failed to create mpv instance");
+    }
+
+    // Let mpv auto-select the audio output (pipewire/pulse/alsa); Haiku's
+    // build forces "openal" since that's the only sane choice there.
+    mpv_set_option_string(m_mpv, "input-default-bindings", "yes");
+    mpv_set_option_string(m_mpv, "terminal", "no");
+    mpv_set_option_string(m_mpv, "vid", "no");
+    mpv_set_option_string(m_mpv, "video", "no");
+
+    if (mpv_initialize(m_mpv) < 0) {
+        qFatal("Failed to initialize mpv");
+    }
+
+    mpv_observe_property(m_mpv, 0, "media-title", MPV_FORMAT_STRING);
+    mpv_observe_property(m_mpv, 0, "pause", MPV_FORMAT_FLAG);
+    mpv_observe_property(m_mpv, 0, "mute", MPV_FORMAT_FLAG);
+    mpv_observe_property(m_mpv, 0, "volume", MPV_FORMAT_DOUBLE);
+    mpv_observe_property(m_mpv, 0, "af-metadata/bouncy", MPV_FORMAT_NODE);
+
+    mpv_set_wakeup_callback(m_mpv, &MpvPlayer::wakeupTrampoline, this);
+
+    setVolume(m_volume);
+
+    m_fadeTimer = new QTimer(this);
+    m_fadeTimer->setInterval(30);
+    connect(m_fadeTimer, &QTimer::timeout, this, &MpvPlayer::onFadeTick);
+}
+
+MpvPlayer::~MpvPlayer()
+{
+    if (m_mpv) {
+        mpv_set_wakeup_callback(m_mpv, nullptr, nullptr);
+        mpv_terminate_destroy(m_mpv);
+        m_mpv = nullptr;
+    }
+}
+
+void MpvPlayer::wakeupTrampoline(void* ctx)
+{
+    // Called from mpv's internal thread; queue the real handling onto the
+    // Qt main thread instead of touching mpv/Qt objects here.
+    auto* self = static_cast<MpvPlayer*>(ctx);
+    QMetaObject::invokeMethod(self, "processMpvEvents", Qt::QueuedConnection);
+}
+
+void MpvPlayer::processMpvEvents()
+{
+    while (m_mpv) {
+        mpv_event* event = mpv_wait_event(m_mpv, 0);
+        if (!event || event->event_id == MPV_EVENT_NONE)
+            break;
+        handleEvent(event);
+    }
+}
+
+void MpvPlayer::handleEvent(mpv_event* event)
+{
+    switch (event->event_id) {
+    case MPV_EVENT_PROPERTY_CHANGE: {
+        auto* prop = static_cast<mpv_event_property*>(event->data);
+        if (!prop->data)
+            break;
+        if (QLatin1String(prop->name) == "media-title" && prop->format == MPV_FORMAT_STRING) {
+            QString title = QString::fromUtf8(*static_cast<char**>(prop->data));
+            if (!title.startsWith("http"))
+                emit mediaTitleChanged(title);
+        } else if (QLatin1String(prop->name) == "pause" && prop->format == MPV_FORMAT_FLAG) {
+            m_paused = *static_cast<int*>(prop->data) != 0;
+            emit pausedChanged(m_paused);
+        } else if (QLatin1String(prop->name) == "mute" && prop->format == MPV_FORMAT_FLAG) {
+            m_muted = *static_cast<int*>(prop->data) != 0;
+            emit mutedChanged(m_muted);
+        } else if (QLatin1String(prop->name) == "volume" && prop->format == MPV_FORMAT_DOUBLE) {
+            m_volume = *static_cast<double*>(prop->data);
+            emit volumeChanged(m_volume);
+        }
+        break;
+    }
+    case MPV_EVENT_START_FILE:
+        emit playbackStarted();
+        break;
+    case MPV_EVENT_END_FILE:
+        emit playbackStopped();
+        break;
+    default:
+        break;
+    }
+}
+
+void MpvPlayer::play(const QString& url)
+{
+    if (!m_mpv)
+        return;
+    QByteArray urlBytes = url.toUtf8();
+    const char* cmd[] = { "loadfile", urlBytes.constData(), nullptr };
+    mpv_command(m_mpv, cmd);
+}
+
+void MpvPlayer::stop()
+{
+    if (!m_mpv)
+        return;
+    mpv_command_string(m_mpv, "stop");
+}
+
+void MpvPlayer::togglePause()
+{
+    setPaused(!m_paused);
+}
+
+void MpvPlayer::setPaused(bool paused)
+{
+    if (!m_mpv)
+        return;
+    int flag = paused ? 1 : 0;
+    mpv_set_property(m_mpv, "pause", MPV_FORMAT_FLAG, &flag);
+}
+
+void MpvPlayer::toggleMute()
+{
+    if (!m_mpv)
+        return;
+    mpv_command_string(m_mpv, "cycle mute");
+}
+
+void MpvPlayer::setVolume(double volume)
+{
+    if (!m_mpv)
+        return;
+    m_volume = volume;
+    mpv_set_property(m_mpv, "volume", MPV_FORMAT_DOUBLE, &volume);
+}
+
+void MpvPlayer::fadeVolumeTo(double target, int durationMs)
+{
+    if (!m_mpv)
+        return;
+    if (durationMs <= 0) {
+        setVolume(target);
+        return;
+    }
+    m_fadeStart = m_volume;
+    m_fadeTarget = target;
+    m_fadeDurationMs = durationMs;
+    m_fadeClock.restart();
+    m_fadeTimer->start();
+}
+
+void MpvPlayer::onFadeTick()
+{
+    double elapsed = m_fadeClock.elapsed();
+    if (elapsed >= m_fadeDurationMs) {
+        setVolume(m_fadeTarget);
+        m_fadeTimer->stop();
+        return;
+    }
+    double t = elapsed / static_cast<double>(m_fadeDurationMs);
+    double vol = m_fadeStart + (m_fadeTarget - m_fadeStart) * t;
+    setVolume(vol);
+}
+
+void MpvPlayer::setAudioFilterChain(const QString& af)
+{
+    if (!m_mpv)
+        return;
+    QByteArray bytes = af.toUtf8();
+    mpv_set_property_string(m_mpv, "af", bytes.constData());
+}
