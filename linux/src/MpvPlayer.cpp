@@ -8,6 +8,7 @@
 
 #include <QMetaObject>
 #include <QByteArray>
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <clocale>
@@ -104,6 +105,28 @@ void MpvPlayer::handleEvent(mpv_event* event)
         } else if (QLatin1String(prop->name) == "audio-bitrate" && prop->format == MPV_FORMAT_DOUBLE) {
             double bitsPerSecond = *static_cast<double*>(prop->data);
             emit bitrateChanged(bitsPerSecond / 1000.0);
+        } else if (QLatin1String(prop->name) == "af-metadata/bouncy" && prop->format == MPV_FORMAT_NODE) {
+            // The "bouncy" label is set on an astats filter in the af chain
+            // (see EqualizerWidget::buildFilterChain); its metadata comes
+            // back as a string-keyed map, one entry per ffmpeg astats key.
+            auto* node = static_cast<mpv_node*>(prop->data);
+            if (node->format == MPV_FORMAT_NODE_MAP && node->u.list) {
+                for (int i = 0; i < node->u.list->num; ++i) {
+                    if (QLatin1String(node->u.list->keys[i]) != "lavfi.astats.Overall.RMS_level")
+                        continue;
+                    mpv_node& value = node->u.list->values[i];
+                    if (value.format != MPV_FORMAT_STRING)
+                        break;
+                    bool ok = false;
+                    double rmsDb = QString::fromUtf8(value.u.string).toDouble(&ok);
+                    if (ok) {
+                        const double floorDb = -45.0;
+                        double clamped = std::clamp(rmsDb, floorDb, 0.0);
+                        emit bounceLevel((clamped - floorDb) / -floorDb);
+                    }
+                    break;
+                }
+            }
         }
         break;
     }

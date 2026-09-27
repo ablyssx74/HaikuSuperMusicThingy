@@ -6,6 +6,7 @@
 #include "MpvPlayer.h"
 #include "StationManager.h"
 #include "EqualizerWidget.h"
+#include "SpectrumWidget.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -56,6 +57,7 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_player, &MpvPlayer::pausedChanged, this, &MainWindow::onPausedChanged);
     connect(m_player, &MpvPlayer::mutedChanged, this, &MainWindow::onMutedChanged);
     connect(m_player, &MpvPlayer::bitrateChanged, this, &MainWindow::onBitrateChanged);
+    connect(m_player, &MpvPlayer::bounceLevel, m_spectrum, &SpectrumWidget::setLevel);
 
     connect(m_eqWidget, &EqualizerWidget::filterChainChanged, this, &MainWindow::onFilterChainChanged);
 
@@ -154,6 +156,11 @@ QWidget* MainWindow::buildPlayerTab()
     m_songLabel->setAlignment(Qt::AlignCenter);
     m_songLabel->setWordWrap(true);
     layout->addWidget(m_songLabel);
+
+    m_spectrum = new SpectrumWidget(page);
+    m_spectrum->setMinimumHeight(60);
+    m_spectrum->setMaximumHeight(80);
+    layout->addWidget(m_spectrum);
 
     auto* transport = new QHBoxLayout();
     QStyle* style = QApplication::style();
@@ -460,6 +467,7 @@ void MainWindow::onImageReady(const QString& url, const QPixmap& pixmap)
         if (current && current->largeImage == url) {
             m_albumArtLabel->setPixmap(pixmap.scaled(m_albumArtLabel->size(),
                                                       Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            m_spectrum->setPaletteFromImage(pixmap.toImage());
         }
     }
 
@@ -516,11 +524,14 @@ void MainWindow::playChannel(const Channel& channel)
     m_statsLabel->setText(m_currentListenersText);
 
     if (m_artCache.contains(channel.largeImage)) {
-        m_albumArtLabel->setPixmap(m_artCache[channel.largeImage].scaled(
+        const QPixmap& art = m_artCache[channel.largeImage];
+        m_albumArtLabel->setPixmap(art.scaled(
             m_albumArtLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        m_spectrum->setPaletteFromImage(art.toImage());
     } else {
         m_albumArtLabel->setPixmap(QPixmap());
         m_albumArtLabel->setText(tr("No Art"));
+        m_spectrum->resetToDefaultPalette();
         if (!channel.largeImage.isEmpty())
             m_stations->fetchImage(channel.largeImage);
     }

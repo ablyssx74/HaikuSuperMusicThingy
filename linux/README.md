@@ -30,10 +30,18 @@ Ported:
 - Config (persisted under `~/.config/SuperMusicThingy/`), notifications,
   system tray, sleep timer, auto-shuffle-stations timer
 - `.desktop` file + hicolor SVG icon for menu integration
+- The primary 64-bar spectrum (`SpectrumWidget`) from the Player tab's
+  `MODE_BARS` view: a single overall audio level (read from mpv's `astats`
+  filter metadata) driving 64 bars through the same per-bar frequency-scale
+  curves and spring physics as the Haiku build, colored from a palette
+  sampled directly off the current station's album art (falls back to the
+  Haiku build's default cyan-to-blue gradient when there's no art yet)
 
 Not yet ported (candidates for a follow-up pass):
 - The projectM visualizer window
-- The custom spectrum/bounce views and spectrum "games"
+- The other custom spectrum-game views (pong balls, raindrops, acid melt,
+  the moto rider and neon-sign animations, etc.) — only the primary bar
+  spectrum was ported
 - Deskbar-tray-specific code (irrelevant on Linux; replaced by
   `QSystemTrayIcon`, which uses the StatusNotifierItem protocol so it works
   under Plasma on both X11 and Wayland)
