@@ -145,8 +145,13 @@ void EqualizerWidget::saveToConfig(AppConfig& config) const
 
 QString EqualizerWidget::buildFilterChain() const
 {
+    // A labeled astats tap ("bouncy") feeds the spectrum visualizer's level
+    // meter via mpv's af-metadata property (see MpvPlayer::handleEvent). It
+    // stays in the chain even with the EQ off so the spectrum keeps working.
+    static const QString kLevelMeterTap = QStringLiteral("asetnsamples=n=1024,@bouncy:astats=metadata=1:reset=1");
+
     if (!m_enableCheck->isChecked())
-        return QString();
+        return kLevelMeterTap;
 
     QString chain;
     for (int i = 0; i < 15; ++i) {
@@ -162,10 +167,11 @@ QString EqualizerWidget::buildFilterChain() const
     inputGain = std::max(inputGain, 0.001);
     limit = std::max(limit, 0.001);
 
-    chain += QString("alimiter=level_in=%1:limit=%2:release=%3")
+    chain += QString("alimiter=level_in=%1:limit=%2:release=%3,")
                  .arg(inputGain, 0, 'f', 2)
                  .arg(limit, 0, 'f', 2)
                  .arg(m_limitReleaseSlider->value());
+    chain += kLevelMeterTap;
 
     return chain;
 }

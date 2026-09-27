@@ -28,6 +28,8 @@ add_executable(${APP_TARGET}
     src/FavoritesManager.cpp
     src/EqualizerWidget.h
     src/EqualizerWidget.cpp
+    src/SpectrumWidget.h
+    src/SpectrumWidget.cpp
     src/Channel.h
     resources/icons.qrc
 )

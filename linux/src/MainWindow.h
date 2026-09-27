@@ -16,6 +16,7 @@
 class MpvPlayer;
 class StationManager;
 class EqualizerWidget;
+class SpectrumWidget;
 class QListWidget;
 class QListWidgetItem;
 class QLabel;
@@ -31,8 +32,9 @@ class QTimer;
 
 // The Linux/Qt equivalent of SuperMusicWindow (haiku-supermusicthingy.h/.cpp).
 // Scope note: this first pass covers the core player - playback, stations,
-// favorites, equalizer, notifications and tray - it does not yet port the
-// projectM visualizer window or the custom spectrum-game views.
+// favorites, equalizer, notifications, tray and the primary bar spectrum
+// (SpectrumWidget) - it does not yet port the projectM visualizer window or
+// the other custom spectrum-game views (pong, raindrops, acid melt, etc).
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
@@ -120,6 +122,7 @@ private:
     QToolButton* m_muteButton;
     QDial* m_volumeDial;
     QLabel* m_volumeValueLabel;
+    SpectrumWidget* m_spectrum;
 
     // Stations tab
     QListWidget* m_stationList;
