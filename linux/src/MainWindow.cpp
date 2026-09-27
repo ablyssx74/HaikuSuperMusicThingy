@@ -43,7 +43,7 @@ MainWindow::MainWindow(QWidget* parent)
     , m_eqWidget(nullptr)
 {
     setWindowTitle(tr("HaikuSuperMusicThingy"));
-    resize(760, 560);
+    resize(480, 600);
 
     buildUi();
     buildTrayIcon();
@@ -55,6 +55,7 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_player, &MpvPlayer::mediaTitleChanged, this, &MainWindow::onMediaTitleChanged);
     connect(m_player, &MpvPlayer::pausedChanged, this, &MainWindow::onPausedChanged);
     connect(m_player, &MpvPlayer::mutedChanged, this, &MainWindow::onMutedChanged);
+    connect(m_player, &MpvPlayer::bitrateChanged, this, &MainWindow::onBitrateChanged);
 
     connect(m_eqWidget, &EqualizerWidget::filterChainChanged, this, &MainWindow::onFilterChainChanged);
 
@@ -118,12 +119,36 @@ QWidget* MainWindow::buildPlayerTab()
     nameFont.setPointSize(nameFont.pointSize() + 4);
     nameFont.setBold(true);
     m_stationNameLabel->setFont(nameFont);
-    layout->addWidget(m_stationNameLabel);
+
+    m_favoriteButton = new QToolButton(page);
+    m_favoriteButton->setCheckable(true);
+    m_favoriteButton->setText(QString::fromUtf8("\xE2\x99\xA5")); // heart glyph (U+2665)
+    m_favoriteButton->setToolTip(tr("Add/Remove Favorite"));
+    m_favoriteButton->setEnabled(false);
+    m_favoriteButton->setAutoRaise(true);
+    QFont heartFont = m_favoriteButton->font();
+    heartFont.setPointSize(heartFont.pointSize() + 4);
+    m_favoriteButton->setFont(heartFont);
+    m_favoriteButton->setStyleSheet("color: gray;");
+
+    auto* nameRow = new QHBoxLayout();
+    nameRow->addStretch();
+    nameRow->addWidget(m_stationNameLabel);
+    nameRow->addWidget(m_favoriteButton);
+    nameRow->addStretch();
+    layout->addLayout(nameRow);
 
     m_descLabel = new QLabel(page);
     m_descLabel->setAlignment(Qt::AlignCenter);
     m_descLabel->setWordWrap(true);
     layout->addWidget(m_descLabel);
+
+    m_statsLabel = new QLabel(page);
+    m_statsLabel->setAlignment(Qt::AlignCenter);
+    QFont statsFont = m_statsLabel->font();
+    statsFont.setPointSize(statsFont.pointSize() - 1);
+    m_statsLabel->setFont(statsFont);
+    layout->addWidget(m_statsLabel);
 
     m_songLabel = new QLabel(tr("Not Playing"), page);
     m_songLabel->setAlignment(Qt::AlignCenter);
@@ -186,6 +211,10 @@ QWidget* MainWindow::buildPlayerTab()
     connect(m_stopButton, &QToolButton::clicked, this, &MainWindow::onStopClicked);
     connect(m_muteButton, &QToolButton::clicked, this, &MainWindow::onMuteClicked);
     connect(m_volumeDial, &QDial::valueChanged, this, &MainWindow::onVolumeDialMoved);
+    connect(m_favoriteButton, &QToolButton::clicked, this, &MainWindow::onFavoriteButtonClicked);
+    connect(m_favoriteButton, &QToolButton::toggled, this, [this](bool checked) {
+        m_favoriteButton->setStyleSheet(checked ? "color: #e0405a;" : "color: gray;");
+    });
 
     return page;
 }
@@ -480,6 +509,12 @@ void MainWindow::playChannel(const Channel& channel)
     m_descLabel->setText(channel.desc);
     m_songLabel->setText(tr("Buffering..."));
 
+    m_favoriteButton->setEnabled(true);
+    m_favoriteButton->setChecked(m_favorites.isFavorite(channel.id));
+
+    m_currentListenersText = channel.listeners.isEmpty() ? QString() : tr("%1 listeners").arg(channel.listeners);
+    m_statsLabel->setText(m_currentListenersText);
+
     if (m_artCache.contains(channel.largeImage)) {
         m_albumArtLabel->setPixmap(m_artCache[channel.largeImage].scaled(
             m_albumArtLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
@@ -547,6 +582,7 @@ void MainWindow::onAddFavoriteClicked()
     if (m_currentChannelId.isEmpty())
         return;
     m_favorites.addFavorite(m_currentChannelId);
+    m_favoriteButton->setChecked(true);
     refreshFavoritesList();
 }
 
@@ -555,7 +591,10 @@ void MainWindow::onRemoveFavoriteClicked()
     QListWidgetItem* item = m_favoritesList->currentItem();
     if (!item)
         return;
-    m_favorites.removeFavorite(item->data(Qt::UserRole).toString());
+    QString id = item->data(Qt::UserRole).toString();
+    m_favorites.removeFavorite(id);
+    if (id == m_currentChannelId)
+        m_favoriteButton->setChecked(false);
     refreshFavoritesList();
 }
 
@@ -589,6 +628,27 @@ void MainWindow::onMutedChanged(bool muted)
 {
     QStyle* style = QApplication::style();
     m_muteButton->setIcon(style->standardIcon(muted ? QStyle::SP_MediaVolumeMuted : QStyle::SP_MediaVolume));
+}
+
+void MainWindow::onBitrateChanged(double kbps)
+{
+    QString bitrateText = tr("%1 kbps").arg(QString::number(kbps, 'f', 0));
+    m_statsLabel->setText(m_currentListenersText.isEmpty()
+                               ? bitrateText
+                               : QString("%1 · %2").arg(bitrateText, m_currentListenersText));
+}
+
+void MainWindow::onFavoriteButtonClicked(bool checked)
+{
+    if (m_currentChannelId.isEmpty()) {
+        m_favoriteButton->setChecked(false);
+        return;
+    }
+    if (checked)
+        m_favorites.addFavorite(m_currentChannelId);
+    else
+        m_favorites.removeFavorite(m_currentChannelId);
+    refreshFavoritesList();
 }
 
 void MainWindow::onFilterChainChanged(const QString& af)

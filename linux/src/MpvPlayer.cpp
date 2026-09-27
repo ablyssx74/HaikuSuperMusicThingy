@@ -42,6 +42,7 @@ MpvPlayer::MpvPlayer(QObject* parent)
     mpv_observe_property(m_mpv, 0, "pause", MPV_FORMAT_FLAG);
     mpv_observe_property(m_mpv, 0, "mute", MPV_FORMAT_FLAG);
     mpv_observe_property(m_mpv, 0, "volume", MPV_FORMAT_DOUBLE);
+    mpv_observe_property(m_mpv, 0, "audio-bitrate", MPV_FORMAT_DOUBLE);
     mpv_observe_property(m_mpv, 0, "af-metadata/bouncy", MPV_FORMAT_NODE);
 
     mpv_set_wakeup_callback(m_mpv, &MpvPlayer::wakeupTrampoline, this);
@@ -100,6 +101,9 @@ void MpvPlayer::handleEvent(mpv_event* event)
         } else if (QLatin1String(prop->name) == "volume" && prop->format == MPV_FORMAT_DOUBLE) {
             m_volume = *static_cast<double*>(prop->data);
             emit volumeChanged(m_volume);
+        } else if (QLatin1String(prop->name) == "audio-bitrate" && prop->format == MPV_FORMAT_DOUBLE) {
+            double bitsPerSecond = *static_cast<double*>(prop->data);
+            emit bitrateChanged(bitsPerSecond / 1000.0);
         }
         break;
     }

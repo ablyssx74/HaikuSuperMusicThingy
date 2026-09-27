@@ -65,6 +65,9 @@ private slots:
     void onMediaTitleChanged(const QString& title);
     void onPausedChanged(bool paused);
     void onMutedChanged(bool muted);
+    void onBitrateChanged(double kbps);
+
+    void onFavoriteButtonClicked(bool checked);
 
     void onFilterChainChanged(const QString& af);
 
@@ -102,11 +105,14 @@ private:
     QVector<Channel> m_channels;
     QMap<QString, QPixmap> m_artCache;
     QString m_currentChannelId;
+    QString m_currentListenersText;
 
     // Player tab
     QLabel* m_albumArtLabel;
     QLabel* m_stationNameLabel;
+    QToolButton* m_favoriteButton;
     QLabel* m_descLabel;
+    QLabel* m_statsLabel;
     QLabel* m_songLabel;
     QToolButton* m_playButton;
     QToolButton* m_pauseButton;
