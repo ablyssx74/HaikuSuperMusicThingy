@@ -1,4 +1,4 @@
-# Maintainer: Kris Beazley <supermusicthingy@epluribusunix.net>
+# Maintainer: ablyss <supermusicthingy@epluribusunix.net>
 #
 # Local development package: builds directly from the working tree you have
 # checked out (whatever is on disk, staged or not), so `makepkg -si` from
