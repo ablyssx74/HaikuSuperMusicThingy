@@ -107,6 +107,13 @@ void SpectrumWidget::onTick()
     const double dynamicTimePhase = nowMs / 35.0;
     const double visualizerHeightBoost = 1.5;
 
+    // Squaring compresses the response curve so ordinary program material
+    // (which sits well above silence but rarely near 0 dBFS) stays visually
+    // calm instead of pinning every bar to the top; only real peaks read
+    // tall. Matches the Haiku build's masterMagnitude calculation exactly.
+    const double masterSensitivityMultiplier = 0.87;
+    const double magnitude = m_smoothedLevel * m_smoothedLevel * masterSensitivityMultiplier;
+
     for (int i = 0; i < kBarCount; ++i) {
         double frequencyScale = 1.0;
         if (i < 12)
@@ -116,10 +123,10 @@ void SpectrumWidget::onTick()
 
         double fastHarmonicWave = std::sin(dynamicTimePhase + i * 0.45) * 0.08;
         double chaoticNoise = std::cos(dynamicTimePhase * 1.6 - i * 0.75) * 0.06;
-        double audioJitterMultiplier = 1.0 + (fastHarmonicWave + chaoticNoise) * (m_smoothedLevel * 1.5);
+        double audioJitterMultiplier = 1.0 + (fastHarmonicWave + chaoticNoise) * (magnitude * 1.5);
         double organicScale = (0.95 + 0.10 * std::sin(i * 0.25)) * audioJitterMultiplier;
 
-        double targetHeight = m_smoothedLevel * viewHeight * frequencyScale * organicScale * visualizerHeightBoost;
+        double targetHeight = magnitude * viewHeight * frequencyScale * organicScale * visualizerHeightBoost;
         targetHeight = std::min(targetHeight, viewHeight);
 
         double displacement = targetHeight - m_barHeights[i];
