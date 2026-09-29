@@ -132,6 +132,7 @@ private:
 
     // Config tab
     QCheckBox* m_notifyCheck;
+    QCheckBox* m_updateCheck;
     QCheckBox* m_trayCheck;
     QComboBox* m_qualityCombo;
     QCheckBox* m_shuffleFavsOnlyCheck;
