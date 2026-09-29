@@ -14,6 +14,7 @@ struct AppConfig {
     double currentVolume = 75.0;
     QString quality = "128k"; // Auto, 320k, 256k, 128k, 64k, 32k
     bool showNotifications = false;
+    bool showUpdateNotifications = true;
     bool sysTrayEnabled = true;
     bool autoShuffleStations = false;
     int shuffleStationsIntervalMinutes = 0; // 0 = disabled

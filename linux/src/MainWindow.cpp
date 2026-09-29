@@ -3,6 +3,7 @@
  * All rights reserved. Distributed under the terms of the MIT license.
  */
 #include "MainWindow.h"
+#include "UpdateChecker.h"
 #include "MpvPlayer.h"
 #include "StationManager.h"
 #include "EqualizerWidget.h"
@@ -76,6 +77,9 @@ MainWindow::MainWindow(QWidget* parent)
     onShuffleStationsTimerChanged(m_shuffleStationsCombo->currentIndex());
 
     m_stations->fetchChannels();
+
+    if (m_configManager.config().showUpdateNotifications)
+        (new UpdateChecker(this))->checkLater();
 }
 
 MainWindow::~MainWindow()
@@ -283,6 +287,9 @@ QWidget* MainWindow::buildConfigTab()
     m_notifyCheck = new QCheckBox(tr("Show song-change notifications"), page);
     layout->addRow(m_notifyCheck);
 
+    m_updateCheck = new QCheckBox(tr("Notify me when a new version is available"), page);
+    layout->addRow(m_updateCheck);
+
     m_trayCheck = new QCheckBox(tr("Enable system tray icon"), page);
     layout->addRow(m_trayCheck);
 
@@ -338,6 +345,7 @@ QWidget* MainWindow::buildAboutTab()
     label->setWordWrap(true);
     label->setText(tr(
         "<h2>HaikuSuperMusicThingy</h2>"
+        "<p>Version v" APP_VERSION " (Linux)</p>"
         "<p>A free streaming media client for <a href=\"https://somafm.com/\">SomaFM</a>.</p>"
         "<p>Linux port (Qt6 / libmpv) of the original Haiku OS application.</p>"
         "<p>Playback: libmpv &middot; Networking: Qt Network &middot; UI: Qt Widgets</p>"
@@ -398,6 +406,7 @@ void MainWindow::applyConfigToUi()
     m_volumeDial->setValue(static_cast<int>(cfg.currentVolume));
     m_volumeValueLabel->setText(QString("%1%").arg(static_cast<int>(cfg.currentVolume)));
     m_notifyCheck->setChecked(cfg.showNotifications);
+    m_updateCheck->setChecked(cfg.showUpdateNotifications);
     m_trayCheck->setChecked(cfg.sysTrayEnabled);
     m_qualityCombo->setCurrentIndex(m_qualityCombo->findData(cfg.quality));
     m_shuffleFavsOnlyCheck->setChecked(cfg.shuffleFavsOnly);
@@ -418,6 +427,7 @@ void MainWindow::saveUiToConfig()
     AppConfig& cfg = m_configManager.config();
     cfg.currentVolume = m_volumeDial->value();
     cfg.showNotifications = m_notifyCheck->isChecked();
+    cfg.showUpdateNotifications = m_updateCheck->isChecked();
     cfg.sysTrayEnabled = m_trayCheck->isChecked();
     cfg.quality = m_qualityCombo->currentData().toString();
     cfg.shuffleFavsOnly = m_shuffleFavsOnlyCheck->isChecked();

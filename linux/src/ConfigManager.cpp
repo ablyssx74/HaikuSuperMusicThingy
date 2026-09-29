@@ -28,6 +28,7 @@ void ConfigManager::load()
     m_config.currentVolume = s.value("currentVolume", m_config.currentVolume).toDouble();
     m_config.quality = s.value("quality", m_config.quality).toString();
     m_config.showNotifications = s.value("showNotifications", m_config.showNotifications).toBool();
+    m_config.showUpdateNotifications = s.value("showUpdateNotifications", m_config.showUpdateNotifications).toBool();
     m_config.sysTrayEnabled = s.value("sysTrayEnabled", m_config.sysTrayEnabled).toBool();
     m_config.autoShuffleStations = s.value("autoShuffleStations", m_config.autoShuffleStations).toBool();
     m_config.shuffleStationsIntervalMinutes = s.value("shuffleStationsIntervalMinutes", m_config.shuffleStationsIntervalMinutes).toInt();
@@ -50,6 +51,7 @@ void ConfigManager::save()
     s.setValue("currentVolume", m_config.currentVolume);
     s.setValue("quality", m_config.quality);
     s.setValue("showNotifications", m_config.showNotifications);
+    s.setValue("showUpdateNotifications", m_config.showUpdateNotifications);
     s.setValue("sysTrayEnabled", m_config.sysTrayEnabled);
     s.setValue("autoShuffleStations", m_config.autoShuffleStations);
     s.setValue("shuffleStationsIntervalMinutes", m_config.shuffleStationsIntervalMinutes);
