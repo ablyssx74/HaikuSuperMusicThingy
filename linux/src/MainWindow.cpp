@@ -391,7 +391,8 @@ void MainWindow::buildTrayIcon()
     });
 
     m_trayIcon = new QSystemTrayIcon(this);
-    m_trayIcon->setIcon(QApplication::style()->standardIcon(QStyle::SP_MediaVolume));
+    // (the program's own icon, not the style's speaker: the tray also has the system's volume icon, and the two looked alike)
+    m_trayIcon->setIcon(QIcon(":/icons/icon.svg"));
     m_trayIcon->setToolTip(tr("HaikuSuperMusicThingy"));
     m_trayIcon->setContextMenu(m_trayMenu);
     connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
