@@ -99,7 +99,11 @@
 
 
 namespace AppInfo {
-    static const char* const VERSION_STRING = "Version v1.0.12 (Haiku OS)";
+    // (the version comes from the VERSION file: the Makefile passes it in)
+#ifndef APP_LOCAL_VERSION
+#error "APP_LOCAL_VERSION is not set: build with the Makefile, which takes it from the VERSION file"
+#endif
+    static const char* const VERSION_STRING = "Version v" APP_LOCAL_VERSION " (Haiku OS)";
 }
 
 // Forward declaration signature for update worker thread

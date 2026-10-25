@@ -1,7 +1,12 @@
 # Optimized Haiku Build Script
 SHELL := /bin/bash
 NAME = HaikuSuperMusicThingy
-VERSION = 1.0.13
+# The one place a release changes is the VERSION file: the program (and its update check), the package and the
+# resource all take it from there.
+VERSION := $(shell sed -n 's/.*\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' VERSION | head -1)
+V_MAJOR := $(word 1,$(subst ., ,$(VERSION)))
+V_MIDDLE := $(word 2,$(subst ., ,$(VERSION)))
+V_MINOR := $(word 3,$(subst ., ,$(VERSION)))
 PACKAGE_DIR := build/package
 DUMMY_PC_PATH := $(shell pwd)/build/pkgconfig
 ENABLE_PROJECTM := ON
@@ -41,6 +46,7 @@ export PKG_CONFIG_PATH := $(DUMMY_PC_PATH):/boot/home/config/non-packaged/lib/pk
 # --- 3. Compiler & Linker Flags ---
 CXXFLAGS = -std=c++17 -O3 -Wall 
 DEFINES := $(DEFINES)
+DEFINES += -DAPP_LOCAL_VERSION=\"$(VERSION)\"
 INCLUDES = -I/boot/home/config/non-packaged/include -I/boot/system/develop/headers
 LIB_PATH = -L/boot/system/lib$(LIB_ARCH_DIR) -L/boot/system/develop/lib$(LIB_ARCH_DIR) -L/boot/home/config/non-packaged/lib$(LIB_ARCH_DIR)
 
@@ -125,7 +131,8 @@ ifeq ($(UNAME_M), BePC)
  endif
 endif
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
-	rc -o $(NAME).rsrc $(NAME).rdef  
+	sed -e 's/@V_MAJOR@/$(V_MAJOR)/' -e 's/@V_MIDDLE@/$(V_MIDDLE)/' -e 's/@V_MINOR@/$(V_MINOR)/' -e 's/@VERSION@/$(VERSION)/' $(NAME).rdef > $(NAME).version.rdef
+	rc -o $(NAME).rsrc $(NAME).version.rdef
 ifeq ($(UNAME_M), BePC)
 	$(MAKE) build_tray_lib
 	mkdir -p $(PACKAGE_DIR)/apps
@@ -139,7 +146,7 @@ endif
 	package create -C $(PACKAGE_DIR) $(NAME)-$(VERSION)-$(REVISION)-$(ARCH).hpkg
 
 clean:
-	rm -f $(NAME) *.rsrc *.hpkg
+	rm -f $(NAME) *.rsrc *.hpkg *.version.rdef
 	rm -rf build
 	
 #----------------------------------------------------------	
