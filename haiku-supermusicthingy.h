@@ -107,6 +107,7 @@ enum {
     MSG_TOGGLE_Spectrum  = 'tsmb',
     MSG_SHUFFLE_FAVS_CHANGED = 'sfch',
     MSG_HIDE_VISUALS_REQUEST = 'tvps',
+    MSG_VISUALS_FIRST_FRAME = 'tvff',
     MSG_VOL_CHANGED= 'bvci',
     MSG_MUTE_TOGGLED = 'mute',
     MSG_SHOW_TITLE = 'msct',

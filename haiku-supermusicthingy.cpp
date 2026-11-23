@@ -271,6 +271,16 @@ void save_config() {
     }
 }
 
+// Start-up guard for the visualizer. A crash while it starts (the OpenAL capture, the OpenGL context, projectM) used to leave
+// "showVisuals": true in config.txt, so the program crashed again at every start until the file was edited by hand. The file now
+// says false from before the visualizer starts until its first frame is on the screen; the value in memory is not changed.
+void save_config_visuals_as(bool value) {
+    bool inMemory = cfg.showVisuals;
+    cfg.showVisuals = value;
+    save_config();
+    cfg.showVisuals = inMemory;
+}
+
 
 void load_config() {
     BPath path;
@@ -6678,6 +6688,13 @@ int32 VisualsThread(void* data) {
         // --- Render and Swap ---
         projectm_opengl_render_frame(pm);
         SDL_GL_SwapWindow(visualWin);
+        {
+            static bool firstFrameReported = false;
+            if (!firstFrameReported) {
+                firstFrameReported = true;
+                if (gGuiWindow != nullptr) gGuiWindow->PostMessage(MSG_VISUALS_FIRST_FRAME);
+            }
+        }
 
         // --- Standard Event Polling ---
         SDL_Event e;
@@ -6818,6 +6835,7 @@ void SuperMusicWindow::StartVisuals() {
     #ifdef USE_PROJECTM
     if (!visualWin) {
         // First-time setup: allocate everything ONCE
+        if (cfg.showVisuals) save_config_visuals_as(false);   // the first frame puts true back (MSG_VISUALS_FIRST_FRAME)
         init_visuals(); 
         visualsRunning = true;
         fVisualsThreadID = spawn_thread(VisualsThread, "VisualsLoop", B_NORMAL_PRIORITY, NULL);
@@ -10278,6 +10296,12 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         
 //--------------------------------- Projectm   
 		
+		case MSG_VISUALS_FIRST_FRAME: {
+			// the visualizer has drawn a frame: config.txt may say true again (see save_config_visuals_as())
+			if (cfg.showVisuals) save_config();
+			break;
+		}
+
 		case MSG_HIDE_VISUALS_REQUEST: {
     		if (fVisualsCheckbox != nullptr && fVisualsCheckbox->Value() == B_CONTROL_ON) {
         		// 1. Uncheck the UI element visually
