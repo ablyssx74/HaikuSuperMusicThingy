@@ -1,0 +1,45 @@
+From 58ef6f22bddff6501a5d294c0ea9800be596e2a7 Mon Sep 17 00:00:00 2001
+From: test <test@example.invalid>
+Date: Mon, 23 Nov 2026 17:16:02 -0500
+Subject: [PATCH] haiku capture: ignore buffers until open() has set up the
+ ring buffer and the converters
+
+---
+ alc/backends/haiku.cpp | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/alc/backends/haiku.cpp b/alc/backends/haiku.cpp
+index 08ebf48..00012a3 100644
+--- a/alc/backends/haiku.cpp
++++ b/alc/backends/haiku.cpp
+@@ -209,6 +209,9 @@ struct HaikuCapture final : public BackendBase {
+ 	RingBufferPtr mRing{nullptr};
+ 	ChannelConverter mChannelConv{};
+ 	SampleConverterPtr mSampleConv;
++	// Set at the end of open(), when the ring buffer and the converters exist. The recorder is connected (and may call
++	// readCallback() from its own thread) before that, so the callback ignores buffers until then.
++	std::atomic<bool> mReady{false};
+ 
+ 	bool isRecording{false};
+ 
+@@ -236,6 +239,9 @@ HaikuCapture::~HaikuCapture()
+ 
+ void HaikuCapture::readCallback(void* data, size_t size, const media_format &format) noexcept
+ {
++	if(!mReady.load(std::memory_order_acquire))
++		return;
++
+ 	uint numsamples = static_cast<uint>(size) / format.AudioFrameSize();
+ 	void *rdata = data;
+ 
+@@ -396,6 +402,7 @@ void HaikuCapture::open(const char *name)
+ 	}
+ 
+ 	mDevice->DeviceName = name;
++	mReady.store(true, std::memory_order_release);
+ }
+ 
+ void HaikuCapture::start()
+-- 
+2.56.0
+

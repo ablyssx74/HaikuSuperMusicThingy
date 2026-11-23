@@ -75,6 +75,8 @@ ifeq ($(ENABLE_PROJECTM), ON)
     PKG_CONFIG_CMD = pkg-config
  endif
     EXTRA_LIBS += $(shell pkg-config --libs projectM-4)
+    # the fixed OpenAL of lib/openal, installed in its own folder (see lib/openal/README.md)
+    EXTRA_LIBS += -Wl,-rpath,/boot/system/lib/$(shell echo $(NAME) | tr A-Z a-z)
     CXXFLAGS += $(shell pkg-config --cflags projectM-4)
 endif
 
@@ -128,6 +130,10 @@ ifeq ($(UNAME_M), BePC)
  else
 	mkdir -p $(PACKAGE_DIR)/lib
 	cp lib/lib* $(PACKAGE_DIR)/lib
+	mkdir -p $(PACKAGE_DIR)/lib/$(shell echo $(NAME) | tr A-Z a-z)
+	cp -a lib/openal/lib* $(PACKAGE_DIR)/lib/$(shell echo $(NAME) | tr A-Z a-z)/
+	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/openal
+	cp lib/openal/README.md lib/openal/COPYING lib/openal/*.patch lib/openal/*.patchset $(PACKAGE_DIR)/data/$(NAME)/openal/
  endif
 endif
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications

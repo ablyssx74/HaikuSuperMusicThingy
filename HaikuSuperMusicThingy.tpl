@@ -7,6 +7,7 @@ packager		"ablyss <supermusicthingy@epluribusunix.net>"
 vendor			"Haiku Project"
 licenses {
 	"MIT"
+	"GNU LGPL v2"
 }
 copyrights {
 	"$(YEAR) ablyss"
