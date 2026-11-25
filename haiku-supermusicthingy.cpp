@@ -29,6 +29,9 @@
 #include <PopUpMenu.h>
 #include <Region.h>
 #include <Screen.h>
+#include <MediaRoster.h>
+#include <MediaNode.h>
+#include <ParameterWeb.h>
 #include <Shape.h>
 #include <Slider.h>
 #include <StringList.h>
@@ -214,6 +217,7 @@ struct Config {
     bool autoShuffleVisuals = false;
     bool showSpectrumVisuals = true;
     bool autoVsync = false;
+    bool autoLoopbackInput = false;
     bool ladspaEnabled = false;
     bool shuffleFavsOnly = false;
     bool compactMode = false;
@@ -249,6 +253,7 @@ void save_config() {
     j["showSpectrumVisuals"] = cfg.showSpectrumVisuals;
     j["shuffleFavsOnly"] = cfg.shuffleFavsOnly;
     j["autoVsync"] = cfg.autoVsync;
+    j["autoLoopbackInput"] = cfg.autoLoopbackInput;
     j["showVisuals"] = cfg.showVisuals;
     j["eqEnabled"] = cfg.eqEnabled;
     json eqArray = json::array();
@@ -304,6 +309,7 @@ void load_config() {
 #endif
     cfg.autoShuffleVisuals = false;
     cfg.autoVsync = false;
+    cfg.autoLoopbackInput = false;
     cfg.ladspaEnabled = false;
     cfg.showVisuals = false;   
     cfg.showSpectrumVisuals = true;   
@@ -346,6 +352,7 @@ void load_config() {
                 #endif
                 cfg.autoShuffleVisuals = j.value("autoShuffleVisuals", false);
                 cfg.autoVsync = j.value("autoVsync", false);
+                cfg.autoLoopbackInput = j.value("autoLoopbackInput", false);
                 cfg.ladspaEnabled = j.value("ladspaEnabled", false);
                 cfg.showVisuals = j.value("showVisuals", false);   
                 cfg.showSpectrumVisuals = j.value("showSpectrumVisuals", true);   
@@ -6567,6 +6574,44 @@ void load_random_preset(projectm_handle pm) {
 
 
 #ifdef USE_PROJECTM
+// The visuals are fed from the default audio input. Make "Input 1" of the sound
+// card's input node listen to the front speaker output (what Media Preferences
+// calls Input 1 = "Front"), so the visuals follow the music without the user
+// setting it by hand. Returns true when the input is (now) the loopback.
+static bool SelectLoopbackInput()
+{
+    BMediaRoster* roster = BMediaRoster::Roster();
+    if (roster == nullptr) return false;
+    media_node node;
+    if (roster->GetAudioInput(&node) != B_OK) return false;
+    BParameterWeb* web = nullptr;
+    if (roster->GetParameterWebFor(node, &web) != B_OK || web == nullptr) return false;
+
+    bool ok = false;
+    for (int32 i = 0; i < web->CountParameters() && !ok; i++) {
+        BParameter* p = web->ParameterAt(i);
+        if (p->Type() != BParameter::B_DISCRETE_PARAMETER || strcmp(p->Kind(), B_INPUT_MUX) != 0)
+            continue;
+        BDiscreteParameter* dp = static_cast<BDiscreteParameter*>(p);
+        int32 want = -1;
+        for (int32 k = 0; k < dp->CountItems(); k++) {
+            if (strcmp(dp->ItemNameAt(k), "Front") == 0) { want = dp->ItemValueAt(k); break; }
+        }
+        if (want < 0) continue;
+        int32 cur = 0; size_t sz = sizeof(cur); bigtime_t t = 0;
+        if (dp->GetValue(&cur, &sz, &t) == B_OK && cur == want) { ok = true; break; }
+        dp->SetValue(&want, sizeof(want), 0);
+        sz = sizeof(cur);
+        ok = (dp->GetValue(&cur, &sz, &t) == B_OK && cur == want);
+        if (cfg.debugEnable) fprintf(stderr, "[LOOPBACK] input set to Front: %s\n", ok ? "ok" : "failed");
+        break;   // only Input 1 (the first input selector)
+    }
+    delete web;
+    return ok;
+}
+#endif
+
+#ifdef USE_PROJECTM
 void init_visuals() {
     if (visualWin) return;
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {           
@@ -6586,16 +6631,13 @@ void init_visuals() {
         glContext = SDL_GL_CreateContext(visualWin);
         SDL_GL_MakeCurrent(visualWin, NULL); 
 
-        if (cfg.autoVsync) {
-         if (SDL_GL_SetSwapInterval(-1) < 0) {
-            SDL_GL_SetSwapInterval(1);
-         }
-        }
-
-        // Disable VSync for better responsiveness on Haiku
-        SDL_GL_SetSwapInterval(0);        
+        // SDL cannot sync swaps on Haiku, so the swap interval stays off. When the
+        // user turned V-sync on and the display driver has a vertical retrace, the
+        // render loop waits for it (BScreen::WaitForRetrace) instead.
+        SDL_GL_SetSwapInterval(0);
         
 
+        if (cfg.autoLoopbackInput) SelectLoopbackInput();
         alcCaptureDevice = alcCaptureOpenDevice(NULL, 48000, AL_FORMAT_STEREO16, 8192);
         if (!alcCaptureDevice) {
             alcCaptureDevice = alcCaptureOpenDevice("null", 48000, AL_FORMAT_STEREO16, 8192);
@@ -6633,6 +6675,8 @@ int32 VisualsThread(void* data) {
     }
 
     // 3. RENDER LOOP
+    BScreen* vsyncScreen = nullptr;
+    int vsyncState = 0;   // 0 = not checked yet, 1 = retrace available, -1 = none
     while (visualsRunning && pm) { 
         
         // --- THE HIBERNATION HOOK ---
@@ -6688,6 +6732,18 @@ int32 VisualsThread(void* data) {
         // --- Render and Swap ---
         projectm_opengl_render_frame(pm);
         SDL_GL_SwapWindow(visualWin);
+        if (cfg.autoVsync && vsyncState != -1) {
+            if (!vsyncScreen) vsyncScreen = new BScreen();
+            if (vsyncState == 0) {
+                // first use: is there a vertical retrace from the driver?
+                vsyncState = (vsyncScreen->IsValid()
+                    && vsyncScreen->WaitForRetrace(100000) == B_OK) ? 1 : -1;
+            } else {
+                vsyncScreen->WaitForRetrace(0);           // use up a stale count
+                status_t r = vsyncScreen->WaitForRetrace(40000);
+                if (r != B_OK && r != B_TIMED_OUT) vsyncState = -1;
+            }
+        }
         {
             static bool firstFrameReported = false;
             if (!firstFrameReported) {
@@ -6777,8 +6833,10 @@ int32 VisualsThread(void* data) {
         }
 
         
-        snooze(16000); 
+        // v-sync already paces the frame; otherwise cap at about 60 fps
+        if (!(cfg.autoVsync && vsyncState == 1)) snooze(16000);
     }
+    delete vsyncScreen;
 
     if (visualWin) {
         SDL_GL_MakeCurrent(visualWin, NULL);
@@ -7804,7 +7862,7 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     fChkTheme = new BCheckBox("chk_theme", "Dark Theme", new BMessage(MSG_CFG_THEME));
     fChkTheme->SetValue(cfg.uTheme == "Dark" ? B_CONTROL_ON : B_CONTROL_OFF);    
    
-    fShowUpdateCheck = new BCheckBox("chk_ShowUpdateCheck", "Enable Updates Available Desktop Alerts", new BMessage(MSG_TOGGLE_SHOW_UPDATES));
+    fShowUpdateCheck = new BCheckBox("chk_ShowUpdateCheck", "Check for Updates", new BMessage(MSG_TOGGLE_SHOW_UPDATES));
     fShowUpdateCheck->SetValue(cfg.showUpdateNotifications ? B_CONTROL_ON : B_CONTROL_OFF);
 
     
@@ -7842,6 +7900,10 @@ BLayoutBuilder::Group<>(fPlayerGroup, B_VERTICAL, 5)
     
     fChkPresetTimer = new BCheckBox("chk_PresetTimer", "Auto Shuffle Visual Presets 30/s", new BMessage(MSG_CFG_AUTO_PresetTimer));
     fChkPresetTimer->SetValue(cfg.autoShuffleVisuals ? B_CONTROL_ON : B_CONTROL_OFF);
+    fChkVsync = new BCheckBox("chk_Vsync", "V-sync (needs a display driver with v-sync)", new BMessage(MSG_CFG_VSYNC));
+    fChkVsync->SetValue(cfg.autoVsync ? B_CONTROL_ON : B_CONTROL_OFF);
+    fChkLoopback = new BCheckBox("chk_Loopback", "Visuals follow the music (set the input to the speakers)", new BMessage(MSG_CFG_LOOPBACK));
+    fChkLoopback->SetValue(cfg.autoLoopbackInput ? B_CONTROL_ON : B_CONTROL_OFF);
 
 
  
@@ -7963,43 +8025,48 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
         .AddGlue() 
     .End()    
     .AddStrut(10) 
-    .AddGroup(B_HORIZONTAL, 0) 
-        .AddGroup(B_VERTICAL, 5) 
+    .AddGroup(B_HORIZONTAL, 10) 
+        .AddGroup(B_VERTICAL, 2) 
             .Add(fQualityLabel)    
             .Add(fQualityField)    
-            .AddStrut(5)
+        .End()
+        .AddGroup(B_VERTICAL, 2) 
             .Add(fSleepLabel)
             .Add(fSleepField)
-            .AddStrut(5)
+        .End()
+        .AddGroup(B_VERTICAL, 2) 
             .Add(fShuffleStationsLabel)
             .Add(fShuffleStationsField)
-            .AddStrut(5)
         .End()
- 
         .AddGlue() 
     .End()    
+    .AddStrut(5)
     .AddGroup(B_HORIZONTAL, 5)    
         .Add(fChkNotify)
         .Add(fSizeContainer)    	
         .AddGlue()
     .End()  	    
-    .Add(fChkShuffle)
-    .Add(fShuffleFavsCheckbox)
-    .Add(fCompactModeConfig)
-    .Add(fChkSong)
-    .Add(fChkTitle)
-    .Add(fChkTheme)
-    .Add(fShowUpdateCheck)
-    .Add(fChkDebug)  
-    .Add(fChkSysTray)
-   	.Add(fEQToggle)
-   	.Add(fEnableladspa)  
-   	.Add(fEnableSpectrum)
+    .AddGrid(10, 0)
+        .Add(fChkShuffle, 0, 0)
+        .Add(fShuffleFavsCheckbox, 1, 0)
+        .Add(fCompactModeConfig, 0, 1)
+        .Add(fChkSong, 1, 1)
+        .Add(fChkTitle, 0, 2)
+        .Add(fChkTheme, 1, 2)
+        .Add(fShowUpdateCheck, 0, 3)
+        .Add(fChkDebug, 1, 3)
+        .Add(fChkSysTray, 0, 4)
+        .Add(fEnableladspa, 1, 4)
+        .Add(fEQToggle, 0, 5)
+        .Add(fEnableSpectrum, 1, 5)
+    .End()
    	.Add(fEQContainer)
      #ifdef USE_PROJECTM
     .AddStrut(5)
     .Add(fVisualsCheckbox)
     .Add(fChkPresetTimer)
+    .Add(fChkVsync)
+    .Add(fChkLoopback)
     .Add(fPresetToggle)    
     .Add(fPresetScroll)       
      #endif
@@ -8019,12 +8086,16 @@ BLayoutBuilder::Group<>(fConfigGroup, B_VERTICAL, 0)
     if (!hasMesaDriver) {
     	if (fVisualsCheckbox)  fVisualsCheckbox->Hide();
         if (fChkPresetTimer)   fChkPresetTimer->Hide();
+        if (fChkVsync)         fChkVsync->Hide();
+         fChkLoopback->Hide();
+        if (fChkLoopback)      fChkLoopback->Hide();
         if (fPresetToggle)     fPresetToggle->Hide();
         if (fPresetScroll)     fPresetScroll->Hide();   
     }
     if (!cfg.showVisuals) {    	
          fPresetToggle->Hide(); 
          fChkPresetTimer->Hide(); 
+         fChkVsync->Hide();
     } else {
 
         StartVisuals();
@@ -9857,6 +9928,23 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
     	}        
 
     	
+    	case MSG_CFG_LOOPBACK: {
+        	if (fChkLoopback) {
+            	cfg.autoLoopbackInput = (fChkLoopback->Value() == B_CONTROL_ON);
+            	save_config();
+            	if (cfg.autoLoopbackInput) SelectLoopbackInput();
+        	}
+        	break;
+    	}
+
+    	case MSG_CFG_VSYNC: {
+        	if (fChkVsync) {
+            	cfg.autoVsync = (fChkVsync->Value() == B_CONTROL_ON);
+            	save_config();
+        	}
+        	break;
+    	}
+
     	case MSG_CFG_AUTO_PresetTimer: {
         BCheckBox* chk = dynamic_cast<BCheckBox*>(FindView("chk_PresetTimer"));
         	if (chk) {
@@ -9897,6 +9985,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
 				if (fEnableladspa) fEnableladspa->Show();
     			if (fVisualsCheckbox) fVisualsCheckbox->Show(); 
     	 		if (fChkPresetTimer)  fChkPresetTimer->Show(); 
+    	 		if (fChkVsync)  fChkVsync->Show(); 
+    	 		if (fChkLoopback)  fChkLoopback->Show(); 
     	 		if (fPresetToggle) fPresetToggle->Show();
  	
             } else {      
@@ -10264,7 +10354,9 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         case MSG_TOGGLE_VISUALS: {
             bool currentVisualsState = (fVisualsCheckbox->Value() == B_CONTROL_ON);            
             if (currentVisualsState) {
-                if (fChkPresetTimer) fChkPresetTimer->Show();          
+                if (fChkPresetTimer) fChkPresetTimer->Show();
+                if (fChkVsync) fChkVsync->Show();
+                if (fChkLoopback) fChkLoopback->Show();          
                 if (fPresetToggle) fPresetToggle->Show();
                
                 cfg.showVisuals = true;
@@ -10277,6 +10369,8 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
         				fPresetToggle->Invoke(); 
     				}    	
                 if (fChkPresetTimer) fChkPresetTimer->Hide();
+                if (fChkVsync) fChkVsync->Hide();
+                if (fChkLoopback) fChkLoopback->Hide();
                 if (fPresetToggle) fPresetToggle->Hide();               
                 cfg.showVisuals = false;
                 save_config();

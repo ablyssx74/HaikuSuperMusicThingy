@@ -81,6 +81,8 @@ enum {
     MSG_CFG_ICON_SIZE = 'i_sz',
     MSG_TOGGLE_PRESETS = 'e_cv',
     MSG_CFG_AUTO_PresetTimer = 'c_pt',
+    MSG_CFG_VSYNC = 'c_vs',
+    MSG_CFG_LOOPBACK = 'c_lb',
     MSG_CFG_NOTIFY       = 'c_nt',
     MSG_CFG_QUALITY      = 'c_qu',
     MSG_CFG_THEME        = 'c_th',
@@ -228,6 +230,8 @@ private:
     BCheckBox* fChkSong;
     BCheckBox* fChkTitle;
     BCheckBox* fChkPresetTimer;
+    BCheckBox* fChkVsync;
+    BCheckBox* fChkLoopback;
     
 	BMenuField* fPresetField; 
     BTabView*     fTabView;
