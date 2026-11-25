@@ -6573,7 +6573,6 @@ void load_random_preset(projectm_handle pm) {
 #endif
 
 
-#ifdef USE_PROJECTM
 // The visuals are fed from the default audio input. Make "Input 1" of the sound
 // card's input node listen to the front speaker output (what Media Preferences
 // calls Input 1 = "Front"), so the visuals follow the music without the user
@@ -6609,7 +6608,6 @@ static bool SelectLoopbackInput()
     delete web;
     return ok;
 }
-#endif
 
 #ifdef USE_PROJECTM
 void init_visuals() {
