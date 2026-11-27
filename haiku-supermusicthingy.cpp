@@ -7047,6 +7047,30 @@ private:
     BBitmap* fBitmap;
 };
 
+// What the tray icon says when the pointer rests on it: the song, and the station under it.
+BString SuperMusicWindow::NowPlayingText() {
+    int idle = 0, paused = 0;
+    if (mpv) {
+        mpv_get_property(mpv, "idle-active", MPV_FORMAT_FLAG, &idle);
+        mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &paused);
+    }
+    if (!mpv || idle)
+        return BString("Nothing playing");
+
+    // the label shows what the player shows ("Buffering...", for one); paused, it only says so, so the song is named instead
+    BString song(paused ? currentSong.c_str() : (fSongView ? fSongView->Text() : currentSong.c_str()));
+    if (song.IsEmpty() || song == "None")
+        song = "Streaming...";
+
+    BString text;
+    if (paused)
+        text << "Paused: ";
+    text << song;
+    if (!currentStation.empty() && song != currentStation.c_str())
+        text << "\n" << currentStation.c_str();
+    return text;
+}
+
 void SuperMusicWindow::UpdateStatus(const char* station, const char* song) {
     if (!Lock()) return;
 
@@ -10163,6 +10187,14 @@ void SuperMusicWindow::MessageReceived(BMessage* message)
             mpv_command_string(mpv, "stop");
             if (fSongView) fSongView->SetText("Stopped");
             break;
+
+        case MSG_NOW_PLAYING_ASK: {
+            BMessage answer(MSG_NOW_PLAYING);
+            answer.AddString("text", NowPlayingText().String());
+            // (the Deskbar is on the other end: never wait for it)
+            message->SendReply(&answer, (BHandler*)NULL, 0);
+            break;
+        }
             
             
             
@@ -10989,25 +11021,39 @@ void SuperMusicWindow::ApplyPreset(const float* values) {
     UpdateMPVFilters();
 }
 
+static const uint32 kTipTick = 'tpTk';
+
 class MyIcon : public BView {
 public:
     MyIcon(BRect frame) 
         : BView(frame, "SuperMusicTrayIcon", B_FOLLOW_NONE, B_WILL_DRAW | B_FRAME_EVENTS | B_FULL_UPDATE_ON_RESIZE) {
         fIcon = NULL;
+        fTipRunner = NULL;
         _LoadIcon();
     }
 
     MyIcon(BMessage* archive) : BView(archive) {
         fIcon = NULL;
+        fTipRunner = NULL;
         _LoadIcon();
     }
 
-    virtual ~MyIcon() { delete fIcon; }
+    virtual ~MyIcon() { delete fTipRunner; delete fIcon; }
     static _EXPORT BArchivable* Instantiate(BMessage* archive);
 
     virtual void AttachedToWindow() {
         BView::AttachedToWindow();
         _UpdateBackgroundColor();
+        SetToolTip("SuperMusicThingy");
+        BMessage tick(kTipTick);
+        fTipRunner = new BMessageRunner(BMessenger(this), &tick, 2000000);
+        _AskNowPlaying();
+    }
+
+    virtual void DetachedFromWindow() {
+        delete fTipRunner;
+        fTipRunner = NULL;
+        BView::DetachedFromWindow();
     }
 
 
@@ -11037,6 +11083,15 @@ public:
 
 		virtual void MessageReceived(BMessage* message) {
     		switch (message->what) {
+        		case kTipTick:
+            		_AskNowPlaying();
+            		break;
+        		case MSG_NOW_PLAYING: {
+            		const char* text = NULL;
+            		if (message->FindString("text", &text) == B_OK)
+                		_SetTip(text);
+            		break;
+        		}
         		case B_COLORS_UPDATED:
             		_UpdateBackgroundColor();
             		_LoadIcon(); 
@@ -11160,6 +11215,27 @@ virtual void MouseDown(BPoint point) {
 
 
 private:
+    // What is playing, for the tool tip: asked of the program every two seconds, answered when it can.
+    void _AskNowPlaying() {
+        BMessenger app("application/x-vnd.HaikuSuperMusicThingy");
+        if (!app.IsValid()) {
+            _SetTip("SuperMusicThingy");
+            return;
+        }
+        BMessage ask(MSG_NOW_PLAYING_ASK);
+        app.SendMessage(&ask, this, 0);     // (never waits: this is the Deskbar's thread)
+    }
+
+    void _SetTip(const char* text) {
+        if (fTip != text) {
+            fTip = text;
+            SetToolTip(text);
+        }
+    }
+
+    BMessageRunner* fTipRunner;
+    BString fTip;
+
     void _UpdateBackgroundColor() {
         if (Parent()) {
             SetViewColor(Parent()->ViewColor());
@@ -11255,6 +11331,13 @@ extern "C" _EXPORT BArchivable* instantiate_tray_icon(BMessage* data) {
 
 void SuperMusicApp::MessageReceived(BMessage* message) { 
     switch (message->what) {
+        case MSG_NOW_PLAYING_ASK: {
+            BWindow* win = WindowAt(0);
+            if (win) {
+                BMessenger(win).SendMessage(message, message->ReturnAddress(), 0);
+            }
+            break;
+        }
         case MSG_ACTIVATE_APP:
         case MSG_SHUFFLE:
         case MSG_PAUSE:

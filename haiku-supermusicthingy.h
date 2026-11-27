@@ -100,6 +100,9 @@ enum {
 	MSG_CFG_SYS_TRAY = 'stry',	
 	MSG_VOL_STEP_REQUEST = 'sdlv',
 	MSG_ACTIVATE_APP = 'atry',
+	// the tray icon's tool tip: it asks what is playing, and is answered with "text"
+	MSG_NOW_PLAYING_ASK = 'npAs',
+	MSG_NOW_PLAYING = 'npTx',
 	MSG_OPEN_SETTINGS = 'mtse',
 	MSG_COMPACTM_CHANGED = 'cmod',
 	MSG_SLEEP_TIMER_TICK = 'slpt',
@@ -248,6 +251,7 @@ private:
     BStringView*  fListenersView;
     BStringView*  fquality; 
     BTextView*    fSongView;
+    BString       NowPlayingText();
     BControl* 	  fVolumeSlider; 
     BButton*      fShuffleBtn;
     BButton* 	  fApplyEQBtn;

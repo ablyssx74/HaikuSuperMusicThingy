@@ -20,16 +20,23 @@
 #include <storage/NodeInfo.h>
 #include <support/Archivable.h>
 #include <Message.h>
+#include <MessageRunner.h>
+#include <Messenger.h>
+#include <String.h>
 
 enum {
     kMsgActivateApp = 'atry',
     kMsgShuffle     = 'shuf',
     kMsgPause       = 'paus',
-    kMsgStop        = 'stop'
+    kMsgStop        = 'stop',
+    kMsgNowPlayingAsk = 'npAs',
+    kMsgNowPlaying  = 'npTx'
 };
 
 static const char* kMainAppSignature = "application/x-vnd.HaikuSuperMusicThingy";
 static const char* kMySignature      = "application/x-vnd.SuperMusicTrayIconLibrary";
+
+static const uint32 kTipTick = 'tpTk';
 
 class MyIcon : public BView {
 public:
@@ -37,21 +44,33 @@ public:
         : BView(frame, "SuperMusicTrayIcon", B_FOLLOW_NONE, 
                 B_WILL_DRAW | B_FRAME_EVENTS | B_FULL_UPDATE_ON_RESIZE) {
         fIcon = NULL;
+        fTipRunner = NULL;
         _LoadIcon();
     }
 
     MyIcon(BMessage* archive) : BView(archive) {
         fIcon = NULL;
+        fTipRunner = NULL;
         _LoadIcon();
     }
 
-    virtual ~MyIcon() { delete fIcon; }
+    virtual ~MyIcon() { delete fTipRunner; delete fIcon; }
 
     static _EXPORT BArchivable* Instantiate(BMessage* archive);
 
     virtual void AttachedToWindow() {
         BView::AttachedToWindow();
         _UpdateBackgroundColor();
+        SetToolTip("SuperMusicThingy");
+        BMessage tick(kTipTick);
+        fTipRunner = new BMessageRunner(BMessenger(this), &tick, 2000000);
+        _AskNowPlaying();
+    }
+
+    virtual void DetachedFromWindow() {
+        delete fTipRunner;
+        fTipRunner = NULL;
+        BView::DetachedFromWindow();
     }
 
     virtual void FrameResized(float newWidth, float newHeight) {
@@ -73,6 +92,15 @@ public:
 
     virtual void MessageReceived(BMessage* message) {
         switch (message->what) {
+        		case kTipTick:
+            		_AskNowPlaying();
+            		break;
+        		case kMsgNowPlaying: {
+            		const char* text = NULL;
+            		if (message->FindString("text", &text) == B_OK)
+                		_SetTip(text);
+            		break;
+        		}
             case B_COLORS_UPDATED:
                 _UpdateBackgroundColor();
                 _LoadIcon(); 
@@ -169,6 +197,27 @@ public:
     }
 
 private:
+    // What is playing, for the tool tip: asked of the program every two seconds, answered when it can.
+    void _AskNowPlaying() {
+        BMessenger app(kMainAppSignature);
+        if (!app.IsValid()) {
+            _SetTip("SuperMusicThingy");
+            return;
+        }
+        BMessage ask(kMsgNowPlayingAsk);
+        app.SendMessage(&ask, this, 0);     // (never waits: this is the Deskbar's thread)
+    }
+
+    void _SetTip(const char* text) {
+        if (fTip != text) {
+            fTip = text;
+            SetToolTip(text);
+        }
+    }
+
+    BMessageRunner* fTipRunner;
+    BString fTip;
+
     void _UpdateBackgroundColor() {
         if (Parent()) {
             SetViewColor(Parent()->ViewColor());
